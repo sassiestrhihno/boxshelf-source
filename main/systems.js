@@ -39,7 +39,7 @@ const CONSOLES = [
     coverSeconds: 5
   },
   {
-    id: 'sw', name: 'Switch', emulatorName: 'Eden',
+    id: 'sw', name: 'Switch', emulatorName: 'Switch emulator', // (the shelf names the one set up: Eden, Citron, Ryujinx…)
     exeNames: ['eden.exe', 'Eden.exe', 'citron.exe', 'Citron.exe', 'Ryujinx.exe', 'ryujinx.exe'], // (beta.8: Citron and Ryujinx too; Ryujinx gets its own options at launch)
     emulatorFolders: ['{app}\\Eden', '%LOCALAPPDATA%\\Programs\\Eden', '%ProgramFiles%\\Eden', '%APPDATA%\\Eden', '{app}\\Citron', '%LOCALAPPDATA%\\Programs\\Citron', '{app}\\Ryujinx', '%LOCALAPPDATA%\\Programs\\Ryujinx'],
     romFolderNames: ['switch', 'nsw', 'ns'],
@@ -50,7 +50,7 @@ const CONSOLES = [
     coverSeconds: 6
   },
   {
-    id: 'sw2', name: 'Switch 2', emulatorName: 'Eglantine',
+    id: 'sw2', name: 'Switch 2', emulatorName: 'Switch 2 emulator', // (the shelf names the one set up: Eglantine, Lichii, Orchid…)
     exeNames: ['eglantine.exe', 'Eglantine.exe'],
     emulatorFolders: ['{app}\\Switch 2 emu', '{app}\\Eglantine', '{app}\\Switch 2', '%LOCALAPPDATA%\\Programs\\Eglantine', '%ProgramFiles%\\Eglantine'],
     romFolderNames: ['switch 2', 'switch2', 'nsw2', 'ns2'],

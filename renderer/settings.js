@@ -50,7 +50,7 @@ const syncCustomThemes=()=>{for(let i=THEMES.length-1;i>=0;i--)if(/^custom-/.tes
 syncCustomThemes();
 const OFFICIAL={gc:"https://dolphin-emu.org/download/",wii:"https://dolphin-emu.org/download/",wiiu:"https://cemu.info/",sw:"https://eden-emu.dev/downloads",sw2:"https://github.com/Djihads80/Eglantine/releases",psp:"https://www.ppsspp.org/download/",ps2:"https://pcsx2.net/downloads/",ps3:"https://rpcs3.net/download",ps4:"https://shadps4.net/downloads",ps5:"https://github.com/Jetsku/KytyPS5/releases",n3ds:"https://azahar-emu.org/pages/download/",x360:"https://xenia.jp/download/",psx:"https://github.com/stenzek/duckstation/releases",nds:"https://melonds.kuribo64.net/downloads.php",nes:"https://www.retroarch.com/?page=platforms",snes:"https://www.retroarch.com/?page=platforms",n64:"https://www.retroarch.com/?page=platforms",gb:"https://www.retroarch.com/?page=platforms",gbc:"https://www.retroarch.com/?page=platforms",gba:"https://www.retroarch.com/?page=platforms",megadrive:"https://www.retroarch.com/?page=platforms",mastersystem:"https://www.retroarch.com/?page=platforms",gamegear:"https://www.retroarch.com/?page=platforms",dreamcast:"https://www.retroarch.com/?page=platforms",retroarch:"https://www.retroarch.com/?page=platforms",steam:"https://store.steampowered.com/about/",stremio:"https://www.stremio.com/downloads",nuvio:"https://github.com/NuvioMedia/NuvioDesktop"};
 const HELP={gc:"Dolphin runs GameCube games. Point to Dolphin.exe.",wii:"Dolphin also runs Wii games. It can be the same Dolphin.exe as GameCube.",
-  wiiu:"Cemu runs Wii U games: .wua, .wud / .wux or extracted game folders. Disc images need your keys.txt set up in Cemu.",sw:"Eden runs Switch games. Point to eden.exe.",sw2:"Eglantine (an Eden fork) runs Switch 2 games. Point to eglantine.exe (forks like Orchid or Lichii are found too; Build picks which one plays). Unpacked game folders work (exefs + romfs, or base + updates: the newest update is started), and .nsp / .xci.",
+  wiiu:"Cemu runs Wii U games: .wua, .wud / .wux or extracted game folders. Disc images need your keys.txt set up in Cemu.",sw:"A Switch emulator runs Switch games: Eden, Citron or Ryujinx (other yuzu forks work too). Point to its program (eden.exe, citron.exe, Ryujinx.exe, or its AppImage on Linux).",sw2:"A Switch 2 emulator runs Switch 2 games: Eglantine or any fork of it (Lichii, Orchid…). Point to its program (eglantine.exe, lichii.exe…, or its AppImage on Linux); every build is found, and Builds picks which one plays. Unpacked game folders work (exefs + romfs, or base + updates: the newest update is started), and .nsp / .xci.",
   psp:"PPSSPP runs PSP games. Point to PPSSPPWindows64.exe.",ps2:"PCSX2 runs PS2 games (.iso, .chd, .cso, .zso). It needs a PS2 BIOS of its own.",
   ps3:"RPCS3 runs PS3 games. Install the PS3 system software in RPCS3 first.",ps4:"shadPS4 runs PS4 games: folders with an eboot.bin inside.",ps5:"Kyty (KytyJets) runs PS5 games: folders with an eboot.bin inside. Boxshelf starts them with your Kyty launcher's settings (resolution, controller, add-ons folder) and the build's own preset.",
   x360:"Xenia runs Xbox 360 games: .iso discs, extracted folders, XBLA .xex files or .zar archives.",n3ds:"Azahar runs 3DS games: decrypted .3ds / .cci / .cxi, or decrypted .cia files (installed into Azahar the first time you play)."};
@@ -104,9 +104,11 @@ function conState(c){const s=sysCfg(c.id);if(s.enabled===false)return "off";retu
 // (games counted on the last scan: "13 games"; until a scan has run, the folders)
 const gameCount=id=>{const m=shelf("gameCounts");return m&&typeof m[id]==="number"?m[id]:null};
 function conStatus(c){const s=sysCfg(c.id),d=conState(c),n=s.romDirs.length,g=gameCount(c.id);
-  return d==="off"?"Shelf hidden":d==="ok"?(g!=null?`Ready · ${g} game${g===1?"":"s"}`:`Ready · ${n} folder${n===1?"":"s"}`):d==="warn"?(s.emulator?"Add a games folder":`Needs ${c.emulatorName||"its emulator"}`):"Not set up"}
+  return d==="off"?"Shelf hidden":d==="ok"?(g!=null?`Ready · ${g} game${g===1?"":"s"}`:`Ready · ${n} folder${n===1?"":"s"}`):d==="warn"?(s.emulator?"Add a games folder":`Needs ${conEmu(c)||"its emulator"}`):"Not set up"}
 // a program shown by its name ("Dolphin.exe" → "Dolphin"); the whole path stays in the row's explanation
 const progName=p=>String(p||"").split(/[\\/]/).pop().replace(/\.exe$/i,"");
+// the emulator a console uses: the one set up when it's a known emulator ("Lichii", "Citron"), else the console's usual one
+const conEmu=c=>{const e=sysCfg(c.id).emulator,k=e&&window.BSEmuName?BSEmuName.knownName(e):"";return k&&k!=="RetroArch"?k:c.emulatorName};
 const folderName=p=>{const L=String(p||"").split(/[\\/]/).filter(Boolean);return L.slice(-2).join(" › ")||String(p||"")};
 function consolesReady(){const on=consoleList().filter(c=>sysCfg(c.id).enabled!==false);return `${on.filter(c=>conState(c)==="ok").length}/${on.length}`}
 const melody=()=>voiceOf(gp("ui.soundTheme"))==="melody";
@@ -488,7 +490,7 @@ function conPages(id){
   // Switch 2 (Windows): which Eglantine build Play starts. "Ask each time" (the default) shows the list at Play; a build
   // picked here becomes the shelf's emulator and Play starts in it straight away. A game's own Details → Emulator wins.
   // (beta.3) a page of its own: every build (the list Play shows), Ask each time, and builds or folders kept elsewhere
-  if(id==="sw2"&&sw2Row())rows.splice(2,0,M("Builds","sw2-builds","Which Eglantine build starts your Switch 2 games: every build Boxshelf found (the same list Play shows), Ask each time, and builds kept in other folders.",
+  if(id==="sw2"&&sw2Row())rows.splice(2,0,M("Builds","sw2-builds","Which Switch 2 emulator build starts your Switch 2 games: every build Boxshelf found (the same list Play shows), Ask each time, and builds kept in other folders.",
     "The same list Play shows. Ask each time shows it at Play; choose a build to always start in it. A game's own choice (Details → Emulator) still comes first.",[{t:"dyn",fn:sw2BuildRows}],
     {keys:"build builds fork forks eglantine lichii orchid selevet version branch which emulator choose",btn:()=>{const b=sw2Fixed();return b?b.label||progName(b.exe):"Ask each time"},
      sub:()=>(sw2Want(),{text:sw2b==null?"Looking for builds…":sw2b.length?`${sw2b.length} build${sw2b.length===1?"":"s"} found`:"No builds found yet · add one here",cls:sw2b&&!sw2b.length?"warn":""})}));
@@ -762,9 +764,9 @@ function sw2BuildRows(){sw2Want();const c=sysCfg("sw2"),fx=sw2Fixed(),L=sw2b||[]
     rows.push(A(b.label,()=>on()?"✓ Always":"Always use",`Always start Switch 2 games in this build.\n${b.exe}`,()=>choose(b.exe),
       {ns:true,keys:"build fork "+b.label,sub:()=>({text:`${day(b.date)}${b.nup?" · opens .nup":""}${first()?" · Play offers it first":""}`})}))});
   rows.push({t:"head",text:"Builds kept somewhere else"});
-  rows.push(A("Add a folder of builds","Browse…","A folder holding several builds (your forks). Boxshelf looks four folders deep inside it.",async()=>{const f=await pick({kind:"folder",title:"Choose a folder of Eglantine builds"}),d=typeof f==="string"?f:f&&f.path;if(!d)return;
+  rows.push(A("Add a folder of builds","Browse…","A folder holding several builds (your forks). Boxshelf looks four folders deep inside it.",async()=>{const f=await pick({kind:"folder",title:"Choose a folder of Switch 2 emulator builds"}),d=typeof f==="string"?f:f&&f.path;if(!d)return;
     const a=Array.isArray(c.buildDirs)?c.buildDirs:[];if(a.some(x=>sw2Low(x)===sw2Low(d)))return toast("That folder is already in the list");c.buildDirs=[...a,d].slice(0,20);changed(null);sw2Reload();toast("Looking for builds in "+folderName(d))}));
-  rows.push(A("Add a build","Browse…","One build's program (eglantine.exe, lichii.exe, orchid.exe…), wherever it is.",async()=>{const f=await pick({kind:"file",title:"Choose an Eglantine build",filters:[{name:"Programs",extensions:["exe"]}]}),x=typeof f==="string"?f:f&&f.path;if(!x)return;
+  rows.push(A("Add a build","Browse…","One build's program (eglantine.exe, lichii.exe, orchid.exe…, or an AppImage on Linux), wherever it is.",async()=>{const f=await pick({kind:"file",title:"Choose a Switch 2 emulator build",filters:[{name:"Programs",extensions:["exe"]}]}),x=typeof f==="string"?f:f&&f.path;if(!x)return;
     const a=Array.isArray(c.buildExes)?c.buildExes:[];if(a.some(y=>sw2Low(y)===sw2Low(x))||L.some(b=>sw2Low(b.exe)===sw2Low(x)))return toast("That build is already in the list");c.buildExes=[...a,x].slice(0,20);changed(null);sw2Reload();toast("Build added")}));
   const drop=(k,i,what)=>{const a=(c[k]||[]).slice();a.splice(i,1);c[k]=a;changed(null);sw2Reload();toast(what+" removed from the list (nothing was deleted)")};
   (Array.isArray(c.buildDirs)?c.buildDirs:[]).forEach((d,i)=>rows.push(A("Folder · "+folderName(d),"Remove",`Builds in this folder are listed. Remove takes it off the list; nothing is deleted.\n${d}`,()=>twice("sw2d:"+i,()=>drop("buildDirs",i,"Folder"),"Press again to remove this folder"),{ns:true,ask:"sw2d:"+i})));
@@ -2215,7 +2217,7 @@ function renderPage(){
       if(r.t==="head"){if(r.text){const d=document.createElement("div");d.className="bss-head";d.innerHTML=`<span>${esc(r.text)}</span>${r.em?`<em>${esc(r.em()||"")}</em>`:""}`;d._r=r;list.append(d)}return}
       const idx=k++;
       if(r.t==="consoles"){const wrap=document.createElement("div");wrap.className="bss-consoles";
-        tileList().forEach((c,j)=>{const d=document.createElement("div");d.className="bss-ctile "+(conState(c)||"none");d.innerHTML=`<b>${esc(c.name)}</b><span>${esc(c.emulatorName||"")}</span><em>${esc(conStatus(c))}</em>`;
+        tileList().forEach((c,j)=>{const d=document.createElement("div");d.className="bss-ctile "+(conState(c)||"none");d.innerHTML=`<b>${esc(c.name)}</b><span>${esc(conEmu(c)||"")}</span><em>${esc(conStatus(c))}</em>`;
           d.onmouseenter=()=>{if(device==="mouse"&&focus!=="osk"&&!edit&&!(focus==="page"&&rowI===idx&&ci===j)){focus="page";rowI=idx;ci=j;render()}};
           d.onclick=()=>{if(edit)commitEdit();ci=j;rowI=idx;focus="page";openConsole(c.id)};wrap.append(d)});
         list.append(wrap);rowEls[idx]=wrap;gridEl=wrap;return}
@@ -2264,7 +2266,7 @@ function renderInfo(){const r=curRow(),s=sec();E.info.classList.toggle("open",in
   if(!r){E.ih.textContent=s.name;E.ip.textContent=s.lead||"";E.im.textContent="";E.is.innerHTML="";E.it.innerHTML=`<div class="pv">${device==="pad"?"Right or "+btnName("a"):"→ or Enter"} opens this page</div>`;return}
   const R=r.t==="result"?r.row:r,c=r.t==="consoles"?tileList()[ci]:null;
   E.ih.textContent=c?c.name:r.label;
-  E.ip.textContent=c?`Uses ${c.emulatorName||"its emulator"}. ${conStatus(c)}.`:(r.info||"");
+  E.ip.textContent=c?`Uses ${conEmu(c)||"its emulator"}. ${conStatus(c)}.`:(r.info||"");
   if(c)st=stHtml(conState(c)==="ok"?"ok":conState(c)==="warn"?"warn":"none",conStatus(c));
   E.im.textContent=R&&(typeof R.more==="function"?R.more():R.more)||"";
   if(R&&R.status){const x=svcState(R.status);st=svcChip(R.status);if(x.at&&(x.state==="ok"||x.state==="fail"))meta.push(["",`Checked ${when(x.at)}`])}

@@ -52,7 +52,8 @@ const addgames = require('./main/addgames'); // (beta.7) Add games: several at o
 const x360 = require('./main/x360');
 const n3ds = require('./main/n3ds');
 const kyty = require('./main/kyty'); // PS5: Kyty's launch settings and the KytyJets preset
-const nx2 = require('./main/nx2'); // Switch 2: unpacked games and their newest update
+const nx2 = require('./main/nx2');
+const emuName = require('./shared/emuname'); // "Lichii · K code AI": an emulator program's emulator and build, for labels // Switch 2: unpacked games and their newest update
 const wiimote = require('./main/wiimote'); // the Wii remote on the shelf (through a DolphinBar)
 const padsense = require('./main/padsense'); // which real controllers are plugged in (button prompts)
 const modelfind = require('./main/modelfind');
@@ -532,7 +533,7 @@ function onExit(info) {
   // (1.82) a game's emulator that closed by itself within 5 s (a missing BIOS, keys or firmware, bad launch options) wasn't a
   // play: the shelf says which emulator closed instead of quietly coming back, and the history isn't touched
   const quick = !!(info && !info.failedToStart && info.code !== -1 && !quitAt && runKind === 'game' && lastLaunch && info.ms < 5000);
-  if (quick) { const def = CONSOLES.find(c => c.id === lastLaunch.systemId); info = { ...info, quick: true, emulatorName: (def && def.emulatorName) || 'The emulator' }; log('Emulator closed right away:', info.emulatorName, 'code', info.code, info.ms + ' ms'); }
+  if (quick) { const def = CONSOLES.find(c => c.id === lastLaunch.systemId); info = { ...info, quick: true, emulatorName: def ? (lastLaunch.exe ? emuName.label(lastLaunch.exe) : emuShown(def, (cfg.systems[def.id] || {}).emulator)) : 'The emulator' }; log('Emulator closed right away:', info.emulatorName, 'code', info.code, info.ms + ' ms'); }
   if (quitAt) { log('game closed', Date.now() - quitAt, 'ms after Quit' + (Date.now() - quitAt > 2400 ? ' (had to be forced)' : '')); quitAt = 0; }
   padwatch.stop(); homemenu.end(); if (info && (info.failedToStart || info.quick)) historyUndo(); else historyEnd();
   if (coverTimer && coverTimer.keep) clearInterval(coverTimer.keep);
@@ -585,7 +586,7 @@ async function buildLibrary() {
     const games = scanSystem(def, sc).map(g => ({ ...g, info: covers.gameInfo(def.id, g.title), manualMiss: manualMiss(def.id, g), art: { front: fileUrl(g.art.front), hero: fileUrl(g.art.hero), back: fileUrl(g.art.back), madeBack: g.art.madeBack || undefined, spine: fileUrl(g.art.spine), madeSpine: g.art.madeSpine || undefined, disc: fileUrl(g.art.disc), manual: withCover(def.id, g, (g.art.manual || []).map(fileUrl)), manualPdf: fileUrl(g.art.manualPdf) } }));
     // (beta.7) arcade zips are named from FinalBurn Neo's list: fetched once in the background, then the shelf refreshes
     if (games.length && arcadenames.SYSTEMS.has(def.id) && !arcadenames.ready()) arcadenames.fetchNames().then(ok => { if (ok && alive()) win.webContents.send('library:changed', { arcade: 1 }); });
-    shelves.push({ id: def.id, kind: 'console', name: def.name, emulatorName: def.emulatorName, hasEmulator: !!sc.emulator && paths.isFile(emuPath(sc.emulator)) /* (1.82) an uninstalled one gets no Open tile */, emulator: sc.emulator, emulatorIcon: fileUrl(await iconQuick(sc.emulator)), gameArgs: sc.gameArgs, bootOnLaunch: sc.bootOnLaunch !== false, useIpl: def.id === 'gc' && !!sc.useIpl, insertAnim: sc.insertAnim !== false, games });
+    shelves.push({ id: def.id, kind: 'console', name: def.name, emulatorName: emuShown(def, sc.emulator), hasEmulator: !!sc.emulator && paths.isFile(emuPath(sc.emulator)) /* (1.82) an uninstalled one gets no Open tile */, emulator: sc.emulator, emulatorIcon: fileUrl(await iconQuick(sc.emulator)), gameArgs: sc.gameArgs, bootOnLaunch: sc.bootOnLaunch !== false, useIpl: def.id === 'gc' && !!sc.useIpl, insertAnim: sc.insertAnim !== false, games });
   }
   let pcShelf = [];
   if (cfg.steam.enabled && cfg.steam.path) {
@@ -617,6 +618,10 @@ async function buildLibrary() {
   return shelves;
 }
 
+// the emulator a console's shelf names ("Starting Lichii", "Open Citron"): the one actually set up when its program is a
+// known emulator (Switch: Eden, Citron or Ryujinx; Switch 2: any Eden fork), else the console's usual one. RetroArch
+// consoles keep their own name (the core is what plays).
+function emuShown(def, exe) { const k = exe ? emuName.knownName(emuPath(exe)) : ''; return k && k !== 'RetroArch' ? k : def.emulatorName; }
 // ---------- IPC ----------
 ipcMain.on('renderer:log', (e, msg) => log('[ui]', msg));
 padwatch.init(log, app.getPath('userData'));
@@ -760,6 +765,7 @@ emucfg.init(log);
 modelfind.init(log);
 app.on('will-quit', () => { try { config.flush(); } catch {} }); // (beta.9: settings still waiting to be written go to disk now)
 app.on('before-quit', () => { if (tbHidden) { tbHidden = false; padwatch.stop(); padwatch.taskbarSync(true); try { fs.unlinkSync(tbMark()); } catch {} log('Taskbar back (Boxshelf quitting)'); } /* (beta.6) */ clearTimeout(scaleT); historyEnd(); companion.stop().catch(() => {}); /* the phone companion's server and its connections */ padwatch.stop(); wiimote.stop(); homemenu.end(); modelfind.stop(); clearQuitCover(); clearTimeout(focusOnlyT); if (coverTimer) { clearInterval(coverTimer.keep); clearTimeout(coverTimer); coverTimer = null; }
+  romWatchGen++; clearTimeout(romRearmT); // (a folder walk still going stops too)
   romWatchers.forEach(w => { try { w.close(); } catch {} }); romWatchers = []; clearTimeout(romWatchT); clearTimeout(iconLateT); Object.values(retestT).forEach(clearTimeout); if (moving) clearTimeout(moving.t); });
 function handle(name, fn) {
   ipcMain.handle(name, async (e, ...args) => {
@@ -1276,18 +1282,18 @@ handle('game:emulator', async ({ id }) => {
   const m = /^([a-z0-9]+):(.+)$/i.exec(String(id || '')), def = m && CONSOLES.find(c => c.id === m[1]);
   if (!def) throw new Error('Only console games can have their own emulator.');
   const { sc } = gameFile(def.id, m[2]), file = m[2], cur = gameEmuOverride(def.id, file), tid = titleIdOf(def.id, file);
-  const shelfExe = paths.expand(sc.emulator || ''), name = p => path.basename(path.dirname(p)) || path.basename(p);
+  const shelfExe = paths.expand(sc.emulator || ''), name = p => emuName.label(p), shelfEmu = emuShown(def, sc.emulator); // (the emulator and its build: "Lichii · K code AI", not the folder it sits in)
   const made = [...new Set([shelfExe, ...(cfg.emuSeen || []).map(paths.expand)])].filter(p => p && p !== cur && emuMadeFor(p, tid) && paths.isFile(p));
   const sugg = made.find(p => p !== shelfExe) || '';
   const buttons = ['Choose an emulator…'], acts = ['pick'];
   if (sugg) { buttons.push(`Use ${name(sugg)} (made for this game)`); acts.push('sugg'); }
-  if (cur) { buttons.push(`Use the shelf's ${def.emulatorName}`); acts.push('default'); }
+  if (cur) { buttons.push(`Use the shelf's ${shelfEmu}${shelfExe ? ' (' + name(shelfExe) + ')' : ''}`); acts.push('default'); }
   buttons.push('Cancel'); acts.push('cancel');
-  const detail = (cur ? `This game runs in:\n${cur}` : `This game runs in the shelf's ${def.emulatorName}:\n${shelfExe || '(not set up)'}`) + '\n\nPick a different build just for this game, e.g. a fork tuned for it.';
+  const detail = (cur ? `This game runs in ${name(cur)}:\n${cur}` : `This game runs in the shelf's ${shelfExe ? name(shelfExe) : shelfEmu}:\n${shelfExe || '(not set up)'}`) + '\n\nPick a different build just for this game, e.g. a fork tuned for it.';
   const r = await dialog.showMessageBox(alive() ? win : undefined, { type: 'question', title: 'Emulator for this game', message: 'Which emulator should this game use?', detail, buttons, defaultId: 0, cancelId: buttons.length - 1, noLink: true });
   const act = acts[r.response] || 'cancel'; let exe = '';
   if (act === 'cancel') return { ok: false, canceled: true, games: cfg.games };
-  if (act === 'pick') { const f = await dialog.showOpenDialog(alive() ? win : undefined, { title: `Emulator for this game (${def.emulatorName} or a build of it)`, defaultPath: cur || shelfExe || undefined, properties: ['openFile'], filters: [{ name: 'Programs', extensions: ['exe'] }, { name: 'All files', extensions: ['*'] }] }); if (f.canceled || !f.filePaths || !f.filePaths[0]) return { ok: false, canceled: true, games: cfg.games }; exe = f.filePaths[0]; }
+  if (act === 'pick') { const f = await dialog.showOpenDialog(alive() ? win : undefined, { title: `Emulator for this game (${shelfEmu} or a build of it)`, defaultPath: cur || shelfExe || undefined, properties: ['openFile'], filters: linux.isLinux ? [{ name: 'All files', extensions: ['*'] }, { name: 'AppImages', extensions: ['AppImage', 'appimage'] }] : [{ name: 'Programs', extensions: ['exe'] }, { name: 'All files', extensions: ['*'] }] }); if (f.canceled || !f.filePaths || !f.filePaths[0]) return { ok: false, canceled: true, games: cfg.games }; exe = f.filePaths[0]; }
   if (act === 'sugg') exe = sugg;
   const games = { ...(cfg.games || {}) };
   if (act === 'default' || (exe && path.resolve(exe).toLowerCase() === path.resolve(shelfExe || '.').toLowerCase())) { const o = { ...(games[id] || {}) }; delete o.emulator; if (Object.keys(o).length) games[id] = o; else delete games[id]; } else games[id] = { ...(games[id] || {}), emulator: exe }; // (beta.8: the game's own name stays)
@@ -1312,7 +1318,7 @@ function sw2Roots() {
 // picker used to leave them out, and Play then turned them down); (beta.3) and the single builds added in Settings
 async function sw2BuildList(file) {
   const list = await nx2.builds(sw2Roots()), low = p => path.resolve(p || '.').toLowerCase();
-  for (const [exe, hint] of [[file ? gameEmuOverride('sw2', file) : '', "This game's"], [emuPath((cfg.systems.sw2 || {}).emulator || ''), 'Shelf'], ...sw2Added('buildExes').map(x => [x, 'Added'])]) {
+  for (const [exe, hint] of [[file ? gameEmuOverride('sw2', file) : '', "this game's choice"], [emuPath((cfg.systems.sw2 || {}).emulator || ''), "the shelf's build"], ...sw2Added('buildExes').map(x => [x, ''])]) {
     if (!exe || list.some(b => low(b.exe) === low(exe)) || !paths.isFile(exe)) continue;
     const b = await nx2.buildOf(exe, hint); if (b) list.push(b);
   }
@@ -1404,7 +1410,7 @@ async function launchGameNow(systemId, file, sc) {
   let r; try { r = launcher.launchGame(sc, rom, onExit, extra, env); } catch (e) { wiimote.resume(); taskbarShow('the game did not start'); throw e; } runKind = 'game'; pendingPower = null; if (linux.isLinux) linuxpad.begin(() => closeGame()); // (beta.9: hold Select + Start to close it)
   // (Dolphin: once it has the remote, Boxshelf listens alongside for a held Home; listening only, nothing is sent)
   if (systemId === 'gc' || systemId === 'wii' || /dolphin/i.test(path.basename(sc.emulator || ''))) setTimeout(() => { if (launcher.isRunning()) wiimote.watch(); }, 4000);
-  lastLaunch = { systemId, at: Date.now() }; historyStart(systemId + ':' + file);
+  lastLaunch = { systemId, at: Date.now(), exe: sc.emulator }; historyStart(systemId + ':' + file); // (exe: the build that ran, named if it closes right away)
   const def = CONSOLES.find(c => c.id === systemId);
   if (cfg.ui.homeMenu !== false) homemenu.begin({ systemId, exe: sc.emulator, systemName: def ? def.name : systemId, hotkeys: sc.hotkeys });
   const base = ipl ? (sc.iplCoverSeconds ?? 2.5) : (+sc.coverSeconds || 0);
@@ -1648,14 +1654,35 @@ handle('covers:coverage', async () => { const out = []; for (const s of sysList(
 // New games while Boxshelf is open: watch the game folders, and once nothing has changed in them for 8 s (a big copy is
 // finished) tell the shelf to look again. A new game then shows up on the shelf, and in the museum it arrives as a parcel.
 // Never during a game (it waits), and at most one rescan per quiet spell.
-let romWatchers = [], romWatchT = 0, romWatchKey = null, romMissing = new Set(), romRetryT = 0; // (beta.9: romMissing: games folders not there yet, a USB or network drive)
+let romWatchers = [], romWatchT = 0, romWatchKey = null, romMissing = new Set(), romRetryT = 0, romWatchGen = 0, romRearmT = 0;
+// (Linux) the folders under a games folder that the scanner reads: four deep at most, never inside a game's own data (an
+// unpacked Switch game's romfs / exefs, updates and DLC, a PS3 game's USRDIR, a PS4 game's sce_sys) or Boxshelf's own art
+// folders. Each gets a plain (non-recursive) watcher; a newer watchRoms (gen) stops an older walk. Resolves to how many.
+const WATCH_SKIP = /^(romfs|exefs|dlc|updates?|patches|mods|sce_sys|sce_module|usrdir|covers|\.optimized|\.manual-originals|shader|shaders|cache|nand|sdmc)$/i, WATCH_MAX = 3000;
+async function watchTree(root, gen, h, depth = 4, count = { n: 0 }) {
+  if (gen !== romWatchGen || count.n >= WATCH_MAX) return count.n;
+  try { const w = fs.watch(root, (ev, name) => { if (h.quietName(name)) return; h.poke(); }); w.on('error', () => {}); romWatchers.push(w); count.n++; } catch { return count.n; }
+  if (depth <= 0) return count.n;
+  let ents = []; try { ents = await fs.promises.readdir(root, { withFileTypes: true }); } catch { return count.n; }
+  for (const e of ents) if (e.isDirectory() && !e.name.startsWith('.') && !WATCH_SKIP.test(e.name)) await watchTree(path.join(root, e.name), gen, h, depth - 1, count);
+  return count.n;
+} // (beta.9: romMissing: games folders not there yet, a USB or network drive)
 function watchRoms() {
   const dirs = new Set(); Object.values(cfg.systems || {}).forEach(s => { if (s && s.enabled !== false) (s.romDirs || []).forEach(d => dirs.add(d)); });
   // only when the watched folders really changed (every settings save calls this); a pending rescan (romWatchT) stays due
   const key = [...dirs].sort().join('\n'); if (key === romWatchKey) return; romWatchKey = key;
   romWatchers.forEach(w => { try { w.close(); } catch {} }); romWatchers = [];
   const poke = () => { scanForget(); /* (beta.9: a games folder changed, so the kept scans are out of date) */ clearTimeout(romWatchT); romWatchT = setTimeout(function fire() { if (launcher.isRunning()) { romWatchT = setTimeout(fire, 15000); return; } if (alive()) win.webContents.send('library:changed', { watch: 1 }); }, 8000); };
-  for (const d of dirs) { try { const w = fs.watch(d, { recursive: true }, (ev, name) => { if (name && /(^|[\\/])(covers|\.optimized|\.manual-originals)([\\/]|$)|-manual-|\.(png|jpe?g|json|txt|ini|tmp|part|srm|sav|sra|state(\d+|\.auto)?|st\d|ss\d|mcd|mcr|ps2|dsv|eep|fla|flash|mpk|bkr|brm|rtc|bak|log|cfg|lock|db|sqlite|db-journal|crdownload)$/i.test(name)) return; poke(); }); /* (beta.9: an emulator's saves, save states and memory cards beside the games aren't new games: they rescanned the whole library just after every game. Never .bin, .img or .zip: those are games) */ w.on('error', () => {}); romWatchers.push(w); if (romMissing.has(d)) { romMissing.delete(d); log('Games folder is back, watching it:', d); poke(); } } catch { romMissing.add(d); } }
+  const quietName = name => !!name && /(^|[\\/])(covers|\.optimized|\.manual-originals)([\\/]|$)|-manual-|\.(png|jpe?g|json|txt|ini|tmp|part|srm|sav|sra|state(\d+|\.auto)?|st\d|ss\d|mcd|mcr|ps2|dsv|eep|fla|flash|mpk|bkr|brm|rtc|bak|log|cfg|lock|db|sqlite|db-journal|crdownload)$/i.test(name); /* (beta.9: an emulator's saves, save states and memory cards beside the games aren't new games: they rescanned the whole library just after every game. Never .bin, .img or .zip: those are games) */
+  const gen = ++romWatchGen;
+  for (const d of dirs) {
+    if (!linux.isLinux) { try { const w = fs.watch(d, { recursive: true }, (ev, name) => { if (quietName(name)) return; poke(); }); w.on('error', () => {}); romWatchers.push(w); if (romMissing.has(d)) { romMissing.delete(d); log('Games folder is back, watching it:', d); poke(); } } catch { romMissing.add(d); } continue; }
+    // (Linux) Node watches a tree by walking ALL of it on the main thread and watching every folder: 2.6 s at every start
+    // on a Switch 2 folder holding extracted games (650,000 files). Only the folders the scanner reads are watched here,
+    // found a folder at a time without holding up the shelf; a new folder re-arms the watch so its games are seen too.
+    if (!paths.isDir(d)) { romMissing.add(d); continue; }
+    watchTree(d, gen, { quietName, poke: () => { poke(); clearTimeout(romRearmT); romRearmT = setTimeout(() => { romWatchKey = null; watchRoms(); }, 20000); } }).then(n => { if (gen === romWatchGen && romMissing.has(d)) { romMissing.delete(d); log('Games folder is back, watching it:', d); poke(); } if (n >= WATCH_MAX) log('Games folder watch: stopped at', WATCH_MAX, 'folders in', d); });
+  }
   // (beta.9) a folder that isn't there yet (its drive not plugged in) is tried again every minute; once it's there, it's
   // watched and the shelf looks at it at once
   for (const d of [...romMissing]) if (!dirs.has(d)) romMissing.delete(d);
