@@ -8,7 +8,8 @@
   const caps = Object.freeze(Object.assign({}, src.caps));
   // Settings → which pages and rows need a capability (anything not listed is kept everywhere)
   const PAGE_NEEDS = { pc: 'steam', apps: 'steam', custom: 'steam', phone: 'companionServer' } /* (beta.4) custom: the Custom games page (Windows programs) */;
-  const ROW_NEEDS = { 'Start Boxshelf with Windows': 'autostart', 'App folder': 'folders', 'Restore emulator settings': 'emuSettings', 'Home menu': 'homeMenu', 'Home menu layout': 'homeMenu', 'Hide the taskbar during games': 'winMode' /* (beta.6) Windows only */ };
+  const ROW_NEEDS = { 'Start Boxshelf with Windows': 'autostart', 'App folder': 'folders', 'Restore emulator settings': 'emuSettings', 'Home menu': 'homeMenu', 'Home menu layout': 'homeMenu', 'Hide the taskbar during games': 'winMode' /* (beta.6) Windows only */,
+    'Show installed GOG games': 'winStores', 'Show installed Ubisoft games': 'winStores', 'Show installed EA games': 'winStores', 'Show installed Xbox games': 'winStores' /* (Linux: these four stores are Windows apps) */ };
   const okRow = r => !(r && typeof r === 'object' && ROW_NEEDS[r.label] && !caps[ROW_NEEDS[r.label]]);
   const pruneRows = rows => Array.isArray(rows) ? rows.filter(okRow).map(r => {
     if (r && typeof r === 'object') for (const k of Object.keys(r)) if (Array.isArray(r[k]) && r[k].some(x => x && typeof x === 'object' && 'label' in x)) r[k] = pruneRows(r[k]);

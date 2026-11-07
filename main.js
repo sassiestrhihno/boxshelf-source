@@ -32,6 +32,7 @@ const ownTitle = id => { const o = cfg && cfg.games && cfg.games[String(id)]; re
 const { scanSteam } = require('./main/steam');
 const steamart = require('./main/steamart');
 const pcgames = require('./main/pcgames'); // (beta.4) Epic, Quiver Launcher and games added by hand
+const linuxpc = require('./main/linuxpc'); // (Linux) Windows games through Wine / Proton, Epic Games through legendary
 const pccovers = require('./main/pccovers'); // (beta.5) choosing a PC game's cover (SteamGridDB, Steam's own, your own)
 const wiiumanual = require('./main/wiiumanual');
 const manualcoll = require('./main/manualcoll');
@@ -52,7 +53,8 @@ const addgames = require('./main/addgames'); // (beta.7) Add games: several at o
 const x360 = require('./main/x360');
 const n3ds = require('./main/n3ds');
 const kyty = require('./main/kyty'); // PS5: Kyty's launch settings and the KytyJets preset
-const nx2 = require('./main/nx2'); // Switch 2: unpacked games and their newest update
+const nx2 = require('./main/nx2');
+const emuName = require('./shared/emuname'); // "Lichii · K code AI": an emulator program's emulator and build, for labels // Switch 2: unpacked games and their newest update
 const wiimote = require('./main/wiimote'); // the Wii remote on the shelf (through a DolphinBar)
 const padsense = require('./main/padsense'); // which real controllers are plugged in (button prompts)
 const modelfind = require('./main/modelfind');
@@ -532,7 +534,7 @@ function onExit(info) {
   // (1.82) a game's emulator that closed by itself within 5 s (a missing BIOS, keys or firmware, bad launch options) wasn't a
   // play: the shelf says which emulator closed instead of quietly coming back, and the history isn't touched
   const quick = !!(info && !info.failedToStart && info.code !== -1 && !quitAt && runKind === 'game' && lastLaunch && info.ms < 5000);
-  if (quick) { const def = CONSOLES.find(c => c.id === lastLaunch.systemId); info = { ...info, quick: true, emulatorName: (def && def.emulatorName) || 'The emulator' }; log('Emulator closed right away:', info.emulatorName, 'code', info.code, info.ms + ' ms'); }
+  if (quick) { const def = CONSOLES.find(c => c.id === lastLaunch.systemId); info = { ...info, quick: true, emulatorName: def ? (lastLaunch.exe ? emuName.label(lastLaunch.exe) : emuShown(def, (cfg.systems[def.id] || {}).emulator)) : 'The emulator' }; log('Emulator closed right away:', info.emulatorName, 'code', info.code, info.ms + ' ms'); }
   if (quitAt) { log('game closed', Date.now() - quitAt, 'ms after Quit' + (Date.now() - quitAt > 2400 ? ' (had to be forced)' : '')); quitAt = 0; }
   padwatch.stop(); homemenu.end(); if (info && (info.failedToStart || info.quick)) historyUndo(); else historyEnd();
   if (coverTimer && coverTimer.keep) clearInterval(coverTimer.keep);
@@ -585,7 +587,7 @@ async function buildLibrary() {
     const games = scanSystem(def, sc).map(g => ({ ...g, info: covers.gameInfo(def.id, g.title), manualMiss: manualMiss(def.id, g), art: { front: fileUrl(g.art.front), hero: fileUrl(g.art.hero), back: fileUrl(g.art.back), madeBack: g.art.madeBack || undefined, spine: fileUrl(g.art.spine), madeSpine: g.art.madeSpine || undefined, disc: fileUrl(g.art.disc), manual: withCover(def.id, g, (g.art.manual || []).map(fileUrl)), manualPdf: fileUrl(g.art.manualPdf) } }));
     // (beta.7) arcade zips are named from FinalBurn Neo's list: fetched once in the background, then the shelf refreshes
     if (games.length && arcadenames.SYSTEMS.has(def.id) && !arcadenames.ready()) arcadenames.fetchNames().then(ok => { if (ok && alive()) win.webContents.send('library:changed', { arcade: 1 }); });
-    shelves.push({ id: def.id, kind: 'console', name: def.name, emulatorName: def.emulatorName, hasEmulator: !!sc.emulator && paths.isFile(emuPath(sc.emulator)) /* (1.82) an uninstalled one gets no Open tile */, emulator: sc.emulator, emulatorIcon: fileUrl(await iconQuick(sc.emulator)), gameArgs: sc.gameArgs, bootOnLaunch: sc.bootOnLaunch !== false, useIpl: def.id === 'gc' && !!sc.useIpl, insertAnim: sc.insertAnim !== false, games });
+    shelves.push({ id: def.id, kind: 'console', name: def.name, emulatorName: emuShown(def, sc.emulator), hasEmulator: !!sc.emulator && paths.isFile(emuPath(sc.emulator)) /* (1.82) an uninstalled one gets no Open tile */, emulator: sc.emulator, emulatorIcon: fileUrl(await iconQuick(sc.emulator)), gameArgs: sc.gameArgs, bootOnLaunch: sc.bootOnLaunch !== false, useIpl: def.id === 'gc' && !!sc.useIpl, insertAnim: sc.insertAnim !== false, games });
   }
   let pcShelf = [];
   if (cfg.steam.enabled && cfg.steam.path) {
@@ -596,7 +598,8 @@ async function buildLibrary() {
   // are PC games with a source (kind 'steam' keeps every shelf feature); covers come from the Steam app their title
   // matched (pcgames.matchSteam, never an appid the screen could launch: Play goes through launch:pc by id)
   const pc = cfg.pc || {}, epic = [], mine = [];
-  if (pc.epic !== false) try { epic.push(...pcgames.epicGames()); } catch (e) { log('Epic library', e.message); }
+  // (Linux: the games legendary installed, Heroic's included; they play through Wine / Proton, main/linuxpc.js)
+  if (pc.epic !== false) try { epic.push(...(linux.isLinux ? linuxpc.epicGames() : pcgames.epicGames())); } catch (e) { log('Epic library', e.message); }
   // (beta.7) GOG Galaxy, Ubisoft Connect, the EA app and Xbox / Game Pass join the PC shelf too, like Epic (store games)
   try { epic.push(...await pcgames.storeGames(pc)); } catch (e) { log('PC stores', e.message); }
   if (pc.quiver !== false) try { mine.push(...pcgames.quiverGames(pc.quiverPath)); } catch (e) { log('Quiver library', e.message); }
@@ -617,6 +620,10 @@ async function buildLibrary() {
   return shelves;
 }
 
+// the emulator a console's shelf names ("Starting Lichii", "Open Citron"): the one actually set up when its program is a
+// known emulator (Switch: Eden, Citron or Ryujinx; Switch 2: any Eden fork), else the console's usual one. RetroArch
+// consoles keep their own name (the core is what plays).
+function emuShown(def, exe) { const k = exe ? emuName.knownName(emuPath(exe)) : ''; return k && k !== 'RetroArch' ? k : def.emulatorName; }
 // ---------- IPC ----------
 ipcMain.on('renderer:log', (e, msg) => log('[ui]', msg));
 padwatch.init(log, app.getPath('userData'));
@@ -760,6 +767,7 @@ emucfg.init(log);
 modelfind.init(log);
 app.on('will-quit', () => { try { config.flush(); } catch {} }); // (beta.9: settings still waiting to be written go to disk now)
 app.on('before-quit', () => { if (tbHidden) { tbHidden = false; padwatch.stop(); padwatch.taskbarSync(true); try { fs.unlinkSync(tbMark()); } catch {} log('Taskbar back (Boxshelf quitting)'); } /* (beta.6) */ clearTimeout(scaleT); historyEnd(); companion.stop().catch(() => {}); /* the phone companion's server and its connections */ padwatch.stop(); wiimote.stop(); homemenu.end(); modelfind.stop(); clearQuitCover(); clearTimeout(focusOnlyT); if (coverTimer) { clearInterval(coverTimer.keep); clearTimeout(coverTimer); coverTimer = null; }
+  romWatchGen++; clearTimeout(romRearmT); // (a folder walk still going stops too)
   romWatchers.forEach(w => { try { w.close(); } catch {} }); romWatchers = []; clearTimeout(romWatchT); clearTimeout(iconLateT); Object.values(retestT).forEach(clearTimeout); if (moving) clearTimeout(moving.t); });
 function handle(name, fn) {
   ipcMain.handle(name, async (e, ...args) => {
@@ -1276,18 +1284,18 @@ handle('game:emulator', async ({ id }) => {
   const m = /^([a-z0-9]+):(.+)$/i.exec(String(id || '')), def = m && CONSOLES.find(c => c.id === m[1]);
   if (!def) throw new Error('Only console games can have their own emulator.');
   const { sc } = gameFile(def.id, m[2]), file = m[2], cur = gameEmuOverride(def.id, file), tid = titleIdOf(def.id, file);
-  const shelfExe = paths.expand(sc.emulator || ''), name = p => path.basename(path.dirname(p)) || path.basename(p);
+  const shelfExe = paths.expand(sc.emulator || ''), name = p => emuName.label(p), shelfEmu = emuShown(def, sc.emulator); // (the emulator and its build: "Lichii · K code AI", not the folder it sits in)
   const made = [...new Set([shelfExe, ...(cfg.emuSeen || []).map(paths.expand)])].filter(p => p && p !== cur && emuMadeFor(p, tid) && paths.isFile(p));
   const sugg = made.find(p => p !== shelfExe) || '';
   const buttons = ['Choose an emulator…'], acts = ['pick'];
   if (sugg) { buttons.push(`Use ${name(sugg)} (made for this game)`); acts.push('sugg'); }
-  if (cur) { buttons.push(`Use the shelf's ${def.emulatorName}`); acts.push('default'); }
+  if (cur) { buttons.push(`Use the shelf's ${shelfEmu}${shelfExe ? ' (' + name(shelfExe) + ')' : ''}`); acts.push('default'); }
   buttons.push('Cancel'); acts.push('cancel');
-  const detail = (cur ? `This game runs in:\n${cur}` : `This game runs in the shelf's ${def.emulatorName}:\n${shelfExe || '(not set up)'}`) + '\n\nPick a different build just for this game, e.g. a fork tuned for it.';
+  const detail = (cur ? `This game runs in ${name(cur)}:\n${cur}` : `This game runs in the shelf's ${shelfExe ? name(shelfExe) : shelfEmu}:\n${shelfExe || '(not set up)'}`) + '\n\nPick a different build just for this game, e.g. a fork tuned for it.';
   const r = await dialog.showMessageBox(alive() ? win : undefined, { type: 'question', title: 'Emulator for this game', message: 'Which emulator should this game use?', detail, buttons, defaultId: 0, cancelId: buttons.length - 1, noLink: true });
   const act = acts[r.response] || 'cancel'; let exe = '';
   if (act === 'cancel') return { ok: false, canceled: true, games: cfg.games };
-  if (act === 'pick') { const f = await dialog.showOpenDialog(alive() ? win : undefined, { title: `Emulator for this game (${def.emulatorName} or a build of it)`, defaultPath: cur || shelfExe || undefined, properties: ['openFile'], filters: [{ name: 'Programs', extensions: ['exe'] }, { name: 'All files', extensions: ['*'] }] }); if (f.canceled || !f.filePaths || !f.filePaths[0]) return { ok: false, canceled: true, games: cfg.games }; exe = f.filePaths[0]; }
+  if (act === 'pick') { const f = await dialog.showOpenDialog(alive() ? win : undefined, { title: `Emulator for this game (${shelfEmu} or a build of it)`, defaultPath: cur || shelfExe || undefined, properties: ['openFile'], filters: linux.isLinux ? [{ name: 'All files', extensions: ['*'] }, { name: 'AppImages', extensions: ['AppImage', 'appimage'] }] : [{ name: 'Programs', extensions: ['exe'] }, { name: 'All files', extensions: ['*'] }] }); if (f.canceled || !f.filePaths || !f.filePaths[0]) return { ok: false, canceled: true, games: cfg.games }; exe = f.filePaths[0]; }
   if (act === 'sugg') exe = sugg;
   const games = { ...(cfg.games || {}) };
   if (act === 'default' || (exe && path.resolve(exe).toLowerCase() === path.resolve(shelfExe || '.').toLowerCase())) { const o = { ...(games[id] || {}) }; delete o.emulator; if (Object.keys(o).length) games[id] = o; else delete games[id]; } else games[id] = { ...(games[id] || {}), emulator: exe }; // (beta.8: the game's own name stays)
@@ -1312,7 +1320,7 @@ function sw2Roots() {
 // picker used to leave them out, and Play then turned them down); (beta.3) and the single builds added in Settings
 async function sw2BuildList(file) {
   const list = await nx2.builds(sw2Roots()), low = p => path.resolve(p || '.').toLowerCase();
-  for (const [exe, hint] of [[file ? gameEmuOverride('sw2', file) : '', "This game's"], [emuPath((cfg.systems.sw2 || {}).emulator || ''), 'Shelf'], ...sw2Added('buildExes').map(x => [x, 'Added'])]) {
+  for (const [exe, hint] of [[file ? gameEmuOverride('sw2', file) : '', "this game's choice"], [emuPath((cfg.systems.sw2 || {}).emulator || ''), "the shelf's build"], ...sw2Added('buildExes').map(x => [x, ''])]) {
     if (!exe || list.some(b => low(b.exe) === low(exe)) || !paths.isFile(exe)) continue;
     const b = await nx2.buildOf(exe, hint); if (b) list.push(b);
   }
@@ -1404,7 +1412,7 @@ async function launchGameNow(systemId, file, sc) {
   let r; try { r = launcher.launchGame(sc, rom, onExit, extra, env); } catch (e) { wiimote.resume(); taskbarShow('the game did not start'); throw e; } runKind = 'game'; pendingPower = null; if (linux.isLinux) linuxpad.begin(() => closeGame()); // (beta.9: hold Select + Start to close it)
   // (Dolphin: once it has the remote, Boxshelf listens alongside for a held Home; listening only, nothing is sent)
   if (systemId === 'gc' || systemId === 'wii' || /dolphin/i.test(path.basename(sc.emulator || ''))) setTimeout(() => { if (launcher.isRunning()) wiimote.watch(); }, 4000);
-  lastLaunch = { systemId, at: Date.now() }; historyStart(systemId + ':' + file);
+  lastLaunch = { systemId, at: Date.now(), exe: sc.emulator }; historyStart(systemId + ':' + file); // (exe: the build that ran, named if it closes right away)
   const def = CONSOLES.find(c => c.id === systemId);
   if (cfg.ui.homeMenu !== false) homemenu.begin({ systemId, exe: sc.emulator, systemName: def ? def.name : systemId, hotkeys: sc.hotkeys });
   const base = ipl ? (sc.iplCoverSeconds ?? 2.5) : (+sc.coverSeconds || 0);
@@ -1449,6 +1457,8 @@ handle('launch:steam', ({ appid }) => launcher.launchSteam(appid));
 // the quit buttons like any app
 handle('launch:pc', async ({ id }) => {
   const g = pcgames.byId(id); if (!g) throw new Error("That game isn't on the shelf any more. The shelf is refreshing; try again in a moment.");
+  // (Linux) Epic's games and Windows programs play through Wine / Proton, started by Boxshelf itself
+  if (linux.isLinux && (g.source === 'epic' || linuxpc.isWindowsProgram(g.exe))) return launchLinuxPc(g);
   // through its store's launcher (Epic, and from beta.7 Ubisoft Connect and the EA app: their sign-in, cloud saves, overlay)
   if (g.uri && /^(com\.epicgames\.launcher|uplay|origin2):\/\//i.test(g.uri)) { busyCheck(); log('PC launch:', g.source, g.title); return shell.openExternal(g.uri).then(() => ({ external: true })); }
   // (beta.7) an Xbox / Game Pass game is a Windows app: started as one (its package family and app id, from pcgames.xboxGames)
@@ -1462,6 +1472,77 @@ handle('launch:pc', async ({ id }) => {
   watchPad({ mouse: false, appPid: r.pid, fullscreenKey: null, home: true });
   return { ...r, cover: coverWhileStarting(10) };
 });
+// (Linux) a Windows game (Epic's, or a program added by hand) through Wine / Proton. Epic's: legendary gives the program and
+// Epic's sign-in arguments, and the Wine settings Heroic keeps for the game (its runner, prefix, environment) are used when
+// there are any; otherwise the runner chosen in Settings → PC games and a prefix of the game's own
+async function launchLinuxPc(g) {
+  busyCheck();
+  const pc = cfg.pc || {}, list = linuxpc.runners();
+  let spec, runner, prefix, env = {}, gameId, store = 'none', notice = '';
+  launching = true;
+  try {
+    if (g.source === 'epic') {
+      const bin = linuxpc.legendaryBin(pc.legendaryPath);
+      if (!bin) throw new Error("Epic games need legendary (Heroic Games Launcher brings it). Install Heroic, or choose legendary in Settings → PC games.");
+      if (alive()) win.webContents.send('launch:status', 'Getting the game ready with Epic…');
+      const info = await linuxpc.epicLaunchInfo(bin, g.appName);
+      if (info.outdated) notice = `An update for ${g.title} is waiting: Settings → PC games → Epic library updates it.`;
+      if (!linuxpc.isWindowsProgram(info.exe)) spec = { native: true, exe: info.exe, args: info.args, cwd: info.cwd, env: info.env }; // (a Linux build of the game)
+      else {
+        const h = linuxpc.heroicGame(g.appName) || {};
+        runner = (pc.runner ? null : h.runner) || linuxpc.pickRunner(pc.runner, list); prefix = h.prefix || linuxpc.prefixFor(g.id, pc.prefixDir);
+        env = { ...(h.env || {}), ...info.env }; store = 'egs'; gameId = (await linuxpc.umuId('egs', g.appName)) || undefined;
+        spec = { exe: info.exe, args: info.args, cwd: info.cwd };
+      }
+    } else {
+      if (!paths.isFile(g.exe)) throw new Error(`${g.title} isn't at ${g.exe} any more. Remove it in Settings → Custom games and add it again.`);
+      runner = linuxpc.pickRunner(g.runner || pc.runner, list); prefix = linuxpc.prefixFor(g.id, pc.prefixDir);
+      spec = { exe: g.exe, args: launcher.buildArgs(g.args || '', ''), cwd: path.dirname(g.exe) };
+    }
+  } finally { launching = false; }
+  const c = spec.native ? { cmd: spec.exe, args: spec.args, cwd: spec.cwd, env: { ...process.env, ...spec.env }, how: 'native' } : linuxpc.windowsCommand({ ...spec, runner, prefix, env, gameId, store });
+  const done = info => { if (runner) linuxpc.endPrefix(runner, prefix); onExit(info); };
+  const r = launcher.launchCommand(c.cmd, c.args, done, { env: c.env, cwd: c.cwd });
+  runKind = 'app'; pendingPower = null; linuxpad.begin(() => closeGame()); // (hold Select + Start to close it)
+  log('PC launch:', g.source, g.title, 'with', c.how, prefix ? '| prefix ' + prefix.replace(require('os').homedir(), '~') : '');
+  if (cfg.ui.homeMenu !== false) homemenu.begin({ systemId: 'pc', exe: spec.exe, systemName: g.source === 'epic' ? 'Epic Games' : 'Custom', title: g.title, hotkeys: {} });
+  watchPad({ mouse: false, appPid: r.pid, fullscreenKey: null, home: true });
+  return { ...r, cover: coverWhileStarting(20), ...(notice ? { notice } : {}) }; // (Proton's first start in a new prefix takes a while; notice: shown on the shelf)
+}
+// (Linux) Settings → PC games: Wine / Proton and the Epic account. Names and ids only reach the page; tokens never do.
+const legendaryOf = () => { const b = linuxpc.legendaryBin((cfg.pc || {}).legendaryPath); if (!b) throw new Error('legendary not found. Install Heroic Games Launcher, or choose legendary in Settings → PC games.'); return b; };
+handle('pc:linux', () => { if (!linux.isLinux) return null; const pc = cfg.pc || {}, list = linuxpc.runners(), pick = linuxpc.pickRunner(pc.runner, list), lc = linuxpc.legendaryConfig();
+  return { runners: list.map(r => ({ id: r.id, name: r.name, kind: r.kind })), runner: pick ? pick.id : '', umu: !!linuxpc.umuRun(), prefixDir: linuxpc.prefixRoot(pc.prefixDir),
+    legendary: !!linuxpc.legendaryBin(pc.legendaryPath), epicAccount: linuxpc.epicAccount(), epicShared: lc.shared, epicDir: linuxpc.epicInstallDir(pc.epicDir), job: linuxpc.epicJob() }; });
+// Epic's own sign-in page in a window of its own (a session that keeps nothing); the code it ends on goes to legendary
+const EPIC_LOGIN = 'https://www.epicgames.com/id/login?redirectUrl=' + encodeURIComponent('https://www.epicgames.com/id/api/redirect?clientId=34a02cf8f4414e29b15921876da36f9a&responseType=code');
+const EPIC_HOSTS = /^https:\/\/([\w-]+\.)*(epicgames\.com|unrealengine\.com|google\.com|googleusercontent\.com|gstatic\.com|apple\.com|facebook\.com|xbox\.com|live\.com|microsoftonline\.com|playstation\.com|sony\.com|steampowered\.com|steamcommunity\.com|nintendo\.com|nintendo\.net|lego\.com|hcaptcha\.com|arkoselabs\.com|recaptcha\.net)(\/|$)/i;
+function epicLoginCode() {
+  return new Promise(resolve => {
+    const w = new BrowserWindow({ parent: alive() ? win : undefined, modal: alive(), width: 1000, height: 780, autoHideMenuBar: true, title: 'Sign in to Epic Games', backgroundColor: '#121212',
+      webPreferences: { partition: 'epic-login', contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    w.webContents.setUserAgent(w.webContents.getUserAgent().replace(/ (Boxshelf|Electron)\/\S+/g, '')); // (Epic turns away a browser it doesn't know)
+    let done = false; const finish = code => { if (done) return; done = true; resolve(code); try { if (!w.isDestroyed()) w.close(); } catch {} };
+    const check = async () => { if (done || w.isDestroyed()) return; const u = w.webContents.getURL(); if (!/^https:\/\/www\.epicgames\.com\/id\/api\/redirect/.test(u)) return;
+      try { const j = JSON.parse(await w.webContents.executeJavaScript('document.body.innerText', true)); if (j && typeof j.authorizationCode === 'string' && j.authorizationCode) finish(j.authorizationCode); } catch {} };
+    w.webContents.on('did-finish-load', check); w.webContents.on('did-navigate', check);
+    w.webContents.on('will-navigate', (e, url) => { if (!EPIC_HOSTS.test(url)) e.preventDefault(); });
+    // (Sign in with Google, Apple, Xbox… opens their page in a window of its own, in the same session)
+    w.webContents.setWindowOpenHandler(({ url }) => EPIC_HOSTS.test(url) ? { action: 'allow', overrideBrowserWindowOptions: { parent: w, autoHideMenuBar: true, webPreferences: { partition: 'epic-login', sandbox: true, contextIsolation: true } } } : { action: 'deny' });
+    w.on('closed', () => finish(null));
+    w.loadURL(EPIC_LOGIN).catch(e => { log('Epic sign-in page', e.message); finish(null); });
+  });
+}
+handle('epic:signIn', async () => { const bin = legendaryOf(); const code = await epicLoginCode(); try { await session.fromPartition('epic-login').clearStorageData(); } catch {}
+  if (!code) return { cancelled: true }; const r = await linuxpc.epicSignIn(bin, code); if (r.ok && alive()) win.webContents.send('library:changed', { epic: 1 }); return r; });
+handle('epic:signOut', async () => { const r = await linuxpc.epicSignOut(legendaryOf()); if (alive()) win.webContents.send('library:changed', { epic: 1 }); return r; });
+handle('epic:library', () => linuxpc.epicLibrary(legendaryOf()));
+// installs and updates run one at a time in the background; the page hears how far along they are, the shelf refreshes after
+const epicTell = j => { if (!alive()) return; win.webContents.send('epic:job', j); if (j && j.state !== 'installing') win.webContents.send('library:changed', { epic: 1 }); };
+handle('epic:install', ({ appName, title, update } = {}) => linuxpc.epicInstall(legendaryOf(), String(appName || ''), String(title || ''), linuxpc.epicInstallDir((cfg.pc || {}).epicDir), epicTell, !!update));
+handle('epic:cancel', () => linuxpc.epicCancel());
+handle('epic:uninstall', async ({ appName } = {}) => { if (launcher.isRunning()) throw new Error('Close the running game first.'); const r = await linuxpc.epicUninstall(legendaryOf(), String(appName || '')); if (alive()) win.webContents.send('library:changed', { epic: 1 }); return r; });
+handle('epic:job', () => linuxpc.epicJob());
 // (beta.5) a PC game's cover picker (main/pccovers.js): the page names the game by id and an option by key only
 const pcLookup = id => { id = String(id || ''); const m = /^steam-(\d{1,10})$/.exec(id); if (m) return { id, appid: m[1], title: '' }; const g = pcgames.byId(id); return g ? { id, title: g.title } : null; };
 const pcGameOf = id => { const g = pcLookup(id); if (!g) throw new Error("That game isn't on the shelf any more."); return g; };
@@ -1495,7 +1576,7 @@ handle('game:rename', ({ systemId, file, id, title }) => {
   if (systemId) { try { artstudio.forget(systemId); } catch {} }
   return { ok: true, title: t };
 });
-handle('pc:status', async () => { const pc = cfg.pc || {}; let epic = null; try { epic = pcgames.epicGames().length; } catch {}
+handle('pc:status', async () => { const pc = cfg.pc || {}; let epic = null; try { epic = (linux.isLinux ? linuxpc.epicGames() : pcgames.epicGames()).length; } catch {}
   // (beta.7) each store's installed games, counted whether its switch is on or not (Settings says what it would add)
   const n = async f => { try { return (await f()).length; } catch { return null; } };
   const [gog, ubisoft, ea, xbox] = await Promise.all([n(pcgames.gogGames), n(pcgames.ubisoftGames), n(pcgames.eaGames), n(pcgames.xboxGames)]);
@@ -1648,14 +1729,35 @@ handle('covers:coverage', async () => { const out = []; for (const s of sysList(
 // New games while Boxshelf is open: watch the game folders, and once nothing has changed in them for 8 s (a big copy is
 // finished) tell the shelf to look again. A new game then shows up on the shelf, and in the museum it arrives as a parcel.
 // Never during a game (it waits), and at most one rescan per quiet spell.
-let romWatchers = [], romWatchT = 0, romWatchKey = null, romMissing = new Set(), romRetryT = 0; // (beta.9: romMissing: games folders not there yet, a USB or network drive)
+let romWatchers = [], romWatchT = 0, romWatchKey = null, romMissing = new Set(), romRetryT = 0, romWatchGen = 0, romRearmT = 0;
+// (Linux) the folders under a games folder that the scanner reads: four deep at most, never inside a game's own data (an
+// unpacked Switch game's romfs / exefs, updates and DLC, a PS3 game's USRDIR, a PS4 game's sce_sys) or Boxshelf's own art
+// folders. Each gets a plain (non-recursive) watcher; a newer watchRoms (gen) stops an older walk. Resolves to how many.
+const WATCH_SKIP = /^(romfs|exefs|dlc|updates?|patches|mods|sce_sys|sce_module|usrdir|covers|\.optimized|\.manual-originals|shader|shaders|cache|nand|sdmc)$/i, WATCH_MAX = 3000;
+async function watchTree(root, gen, h, depth = 4, count = { n: 0 }) {
+  if (gen !== romWatchGen || count.n >= WATCH_MAX) return count.n;
+  try { const w = fs.watch(root, (ev, name) => { if (h.quietName(name)) return; h.poke(); }); w.on('error', () => {}); romWatchers.push(w); count.n++; } catch { return count.n; }
+  if (depth <= 0) return count.n;
+  let ents = []; try { ents = await fs.promises.readdir(root, { withFileTypes: true }); } catch { return count.n; }
+  for (const e of ents) if (e.isDirectory() && !e.name.startsWith('.') && !WATCH_SKIP.test(e.name)) await watchTree(path.join(root, e.name), gen, h, depth - 1, count);
+  return count.n;
+} // (beta.9: romMissing: games folders not there yet, a USB or network drive)
 function watchRoms() {
   const dirs = new Set(); Object.values(cfg.systems || {}).forEach(s => { if (s && s.enabled !== false) (s.romDirs || []).forEach(d => dirs.add(d)); });
   // only when the watched folders really changed (every settings save calls this); a pending rescan (romWatchT) stays due
   const key = [...dirs].sort().join('\n'); if (key === romWatchKey) return; romWatchKey = key;
   romWatchers.forEach(w => { try { w.close(); } catch {} }); romWatchers = [];
   const poke = () => { scanForget(); /* (beta.9: a games folder changed, so the kept scans are out of date) */ clearTimeout(romWatchT); romWatchT = setTimeout(function fire() { if (launcher.isRunning()) { romWatchT = setTimeout(fire, 15000); return; } if (alive()) win.webContents.send('library:changed', { watch: 1 }); }, 8000); };
-  for (const d of dirs) { try { const w = fs.watch(d, { recursive: true }, (ev, name) => { if (name && /(^|[\\/])(covers|\.optimized|\.manual-originals)([\\/]|$)|-manual-|\.(png|jpe?g|json|txt|ini|tmp|part|srm|sav|sra|state(\d+|\.auto)?|st\d|ss\d|mcd|mcr|ps2|dsv|eep|fla|flash|mpk|bkr|brm|rtc|bak|log|cfg|lock|db|sqlite|db-journal|crdownload)$/i.test(name)) return; poke(); }); /* (beta.9: an emulator's saves, save states and memory cards beside the games aren't new games: they rescanned the whole library just after every game. Never .bin, .img or .zip: those are games) */ w.on('error', () => {}); romWatchers.push(w); if (romMissing.has(d)) { romMissing.delete(d); log('Games folder is back, watching it:', d); poke(); } } catch { romMissing.add(d); } }
+  const quietName = name => !!name && /(^|[\\/])(covers|\.optimized|\.manual-originals)([\\/]|$)|-manual-|\.(png|jpe?g|json|txt|ini|tmp|part|srm|sav|sra|state(\d+|\.auto)?|st\d|ss\d|mcd|mcr|ps2|dsv|eep|fla|flash|mpk|bkr|brm|rtc|bak|log|cfg|lock|db|sqlite|db-journal|crdownload)$/i.test(name); /* (beta.9: an emulator's saves, save states and memory cards beside the games aren't new games: they rescanned the whole library just after every game. Never .bin, .img or .zip: those are games) */
+  const gen = ++romWatchGen;
+  for (const d of dirs) {
+    if (!linux.isLinux) { try { const w = fs.watch(d, { recursive: true }, (ev, name) => { if (quietName(name)) return; poke(); }); w.on('error', () => {}); romWatchers.push(w); if (romMissing.has(d)) { romMissing.delete(d); log('Games folder is back, watching it:', d); poke(); } } catch { romMissing.add(d); } continue; }
+    // (Linux) Node watches a tree by walking ALL of it on the main thread and watching every folder: 2.6 s at every start
+    // on a Switch 2 folder holding extracted games (650,000 files). Only the folders the scanner reads are watched here,
+    // found a folder at a time without holding up the shelf; a new folder re-arms the watch so its games are seen too.
+    if (!paths.isDir(d)) { romMissing.add(d); continue; }
+    watchTree(d, gen, { quietName, poke: () => { poke(); clearTimeout(romRearmT); romRearmT = setTimeout(() => { romWatchKey = null; watchRoms(); }, 20000); } }).then(n => { if (gen === romWatchGen && romMissing.has(d)) { romMissing.delete(d); log('Games folder is back, watching it:', d); poke(); } if (n >= WATCH_MAX) log('Games folder watch: stopped at', WATCH_MAX, 'folders in', d); });
+  }
   // (beta.9) a folder that isn't there yet (its drive not plugged in) is tried again every minute; once it's there, it's
   // watched and the shelf looks at it at once
   for (const d of [...romMissing]) if (!dirs.has(d)) romMissing.delete(d);
@@ -2332,7 +2434,7 @@ function startUp() {
   stremio.init({ log, fanartKey: () => (cfg && cfg.keys && cfg.keys.fanart) || '', artDir: path.join(app.getPath('userData'), 'stremio-art'), fetchBuf: async url => { const r = await net.fetch(url); if (r.status === 404) return null; if (!r.ok) throw new Error('HTTP ' + r.status); return Buffer.from(await r.arrayBuffer()); } }); // null = really not there; other failures throw, so nothing "missing" is cached for them
   icons.init(app.getPath('userData'), log);
   x360.init(app.getPath('userData'), log);
-  steamart.init(app.getPath('userData'), log); pcgames.init(app.getPath('userData'), log); pccovers.init({ dataDir: app.getPath('userData'), log, fileUrl, fetchImage, steamgrid: require('./main/steamgrid'), steamCover: id => steamart.local(id).front, match: covers.sgMatch, steamSearch: (t, exact) => pcgames.steamSearch(t, exact) });
+  steamart.init(app.getPath('userData'), log); pcgames.init(app.getPath('userData'), log); if (linux.isLinux) linuxpc.init({ dataDir: app.getPath('userData'), appRoot: paths.appRoot(), log }); pccovers.init({ dataDir: app.getPath('userData'), log, fileUrl, fetchImage, steamgrid: require('./main/steamgrid'), steamCover: id => steamart.local(id).front, match: covers.sgMatch, steamSearch: (t, exact) => pcgames.steamSearch(t, exact) });
   wiiumanual.init(app.getPath('userData'), log);
   ra.init(app.getPath('userData'), log); ra.setCredentials(cfg.ra && cfg.ra.enabled !== false ? cfg.ra.user : '', cfg.ra && cfg.ra.key);
   manuals.init(log); archive.init(log); manuals.setStore(path.join(app.getPath('userData'), 'manual-auto.json')); manuals.setRejectStore(path.join(app.getPath('userData'), 'manual-rejects.json'));

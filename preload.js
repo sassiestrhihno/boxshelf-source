@@ -8,8 +8,8 @@ contextBridge.exposeInMainWorld('boxshelf', {
   // (Linux / Steam Deck: no power menu, in-game Home menu, Windows emulator-settings fixes, start-with-Windows, Dolphin IPL
   // setup, RetroArch auto-config or taskbar switch there yet)
   platform: process.platform === 'linux'
-    ? { os: 'linux', caps: { steam: true, power: false, homeMenu: false, emuSettings: false, autostart: false, displays: true, folders: true, companionServer: true, winMode: false, dolphinIpl: false, raAutoConfig: false } }
-    : { os: 'windows', caps: { steam: true, power: true, homeMenu: true, emuSettings: true, autostart: true, displays: true, folders: true, companionServer: true, winMode: true, dolphinIpl: true, raAutoConfig: true } },
+    ? { os: 'linux', caps: { steam: true, power: false, homeMenu: false, emuSettings: false, autostart: false, displays: true, folders: true, companionServer: true, winMode: false, dolphinIpl: false, raAutoConfig: false, winStores: false } }
+    : { os: 'windows', caps: { steam: true, power: true, homeMenu: true, emuSettings: true, autostart: true, displays: true, folders: true, companionServer: true, winMode: true, dolphinIpl: true, raAutoConfig: true, winStores: true } },
   getConfig: () => call('config:get'),
   openExternal: url => call('app:openExternal', { url }),
   updateCheck: force => call('app:updateCheck', { force: !!force }), // (1.82) { current, latest, newer, url, links } or { error }
@@ -47,6 +47,12 @@ contextBridge.exposeInMainWorld('boxshelf', {
   launchPc: id => call('launch:pc', { id }), // (beta.4) Epic, Quiver and hand-added games, by id
   findQuiver: () => call('pc:findQuiver'),
   pcStatus: () => call('pc:status'),
+  // (Linux) Settings → PC games: Wine / Proton and the Epic account (main/linuxpc.js); games named by Epic's app name only
+  pcLinux: () => call('pc:linux'),
+  epicSignIn: () => call('epic:signIn'), epicSignOut: () => call('epic:signOut'), epicLibrary: () => call('epic:library'),
+  epicInstall: (appName, title, update) => call('epic:install', { appName, title, update: !!update }), epicCancel: () => call('epic:cancel'),
+  epicUninstall: appName => call('epic:uninstall', { appName }), epicJob: () => call('epic:job'),
+  onEpicJob: fn => { const h = (_e, j) => fn(j); ipcRenderer.on('epic:job', h); return () => ipcRenderer.removeListener('epic:job', h); },
   // (beta.5) a PC game's cover picker
   pcCoverOptions: (id, term) => call('pccover:options', { id, term }),
   pcCoverUse: (id, key) => call('pccover:use', { id, key }),

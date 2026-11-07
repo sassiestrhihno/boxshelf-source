@@ -49,7 +49,12 @@ piece is a new module or a `process.platform === 'linux'` branch.
 
 ### Phase 4: polish
 - Power actions (`systemctl suspend / reboot / poweroff`), autostart (`~/.config/autostart` .desktop file), the
-  problem report zip in JS, Heroic (Epic/GOG on Linux) as a PC source, file pickers without the `.exe` filter.
+  problem report zip in JS, GOG through Heroic as a PC source, file pickers without the `.exe` filter.
+- Done: PC games without Steam (`main/linuxpc.js`). Windows games run through Wine or Proton (the builds Steam, Heroic,
+  Lutris and the distro installed; Proton through `umu-run` when it's there), each in a Wine prefix of its own. Epic
+  Games through legendary: sign in with Epic's page, the account's library, install / update / uninstall, and Play,
+  with Heroic's legendary folder and per-game Wine settings shared when Heroic is set up. Test:
+  `xvfb-run -a node linux/ci/pc-test.js <AppImage>`.
 
 ## Not on Linux (hidden there)
 - Kyty (PS5, Windows only), Xenia, Stremio's WebView2 sign-in, the DolphinBar Wii remote reader, exe icons.

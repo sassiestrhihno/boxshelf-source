@@ -35,5 +35,7 @@ fs.writeFileSync(idx, html.replace(CSP[0], CSP_A + '\n<script src="android-early
   if (!h.includes(at)) throw new Error('index.html has no android-settings.js tag; update copy-web.js');
   fs.writeFileSync(idx, h.replace(at, '<script src="android-ra.js"></script>\n' + at)); }
 // (0.3.5) the extra shelf themes moved into renderer/ (themes-extra.js/.css, 1.75): index.html loads them on both platforms
+// shared/ sits beside index.html in www/ (the desktop page loads it from ../shared/)
+fs.writeFileSync(idx, fs.readFileSync(idx, 'utf8').replace(/src="\.\.\/shared\//g, 'src="shared/'));
 let n = 0; (function count(d) { for (const e of fs.readdirSync(d, { withFileTypes: true })) e.isDirectory() ? count(path.join(d, e.name)) : n++; })(dst);
 console.log(`copied renderer -> www (${n} files)`);

@@ -1135,7 +1135,7 @@ async function pickBuild(g){
   if(!r||!r.builds||!r.builds.length)return "";
   if(bp||(mode!=="browse"&&mode!=="details"))return null;
   // (1.82) a .nup game and no build that opens .nup: say so, instead of a picker where every row is greyed out
-  if(r.nup&&!r.builds.some(b=>b.nup)){play_("error");toast("None of your Switch 2 builds can open .nup games. Add a newer Eglantine build.");return null}
+  if(r.nup&&!r.builds.some(b=>b.nup)){play_("error");toast("None of your Switch 2 builds can open .nup games. Add a newer build of your Switch 2 emulator.");return null}
   return new Promise(res=>{
     const el=document.createElement("div");el.className="buildpick";
     const card=document.createElement("div");card.className="bp-card";card.setAttribute("role","dialog");card.setAttribute("aria-label","Choose a build");
@@ -1793,7 +1793,7 @@ async function launchNow(g,underInsert){if(PV){pvStop();pvBackStop()} /* (beta.7
     // (beta.7) Ubisoft Connect, the EA app and the Xbox app too (PC_EXT): handed over the same way
     if(g.kind==="steam"&&PC_EXT[g.source]){const L=PC_EXT[g.source];showLaunch("Starting through "+L,g.title,L);await wait(650);if(mode!=="launch"||!launchCtx||launchCtx.g!==g)return;await api.launchPc(g.id);if(api.historyTouch)api.historyTouch(g.id).catch(()=>{});
       clearTimeout(launchTimer);launchTimer=setTimeout(()=>note(["Running through the "+L+". Press ",{b:btnWord("back")}," or ",{b:"Esc"}," to return to the shelf."]),1800);return}
-    if(g.kind==="steam"&&g.source&&g.source!=="steam"){runningKind="app";showLaunch(g.source==="quiver"?"Starting from Quiver":g.source==="gog"?"Starting from GOG":"Starting",g.title,g.title);await wait(650);if(mode!=="launch"||!launchCtx||launchCtx.g!==g)return;const r=await api.launchPc(g.id);sendHomeMeta(g);if(api.historyTouch)api.historyTouch(g.id).catch(()=>{});
+    if(g.kind==="steam"&&g.source&&g.source!=="steam"){runningKind="app";showLaunch(g.source==="quiver"?"Starting from Quiver":g.source==="gog"?"Starting from GOG":g.source==="epic"?"Starting from Epic Games":"Starting",g.title,g.title);await wait(650);if(mode!=="launch"||!launchCtx||launchCtx.g!==g)return;const r=await api.launchPc(g.id);sendHomeMeta(g);if(r&&r.notice)setTimeout(()=>toast(r.notice),2500);if(api.historyTouch)api.historyTouch(g.id).catch(()=>{});
       if(r&&r.cover){const bar=$("launch").querySelector(".l-bar i");bar.style.animation="none";void bar.offsetWidth;bar.style.animation=`load ${Math.min(r.cover,8)}s cubic-bezier(.5,0,.2,1) forwards`}}
     else if(g.kind==="steam"){showLaunch("Starting through Steam",g.title,`steam://rungameid/${g.appid}`);await wait(650);if(mode!=="launch"||!launchCtx||launchCtx.g!==g)return; /* backed out during the fade */await api.launchSteam(g.appid);if(api.historyTouch)api.historyTouch(g.id).catch(()=>{});
       clearTimeout(launchTimer);launchTimer=setTimeout(()=>note(["Running through Steam. Press ",{b:btnWord("back")}," or ",{b:"Esc"}," to return to the shelf."]),1800);return}
@@ -2376,6 +2376,8 @@ const PC_SRC={epic:"Epic Games",quiver:"Quiver",custom:"Custom",gog:"GOG",ubisof
   gog:"Installed with GOG Galaxy. GOG games have no copy protection: Boxshelf starts it itself; updates stay in GOG Galaxy.",ubisoft:"Starts through Ubisoft Connect, so its sign-in and cloud saves work as usual.",ea:"Starts through the EA app, so its sign-in and cloud saves work as usual.",xbox:"An Xbox app game (Game Pass included). It starts like any Xbox app game, signed in with your Microsoft account."};
 // (beta.7) the stores whose games are handed to their own launcher (Back returns to the shelf while they run)
 const PC_EXT={epic:"Epic Games Launcher",ubisoft:"Ubisoft Connect",ea:"EA app",xbox:"Xbox app"};
+// (Linux) Epic's games are started by Boxshelf itself, through Wine / Proton (main/linuxpc.js): like any game, not handed over
+if(window.bsPlatform&&bsPlatform.os==="linux"){delete PC_EXT.epic;PC_HOW.epic="Signed in to Epic through legendary (shared with Heroic when it's set up). Boxshelf starts it through Wine / Proton, with the quit combo like any game.";PC_HOW.custom="Added by you in Settings → Custom games. Windows programs run through Wine / Proton, each in a Wine prefix of its own."}
 // a quick rainbow lick over the tile as each cover flips past
 function flick(el){if(!el)return;el.classList.remove("flick");void el.offsetWidth;el.classList.add("flick");setTimeout(()=>el.classList.remove("flick"),520)}
 const coverOf=(sh,g)=>(g.art&&g.art.front)||Covers.front(STYLE[sh.id]||STYLE.media,g);
@@ -3880,7 +3882,7 @@ function hideGame(g){if(!g||!isGame(g))return;const id=String(g.id),title=g.titl
 // a game's own emulator build (Details → Emulator): chosen in main (a native picker, like Settings' paths), stored in
 // cfg.games by game id; launching uses it instead of the shelf's emulator
 const gameEmu=g=>{const o=g&&cfgInfo&&cfgInfo.config.games&&cfgInfo.config.games[g.id];return o&&o.emulator||""};
-const emuLabel=p=>{const parts=String(p).split(/[\\/]/).filter(Boolean);return parts.length>1?parts[parts.length-2]:parts[0]||p};
+const emuLabel=p=>window.BSEmuName?BSEmuName.label(p):(String(p).split(/[\\/]/).filter(Boolean).slice(-2)[0]||p); // ("Lichii · K code AI": the emulator and its build, shared/emuname.js)
 async function chooseGameEmu(g){if(!g||g.kind!=="rom"||!api.gameEmulator)return;try{const r=await api.gameEmulator(g.id);if(r&&r.games&&cfgInfo)cfgInfo.config.games=r.games;if(r&&r.ok){play_("toast");const own=gameEmu(g);toast(own?`${g.title} now runs in ${emuLabel(own)}`:`${g.title} runs in the shelf's emulator again`)}if(mode==="details"&&curGame()===g)fillDetails()}catch(e){toast(String(e&&e.message||e))}}
 (function(){const c=$("dActEnd");if(!c||$("dGameEmu"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dGameEmu";b.textContent="Emulator";b.title="Run this game in a different emulator build than the rest of its shelf";b.addEventListener("click",()=>chooseGameEmu(curGame()));c.before(b)})();
 // the Details panel's "Box art" button (1.67): opens Settings → Art & manuals straight at this game's mix (front, back,

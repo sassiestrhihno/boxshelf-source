@@ -7,7 +7,10 @@
 //   - the title comes from a known title id, else the folder / file name; the title id from main.npdm
 //   - builds(): every Eglantine build in the Switch 2 emulator folders, for the "which build?" choice at Play
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { execFile } = require('child_process');
+const emuName = require('../shared/emuname'); // "Lichii · K code AI": the emulator and its build, for every label
 
 const isFile = p => { try { return fs.statSync(p).isFile(); } catch { return false; } };
 const dirs = d => { try { return fs.readdirSync(d, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name); } catch { return []; } };
@@ -94,13 +97,53 @@ function info(file) { return { title: title(file), titleId: titleId(file), folde
 const nupMemo = new Map(); let memoFile = '', memoLoaded = false;
 function setMemoFile(f) { memoFile = f; }
 function loadMemo() { if (memoLoaded) return; memoLoaded = true; try { const o = JSON.parse(fs.readFileSync(memoFile, 'utf8')); for (const [k, v] of Object.entries(o || {})) if (typeof v === 'boolean') nupMemo.set(k, v); } catch {} }
+// does a file contain this text? Read in 4 MB pieces (a build is 100+ MB: reading it whole held all of it in memory)
+async function fileHas(f, text) {
+  const needle = Buffer.from(text, 'latin1'), CH = 4 << 20; let fh;
+  try {
+    fh = await fs.promises.open(f, 'r'); const buf = Buffer.alloc(CH + needle.length); let pos = 0, keep = 0;
+    for (;;) { const { bytesRead } = await fh.read(buf, keep, CH, pos); if (!bytesRead) return false; const n = keep + bytesRead;
+      if (buf.subarray(0, n).includes(needle)) return true; keep = Math.min(needle.length - 1, n); buf.copy(buf, 0, n - keep, n); pos += bytesRead; }
+  } catch { return false; } finally { if (fh) await fh.close().catch(() => {}); }
+}
+// an AppImage (its runtime is an ELF with "AI" 0x02 at byte 8, or the name says so): the program is inside a compressed
+// SquashFS, so its text never shows in the file itself. Its own --appimage-extract unpacks the programs (usr/bin, else
+// everything) into a folder of our own, without starting the emulator; those are searched, then the folder goes.
+// true / false, or null when it couldn't be looked into (an old type 1 AppImage, no room in the temp folder).
+async function isAppImage(exe) {
+  if (/\.appimage$/i.test(exe)) return true;
+  let fh; try { fh = await fs.promises.open(exe, 'r'); const b = Buffer.alloc(11); await fh.read(b, 0, 11, 0); return b[0] === 0x7f && b.toString('latin1', 1, 4) === 'ELF' && b.toString('latin1', 8, 10) === 'AI'; } catch { return false; } finally { if (fh) await fh.close().catch(() => {}); }
+}
+function filesUnder(d, out = [], max = 400) {
+  let ents = []; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return out; }
+  for (const e of ents) { if (out.length >= max) break; const p = path.join(d, e.name); if (e.isDirectory()) filesUnder(p, out, max); else if (e.isFile()) out.push(p); }
+  return out;
+}
+async function appImageHas(exe, text) {
+  let dir = ''; try { dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'boxshelf-build-')); } catch { return null; }
+  const unpack = args => new Promise(res => { try { const env = { ...process.env }; delete env.APPIMAGE_EXTRACT_AND_RUN;
+    execFile(exe, args, { cwd: dir, env, timeout: 120000, maxBuffer: 8 << 20 }, err => res(!err)); } catch { res(false); } });
+  try {
+    const root = path.join(dir, 'squashfs-root');
+    await unpack(['--appimage-extract', 'usr/bin/*']);
+    let files = filesUnder(root);
+    if (!files.length) { await unpack(['--appimage-extract']); files = filesUnder(root, [], 4000); }
+    if (!files.length) return null;
+    for (const f of files) if (await fileHas(f, text)) return true;
+    return false;
+  } finally { fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {}); }
+}
+// (the key's v2: answers from before AppImages were looked into said "no" for every AppImage build)
 async function opensNup(exe, st) {
-  loadMemo(); const key = exe.toLowerCase() + '|' + Math.round(st.mtimeMs) + '|' + st.size; if (nupMemo.has(key)) return nupMemo.get(key);
-  let yes = false; try { const b = await fs.promises.readFile(exe); yes = b.includes('.nup', 0, 'latin1'); } catch {}
-  nupMemo.set(key, yes);
+  loadMemo(); const key = 'v2|' + exe.toLowerCase() + '|' + Math.round(st.mtimeMs) + '|' + st.size; if (nupMemo.has(key)) return nupMemo.get(key);
+  let yes = await isAppImage(exe) ? await appImageHas(exe, '.nup') : await fileHas(exe, '.nup');
+  // couldn't look: let the emulator decide rather than turn the game away
+  if (yes === null) yes = true; else nupMemo.set(key, yes);
   if (memoFile) { const o = {}; for (const [k, v] of [...nupMemo].slice(-200)) o[k] = v; fs.promises.writeFile(memoFile, JSON.stringify(o)).catch(() => {}); }
   return yes;
 }
+// several builds looked into at once (the first "which build?" after new builds were added took one AppImage at a time)
+async function mapLimit(items, n, fn) { const out = new Array(items.length); let i = 0; await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k], k); } })); return out; }
 // A build folder: eglantine.exe, or (forks that rename their program: lichii.exe, orchid.exe…) eden-cli.exe beside one
 // other program, the biggest that isn't a helper (the command-line tool, the VC++ installer, updaters, uninstallers)
 const HELPER_EXE = /^(eden-cli|vc_?redist.*|.*updater.*|.*update\.exe$|unins.*|uninstall.*|crashpad.*|qtwebengineprocess)(\.exe)?$/i;
@@ -111,29 +154,26 @@ function buildExe(dir, files) {
   for (const e of files) { if (!/\.exe$/i.test(e.name) || HELPER_EXE.test(e.name)) continue; const p = path.join(dir, e.name); let s = 0; try { s = fs.statSync(p).size; } catch { continue; } if (s > size) { best = p; size = s; } }
   return best;
 }
+// (Linux) a Switch 2 build is an AppImage (Eglantine.AppImage, Lichii_92.AppImage…), often several side by side in one
+// folder; the other consoles' emulators kept in the same place are left out
+const NOT_SW2 = /^(eden|citron|yuzu|suyu|sudachi|ryujinx|ryubing|dolphin|cemu|pcsx2|rpcs3|shadps4|ppsspp|xenia|azahar|lime3ds|citra|duckstation|retroarch|melonds|mgba|flycast|rmg|xemu|boxshelf)/i;
+const linuxBuilds = (dir, files) => process.platform === 'win32' ? [] : files.filter(e => /\.appimage$/i.test(e.name) && !NOT_SW2.test(e.name)).map(e => path.join(dir, e.name));
 function exesUnder(dir, depth, out) {
   let ents = []; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
-  const exe = buildExe(dir, ents.filter(e => e.isFile())); if (exe) out.push(exe);
+  const files = ents.filter(e => e.isFile()), exe = buildExe(dir, files); if (exe) out.push(exe);
+  out.push(...linuxBuilds(dir, files));
   for (const e of ents) {
     // (1.82: romfs / exefs / base / updates: an unpacked game's data, when games and builds share a "Switch 2" folder)
     if (e.isDirectory() && depth > 0 && !/^(user|licenses?|plugins|platforms|styles|imageformats|cache|log|sdmc|nand|load|shader|generic|iconengines|networkinformation|tls|translations|romfs|exefs|base|updates?|dlc)$/i.test(e.name)) exesUnder(path.join(dir, e.name), depth - 1, out);
   }
   return out;
 }
-// "eglantine-windows-x86_64-ec667e25f9ab…" → "ec667e2", "selevet-eglantine-performance-6-windows-x86_64" → "performance 6",
-// "PokeDinner-Eglantine-2.1.0" → "PokeDinner 2.1.0", "eglantine-v0.6.0-windows-x86_64mariotennis" → "v0.6.0 mariotennis"
-function buildName(folder) {
-  let n = String(folder || '');
-  const hash = /(?:^|[-_])([0-9a-f]{40})$/i.exec(n); if (hash) return hash[1].slice(0, 7);
-  n = n.replace(/windows?|win64|x86_64|x64/gi, ' ').replace(/\b(selevet|eglantine)\b/gi, ' ').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return n ? (/^[a-z]{3,}\b/.test(n) ? n.charAt(0).toUpperCase() + n.slice(1) : n) : 'Eglantine'; // ("lichii pgo" → "Lichii pgo"; "v0.6.0 …" stays)
-}
 const GROUP_WORDS = /\b(forks?|builds?)\b/gi;
 // (1.82) one build outside the build folders (a game's own choice, the shelf's own build), described like the others
 async function buildOf(exe, hint) {
   let st; try { st = fs.statSync(exe); } catch { return null; }
-  const name = buildName(path.basename(path.dirname(exe)));
-  return { exe, group: '', name, label: hint ? `${hint} · ${name}` : name, date: Math.round(st.mtimeMs), nup: await opensNup(exe, st) };
+  const name = emuName.label(exe); // (the emulator and its build: "Lichii · K code AI", never the folder it's kept in)
+  return { exe, group: '', name, label: hint ? `${name} (${hint})` : name, date: Math.round(st.mtimeMs), nup: await opensNup(exe, st) };
 }
 // (1.82) the list is kept for 30 s: Play asks for it (the build picker), then the launch asks again, and Settings → Switch 2
 // on every visit; each walk reads up to four folders deep on the main thread. Each caller gets its own copy (one sorts it).
@@ -147,19 +187,18 @@ async function builds(roots) {
   return (await buildsCache.p).slice();
 }
 async function buildsNow(roots) {
-  const seen = new Set(), list = [];
+  const seen = new Set(), found = [];
   for (const r of roots) for (const exe of exesUnder(r, 4, [])) {
     const k = exe.toLowerCase(); if (seen.has(k)) continue; seen.add(k);
     let st; try { st = fs.statSync(exe); } catch { continue; }
     const rel = path.relative(r, path.dirname(exe)).split(path.sep).filter(Boolean);
-    // the group: the first folder under the root when the build sits deeper ("Mario tennis forks"); the build: the
-    // innermost folder that isn't just a repeat of its parent's name
+    // the group: the first folder under the root when the build sits deeper ("Mario tennis forks"); the name: the emulator
+    // and its build (shared/emuname.js), from the program's name, or its folder's when the program is just "eglantine.exe"
     const group = rel.length > 1 ? rel[0].replace(GROUP_WORDS, '').replace(/\s+/g, ' ').trim() : '';
-    let leaf = rel[rel.length - 1] || path.basename(path.dirname(exe));
-    if (rel.length > 1 && rel[rel.length - 2].toLowerCase().startsWith(leaf.toLowerCase())) leaf = rel[rel.length - 2];
-    const name = buildName(leaf);
-    list.push({ exe, group, name, label: group && !name.toLowerCase().includes(group.toLowerCase()) ? `${group} · ${name}` : name, date: Math.round(st.mtimeMs), nup: await opensNup(exe, st) });
+    const name = emuName.label(exe);
+    found.push({ exe, st, group, name, label: group && !name.toLowerCase().includes(group.toLowerCase()) ? `${group} · ${name}` : name, date: Math.round(st.mtimeMs) });
   }
+  const list = await mapLimit(found, 3, async b => { const nup = await opensNup(b.exe, b.st); delete b.st; return { ...b, nup }; });
   return list.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }) || b.date - a.date);
 }
 

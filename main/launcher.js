@@ -15,13 +15,13 @@ function buildArgs(template, rom) {
   return out.filter(a => a !== '');
 }
 
-function start(exe, args, onExit, env) { // env: the emulator's own environment (PS5: the KytyJets preset); else Boxshelf's
+function start(exe, args, onExit, env, cwd) { // env: the emulator's own environment (PS5: the KytyJets preset); else Boxshelf's. cwd: else the program's folder
   exe = exe && expand(String(exe).trim().replace(/^"(.*)"$/, '$1')); // same rules as the Settings check: %VAR%, {app}, pasted "quotes"
   if (!exe || !isFile(exe)) throw new Error(`Can't find ${exe || 'the program'}. Check its path in Settings.`);
   if (running) throw new Error('Something is already running. Close it first.');
   // detached: on Windows a normal child sits in Node's kill-on-close job object, so a Boxshelf crash or update restart
   // would take the emulator (and its unsaved game) with it. Not unref'd: the 'exit' event must still reach us.
-  const child = spawn(exe, args, Object.assign({ cwd: path.dirname(exe), windowsHide: false, stdio: 'ignore', detached: true }, env ? { env } : {}));
+  const child = spawn(exe, args, Object.assign({ cwd: cwd || path.dirname(exe), windowsHide: false, stdio: 'ignore', detached: true }, env ? { env } : {}));
   running = child;
   const started = Date.now(); let done = false, spawned = false;
   const finish = info => { if (done) return; done = true; running = null; onExit({ ...info, ms: Date.now() - started }); };
@@ -41,6 +41,8 @@ function launchEmulator(sysCfg, onExit) {
 }
 
 function launchApp(exe, onExit, args) { return start(exe, Array.isArray(args) ? args : [], onExit); }
+// (Linux) a Windows game through Wine / Proton: the runner (umu-run, proton, wine) with the game's own folder and environment
+function launchCommand(cmd, args, onExit, { env, cwd } = {}) { return start(cmd, Array.isArray(args) ? args : [], onExit, env || null, cwd); }
 
 function launchSteam(appid) {
   if (!/^\d+$/.test(String(appid))) throw new Error('Unknown Steam game.');
@@ -77,4 +79,4 @@ function closeRunning(forceAfterMs = 8000, onForce) {
   return true;
 }
 
-module.exports = { buildArgs, launchGame, launchEmulator, launchApp, launchSteam, isRunning, stopRunning, closeRunning };
+module.exports = { buildArgs, launchGame, launchEmulator, launchApp, launchCommand, launchSteam, isRunning, stopRunning, closeRunning };

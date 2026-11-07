@@ -63,7 +63,7 @@ const wait=ms=>new Promise(r=>setTimeout(r,ms));const mockDl={};
 window.boxshelf={
   // Demo platform: 'android' inside the Capacitor shell (window.Capacitor), else 'web'; ?platform=windows|android overrides for testing
   platform:(()=>{const q=(location.search.match(/[?&]platform=(\w+)/)||[])[1];const os=q||(window.Capacitor?'android':'web');const all=os==='windows';
-    return {os,caps:{steam:all,power:all,homeMenu:all,emuSettings:all,autostart:all,displays:all,folders:all,companionServer:all,winMode:all,dolphinIpl:all,raAutoConfig:all}};})(),
+    return {os,caps:{steam:all,power:all,homeMenu:all,emuSettings:all,autostart:all,displays:all,folders:all,companionServer:all,winMode:all,dolphinIpl:all,raAutoConfig:all,winStores:all}};})(),
   // Phone companion (Settings → Phone companion): a fake server state; the code is a stand-in picture (the real one is drawn in main/companion.js)
   ...(()=>{const qr='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29"><rect width="29" height="29" fill="#fff"/><path d="M4 4h7v7H4zM18 4h7v7h-7zM4 18h7v7H4zM13 13h3v3h-3zM18 18h2v2h-2zM22 21h3v3h-3z" fill="#000"/></svg>';
     let st={enabled:false,on:false,url:"",port:8730,wantPort:8730,pin:"",qr:"",error:"",note:"",locked:0,phones:[{id:"a1",name:"Pixel 7",added:Date.now()-864e5*3,seen:Date.now()-3600e3}]};

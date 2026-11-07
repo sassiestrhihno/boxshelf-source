@@ -50,7 +50,7 @@ const syncCustomThemes=()=>{for(let i=THEMES.length-1;i>=0;i--)if(/^custom-/.tes
 syncCustomThemes();
 const OFFICIAL={gc:"https://dolphin-emu.org/download/",wii:"https://dolphin-emu.org/download/",wiiu:"https://cemu.info/",sw:"https://eden-emu.dev/downloads",sw2:"https://github.com/Djihads80/Eglantine/releases",psp:"https://www.ppsspp.org/download/",ps2:"https://pcsx2.net/downloads/",ps3:"https://rpcs3.net/download",ps4:"https://shadps4.net/downloads",ps5:"https://github.com/Jetsku/KytyPS5/releases",n3ds:"https://azahar-emu.org/pages/download/",x360:"https://xenia.jp/download/",psx:"https://github.com/stenzek/duckstation/releases",nds:"https://melonds.kuribo64.net/downloads.php",nes:"https://www.retroarch.com/?page=platforms",snes:"https://www.retroarch.com/?page=platforms",n64:"https://www.retroarch.com/?page=platforms",gb:"https://www.retroarch.com/?page=platforms",gbc:"https://www.retroarch.com/?page=platforms",gba:"https://www.retroarch.com/?page=platforms",megadrive:"https://www.retroarch.com/?page=platforms",mastersystem:"https://www.retroarch.com/?page=platforms",gamegear:"https://www.retroarch.com/?page=platforms",dreamcast:"https://www.retroarch.com/?page=platforms",retroarch:"https://www.retroarch.com/?page=platforms",steam:"https://store.steampowered.com/about/",stremio:"https://www.stremio.com/downloads",nuvio:"https://github.com/NuvioMedia/NuvioDesktop"};
 const HELP={gc:"Dolphin runs GameCube games. Point to Dolphin.exe.",wii:"Dolphin also runs Wii games. It can be the same Dolphin.exe as GameCube.",
-  wiiu:"Cemu runs Wii U games: .wua, .wud / .wux or extracted game folders. Disc images need your keys.txt set up in Cemu.",sw:"Eden runs Switch games. Point to eden.exe.",sw2:"Eglantine (an Eden fork) runs Switch 2 games. Point to eglantine.exe (forks like Orchid or Lichii are found too; Build picks which one plays). Unpacked game folders work (exefs + romfs, or base + updates: the newest update is started), and .nsp / .xci.",
+  wiiu:"Cemu runs Wii U games: .wua, .wud / .wux or extracted game folders. Disc images need your keys.txt set up in Cemu.",sw:"A Switch emulator runs Switch games: Eden, Citron or Ryujinx (other yuzu forks work too). Point to its program (eden.exe, citron.exe, Ryujinx.exe, or its AppImage on Linux).",sw2:"A Switch 2 emulator runs Switch 2 games: Eglantine or any fork of it (Lichii, Orchid…). Point to its program (eglantine.exe, lichii.exe…, or its AppImage on Linux); every build is found, and Builds picks which one plays. Unpacked game folders work (exefs + romfs, or base + updates: the newest update is started), and .nsp / .xci.",
   psp:"PPSSPP runs PSP games. Point to PPSSPPWindows64.exe.",ps2:"PCSX2 runs PS2 games (.iso, .chd, .cso, .zso). It needs a PS2 BIOS of its own.",
   ps3:"RPCS3 runs PS3 games. Install the PS3 system software in RPCS3 first.",ps4:"shadPS4 runs PS4 games: folders with an eboot.bin inside.",ps5:"Kyty (KytyJets) runs PS5 games: folders with an eboot.bin inside. Boxshelf starts them with your Kyty launcher's settings (resolution, controller, add-ons folder) and the build's own preset.",
   x360:"Xenia runs Xbox 360 games: .iso discs, extracted folders, XBLA .xex files or .zar archives.",n3ds:"Azahar runs 3DS games: decrypted .3ds / .cci / .cxi, or decrypted .cia files (installed into Azahar the first time you play)."};
@@ -104,9 +104,11 @@ function conState(c){const s=sysCfg(c.id);if(s.enabled===false)return "off";retu
 // (games counted on the last scan: "13 games"; until a scan has run, the folders)
 const gameCount=id=>{const m=shelf("gameCounts");return m&&typeof m[id]==="number"?m[id]:null};
 function conStatus(c){const s=sysCfg(c.id),d=conState(c),n=s.romDirs.length,g=gameCount(c.id);
-  return d==="off"?"Shelf hidden":d==="ok"?(g!=null?`Ready · ${g} game${g===1?"":"s"}`:`Ready · ${n} folder${n===1?"":"s"}`):d==="warn"?(s.emulator?"Add a games folder":`Needs ${c.emulatorName||"its emulator"}`):"Not set up"}
+  return d==="off"?"Shelf hidden":d==="ok"?(g!=null?`Ready · ${g} game${g===1?"":"s"}`:`Ready · ${n} folder${n===1?"":"s"}`):d==="warn"?(s.emulator?"Add a games folder":`Needs ${conEmu(c)||"its emulator"}`):"Not set up"}
 // a program shown by its name ("Dolphin.exe" → "Dolphin"); the whole path stays in the row's explanation
 const progName=p=>String(p||"").split(/[\\/]/).pop().replace(/\.exe$/i,"");
+// the emulator a console uses: the one set up when it's a known emulator ("Lichii", "Citron"), else the console's usual one
+const conEmu=c=>{const e=sysCfg(c.id).emulator,k=e&&window.BSEmuName?BSEmuName.knownName(e):"";return k&&k!=="RetroArch"?k:c.emulatorName};
 const folderName=p=>{const L=String(p||"").split(/[\\/]/).filter(Boolean);return L.slice(-2).join(" › ")||String(p||"")};
 function consolesReady(){const on=consoleList().filter(c=>sysCfg(c.id).enabled!==false);return `${on.filter(c=>conState(c)==="ok").length}/${on.length}`}
 const melody=()=>voiceOf(gp("ui.soundTheme"))==="melody";
@@ -150,18 +152,19 @@ function build(){
     H("For every console"),
     A("Find emulators again",()=>detecting?"Searching…":"Search","Looks in the usual install places and your Boxshelf folder for emulators and games folders you haven't set up yet, and fills in any console that has nothing set.",runDetect,{keys:"detect scan auto find"}),
   ]},
-  {g:"Games",id:"pc",name:"PC games",ic:"pc",lead:"Your installed Steam games, on a shelf of their own.",rows:[
+  {g:"Games",id:"pc",name:"PC games",ic:"pc",lead:onLinux()?"Your Steam and Epic games on the PC shelf. Windows games play through Wine / Proton.":"Your installed Steam games, on a shelf of their own.",rows:[
     T("Show installed Steam games","steam.enabled",true,"Adds a PC shelf with every game Steam has installed. Uninstalled games are left out.",{rescan:true,keys:"steam"}),
     T("Hide Steam tools","steam.hideTools",true,"Leaves Proton, Steamworks Common Redistributables and other tools off the shelf.",{rescan:true,keys:"redistributables proton steam"}),
     F("Steam folder","steam.path","folder","The folder that contains steam.exe. Found automatically; change it only if Steam lives somewhere unusual.",{ph:"C:\\Program Files (x86)\\Steam",rescan:true,want:"dir",pickTitle:"Choose your Steam folder"}),
     A("Get Steam","Open site","Opens Steam's download page in your browser.",()=>openLink(OFFICIAL.steam)),
     // (beta.4) Epic's installs join the PC shelf (main/pcgames.js reads its install list; Play goes through its launcher)
-    T("Show installed Epic Games","pc.epic",true,"Adds the games the Epic Games Launcher has installed to the PC shelf. They start through the Epic launcher, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"epic games store fortnite launcher",sub:()=>pcCount("epic")}),
+    T("Show installed Epic Games","pc.epic",true,onLinux()?"Adds the Epic games installed with legendary to the PC shelf (Heroic's too, when it's set up). Boxshelf starts them through Wine / Proton, signed in to your Epic account.":"Adds the games the Epic Games Launcher has installed to the PC shelf. They start through the Epic launcher, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"epic games store fortnite launcher",sub:()=>pcCount("epic")}),
     // (beta.7) more stores: each one's installs join the PC shelf (main/pcgames.js storeGames)
     T("Show installed GOG games","pc.gog",true,"Adds the games GOG Galaxy has installed to the PC shelf. GOG games have no copy protection, so Boxshelf starts them itself, with the Home menu and quit combo like any game.",{rescan:true,keys:"gog galaxy store",sub:()=>pcCount("gog")}),
     T("Show installed Ubisoft games","pc.ubisoft",true,"Adds the games Ubisoft Connect has installed to the PC shelf. They start through Ubisoft Connect, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"ubisoft connect uplay store",sub:()=>pcCount("ubisoft")}),
     T("Show installed EA games","pc.ea",true,"Adds the games the EA app has installed to the PC shelf. They start through the EA app, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"ea app origin electronic arts store",sub:()=>pcCount("ea")}),
     T("Show installed Xbox games","pc.xbox",true,"Adds the games the Xbox app has installed (Game Pass included) to the PC shelf. They start like any Xbox app game, signed in with your Microsoft account.",{rescan:true,keys:"xbox game pass microsoft store",sub:()=>pcCount("xbox")}),
+    {t:"dyn",fn:linuxPcRows}, // (Linux) Wine / Proton and the Epic Games account
   ]},
   // (beta.4) the Custom shelf: Quiver Launcher's apps (recomps, ports) and any program added by hand
   {g:"Games",id:"custom",name:"Custom games",ic:"pc",lead:"Recomps, PC ports and any other program, on a Custom shelf of their own.",rows:[{t:"dyn",fn:customRows}]},
@@ -488,7 +491,7 @@ function conPages(id){
   // Switch 2 (Windows): which Eglantine build Play starts. "Ask each time" (the default) shows the list at Play; a build
   // picked here becomes the shelf's emulator and Play starts in it straight away. A game's own Details → Emulator wins.
   // (beta.3) a page of its own: every build (the list Play shows), Ask each time, and builds or folders kept elsewhere
-  if(id==="sw2"&&sw2Row())rows.splice(2,0,M("Builds","sw2-builds","Which Eglantine build starts your Switch 2 games: every build Boxshelf found (the same list Play shows), Ask each time, and builds kept in other folders.",
+  if(id==="sw2"&&sw2Row())rows.splice(2,0,M("Builds","sw2-builds","Which Switch 2 emulator build starts your Switch 2 games: every build Boxshelf found (the same list Play shows), Ask each time, and builds kept in other folders.",
     "The same list Play shows. Ask each time shows it at Play; choose a build to always start in it. A game's own choice (Details → Emulator) still comes first.",[{t:"dyn",fn:sw2BuildRows}],
     {keys:"build builds fork forks eglantine lichii orchid selevet version branch which emulator choose",btn:()=>{const b=sw2Fixed();return b?b.label||progName(b.exe):"Ask each time"},
      sub:()=>(sw2Want(),{text:sw2b==null?"Looking for builds…":sw2b.length?`${sw2b.length} build${sw2b.length===1?"":"s"} found`:"No builds found yet · add one here",cls:sw2b&&!sw2b.length?"warn":""})}));
@@ -747,6 +750,46 @@ function customRows(){if(!pcSt)setTimeout(pcStatus,0);cfg.pc=cfg.pc||{epic:true,
     rows.push(nr);
     rows.push(A("Remove "+(c.title||"this game"),"Remove","Takes it off the Custom shelf. Nothing is deleted.",()=>twice("pcx:"+i,()=>{pc.custom.splice(i,1);changed({rescan:true});toast("Removed from the Custom shelf (nothing was deleted)")},"Press again to remove it"),{ns:true,ask:"pcx:"+i}))});
   return rows}
+// (Linux) Settings → PC games: the Wine / Proton that Windows games run with, and the Epic Games account, library and installs
+// (main/linuxpc.js through legendary). lpc: what main sees (runners, the account's name, the install folder, the running install)
+const onLinux=()=>!!(window.bsPlatform&&bsPlatform.os==="linux");
+let lpc=null,lpcAsking=false,epicLib=null,epicLibAsking=false,epicSigning=false;
+function lpcLoad(force){if(lpcAsking||!api.pcLinux||(lpc&&!force))return;lpcAsking=true;Promise.resolve(api.pcLinux()).then(r=>{lpc=r||{}}).catch(()=>{lpc={}}).finally(()=>{lpcAsking=false;bump()})}
+function epicLibLoad(force){if(epicLibAsking||!api.epicLibrary||(epicLib&&!force))return;epicLibAsking=true;epicLib=null;bump();Promise.resolve(api.epicLibrary()).then(r=>{epicLib=r||{error:"Couldn't read the Epic library."}}).catch(e=>{epicLib={error:errMsg(e)}}).finally(()=>{epicLibAsking=false;bump()})}
+if(api.onEpicJob)api.onEpicJob(j=>{if(lpc)lpc.job=j;if(j&&j.state!=="installing"){if(j.state==="done"){toast(j.update?`${j.title} is up to date`:`${j.title} is installed: it's on the PC shelf`);epicLibLoad(true)}else if(j.state==="failed")toast(`${j.title}: ${j.error||"the install stopped"}`)}bump()});
+const epicPct=j=>`${(+j.pct||0).toFixed(1)}%${j.speed?" · "+j.speed:""}${j.eta?" · "+j.eta+" left":""}`;
+function linuxPcRows(){if(!onLinux()||!api.pcLinux)return[];lpcLoad();const L=lpc||{},rows=[];cfg.pc=cfg.pc||{};
+  const again=()=>{lpcLoad(true);changed({rescan:true})};
+  rows.push(H("Windows games (Wine / Proton)"));
+  rows.push(C("Run Windows games with","pc.runner",()=>[["","Best one found"],...(L.runners||[]).map(r=>[r.id,r.kind==="wine"?r.name+" (Wine)":r.name])],"",
+    "Epic games and the Windows programs on the Custom shelf run through this. Proton (GE-Proton, UMU-Proton) suits most games: it brings DXVK and VKD3D. An Epic game set up in Heroic keeps Heroic's own Wine settings unless you choose one here.",
+    {rescan:false,keys:"wine proton runner ge-proton umu windows exe compatibility",sub:()=>lpc==null?{text:"Looking…"}:!(L.runners||[]).length?{text:"No Wine or Proton found · install Wine or GE-Proton",cls:"warn"}:{text:`${L.runners.length} found${L.umu?" · Proton runs through umu-run":" · umu-run not found: Proton runs on its own"}`}}));
+  rows.push(F("Wine prefixes folder","pc.prefixDir","folder","Each Windows game gets a Wine prefix of its own (its own little Windows: saves, settings) in this folder. Empty: Boxshelf's own Prefixes folder.",{ph:L.prefixDir||"",want:"dir",pickTitle:"Choose a folder for Wine prefixes",keys:"wine prefix prefixes folder"}));
+  rows.push(H("Epic Games"));
+  if(lpc&&!L.legendary)rows.push(F("legendary","pc.legendaryPath","file","Epic games need legendary, the Epic Games client Heroic Games Launcher uses (installing Heroic brings it). Or choose a legendary program here.",{want:"file",pickTitle:"Choose the legendary program",keys:"legendary epic heroic",sub:()=>({text:"Not found",cls:"warn"})}));
+  rows.push(A("Epic Games account",()=>epicSigning?"Signing in…":L.epicAccount?"Sign out":"Sign in",
+    L.epicShared==="heroic"?"Your Epic account, shared with Heroic Games Launcher: signing in or out here does it there too, and the games Heroic installed are on the PC shelf.":"Sign in with Epic's own page. Boxshelf keeps only legendary's sign-in; your password never reaches it.",
+    async()=>{if(!L.legendary){toast("legendary not found: install Heroic Games Launcher first");return}if(epicSigning)return;
+      if(L.epicAccount){twice("epicout",async()=>{await api.epicSignOut();toast("Signed out of Epic Games");epicLib=null;again()},"Press again to sign out of Epic Games");return}
+      epicSigning=true;bump();toast("Opening Epic's sign-in page…");try{const r=await api.epicSignIn();if(r&&r.ok){toast("Signed in to Epic Games as "+r.name);epicLib=null;again()}else if(r&&r.error)toast(r.error)}catch(e){toast(errMsg(e))}finally{epicSigning=false;bump()}},
+    {ns:true,ask:"epicout",keys:"epic games account sign in login legendary heroic",sub:()=>lpc==null?{text:"Looking…"}:L.epicAccount?{text:`Signed in as ${L.epicAccount}${L.epicShared==="heroic"?" · shared with Heroic":""}`}:{text:"Not signed in",cls:"warn"}}));
+  const j=L.job;
+  rows.push(M("Epic library","epiclib","Install, update and uninstall the games on your Epic account.","Every game on your Epic account. Installed games are on the PC shelf; installs and updates run in the background, one at a time.",[{t:"dyn",fn:epicLibRows}],
+    {when:()=>!!L.epicAccount,keys:"epic library install update uninstall download games",sub:()=>j&&j.state==="installing"?{text:`${j.update?"Updating":"Installing"} ${j.title} · ${epicPct(j)}`}:{text:"Install, update and uninstall"}}));
+  rows.push(F("Epic install folder","pc.epicDir","folder","Where new Epic games are installed. Empty: Heroic's install folder when it has one, else Boxshelf's own Epic Games folder.",{ph:L.epicDir||"",want:"dir",pickTitle:"Choose where Epic games install",when:()=>!!L.epicAccount,keys:"epic install folder path"}));
+  return rows}
+function epicLibRows(){epicLibLoad();const rows=[],j=lpc&&lpc.job,busy=j&&j.state==="installing";
+  if(busy)rows.push(A(`${j.update?"Updating":"Installing"} ${j.title}`,"Cancel","It keeps going while you play or browse the shelf. Cancel stops it; legendary picks up where it stopped next time.",()=>twice("epiccancel",async()=>{await api.epicCancel();toast("Stopped")},"Press again to stop it"),{ns:true,ask:"epiccancel",sub:()=>({text:epicPct(lpc&&lpc.job||j)})}));
+  if(epicLib==null){rows.push(H("Asking Epic for your library…"));return rows}
+  if(epicLib.error){rows.push(H(epicLib.error));rows.push(A("Try again","Retry","Asks Epic for the library again.",()=>epicLibLoad(true),{ns:true}));return rows}
+  const G=epicLib.games||[],inst=G.filter(g=>g.installed),rest=G.filter(g=>!g.installed);
+  const go=(g,update)=>async()=>{if(busy){toast(`${j.title} is ${j.update?"updating":"installing"}: wait for it, or cancel it`);return}try{await api.epicInstall(g.appName,g.title,update);toast(`${update?"Updating":"Installing"} ${g.title}…`);lpcLoad(true)}catch(e){toast(errMsg(e))}};
+  rows.push(H(`Installed (${inst.length})`));
+  inst.forEach(g=>{rows.push(A(g.title,"Update","Checks Epic for an update and installs it.",go(g,true),{ns:true,keys:"update "+g.title,sub:()=>busy&&j.appName===g.appName?{text:epicPct(j)}:{text:"Installed · on the PC shelf"}}));
+    rows.push(A("Uninstall "+g.title,"Uninstall","Deletes the game's files. Its Wine prefix (saves, settings) is kept.",()=>twice("epicun:"+g.appName,async()=>{toast(`Uninstalling ${g.title}…`);try{const r=await api.epicUninstall(g.appName);toast(r&&r.ok?`${g.title} uninstalled`:`Couldn't uninstall ${g.title}`);epicLibLoad(true)}catch(e){toast(errMsg(e))}},"Press again to delete its files"),{ns:true,ask:"epicun:"+g.appName}))});
+  rows.push(H(`Not installed (${rest.length})`));
+  rest.forEach(g=>rows.push(A(g.title,"Install",`Downloads it into ${(lpc&&lpc.epicDir)||"the Epic install folder"}. It joins the PC shelf when it's done.`,go(g,false),{ns:true,keys:"install "+g.title,sub:()=>busy&&j.appName===g.appName?{text:epicPct(j)}:null})));
+  return rows}
 const sw2Low=x=>String(x||"").toLowerCase();
 function sw2Fixed(){const c=sysCfg("sw2");if(c.askBuild!==false||!c.emulator)return null;return (sw2b||[]).find(b=>sw2Low(b.exe)===sw2Low(c.emulator))||{exe:c.emulator,label:progName(c.emulator)}}
 let sw2Asking=0,sw2In=false; // (the newest ask wins; sw2In: one is on its way)
@@ -762,9 +805,9 @@ function sw2BuildRows(){sw2Want();const c=sysCfg("sw2"),fx=sw2Fixed(),L=sw2b||[]
     rows.push(A(b.label,()=>on()?"✓ Always":"Always use",`Always start Switch 2 games in this build.\n${b.exe}`,()=>choose(b.exe),
       {ns:true,keys:"build fork "+b.label,sub:()=>({text:`${day(b.date)}${b.nup?" · opens .nup":""}${first()?" · Play offers it first":""}`})}))});
   rows.push({t:"head",text:"Builds kept somewhere else"});
-  rows.push(A("Add a folder of builds","Browse…","A folder holding several builds (your forks). Boxshelf looks four folders deep inside it.",async()=>{const f=await pick({kind:"folder",title:"Choose a folder of Eglantine builds"}),d=typeof f==="string"?f:f&&f.path;if(!d)return;
+  rows.push(A("Add a folder of builds","Browse…","A folder holding several builds (your forks). Boxshelf looks four folders deep inside it.",async()=>{const f=await pick({kind:"folder",title:"Choose a folder of Switch 2 emulator builds"}),d=typeof f==="string"?f:f&&f.path;if(!d)return;
     const a=Array.isArray(c.buildDirs)?c.buildDirs:[];if(a.some(x=>sw2Low(x)===sw2Low(d)))return toast("That folder is already in the list");c.buildDirs=[...a,d].slice(0,20);changed(null);sw2Reload();toast("Looking for builds in "+folderName(d))}));
-  rows.push(A("Add a build","Browse…","One build's program (eglantine.exe, lichii.exe, orchid.exe…), wherever it is.",async()=>{const f=await pick({kind:"file",title:"Choose an Eglantine build",filters:[{name:"Programs",extensions:["exe"]}]}),x=typeof f==="string"?f:f&&f.path;if(!x)return;
+  rows.push(A("Add a build","Browse…","One build's program (eglantine.exe, lichii.exe, orchid.exe…, or an AppImage on Linux), wherever it is.",async()=>{const f=await pick({kind:"file",title:"Choose a Switch 2 emulator build",filters:[{name:"Programs",extensions:["exe"]}]}),x=typeof f==="string"?f:f&&f.path;if(!x)return;
     const a=Array.isArray(c.buildExes)?c.buildExes:[];if(a.some(y=>sw2Low(y)===sw2Low(x))||L.some(b=>sw2Low(b.exe)===sw2Low(x)))return toast("That build is already in the list");c.buildExes=[...a,x].slice(0,20);changed(null);sw2Reload();toast("Build added")}));
   const drop=(k,i,what)=>{const a=(c[k]||[]).slice();a.splice(i,1);c[k]=a;changed(null);sw2Reload();toast(what+" removed from the list (nothing was deleted)")};
   (Array.isArray(c.buildDirs)?c.buildDirs:[]).forEach((d,i)=>rows.push(A("Folder · "+folderName(d),"Remove",`Builds in this folder are listed. Remove takes it off the list; nothing is deleted.\n${d}`,()=>twice("sw2d:"+i,()=>drop("buildDirs",i,"Folder"),"Press again to remove this folder"),{ns:true,ask:"sw2d:"+i})));
@@ -2215,7 +2258,7 @@ function renderPage(){
       if(r.t==="head"){if(r.text){const d=document.createElement("div");d.className="bss-head";d.innerHTML=`<span>${esc(r.text)}</span>${r.em?`<em>${esc(r.em()||"")}</em>`:""}`;d._r=r;list.append(d)}return}
       const idx=k++;
       if(r.t==="consoles"){const wrap=document.createElement("div");wrap.className="bss-consoles";
-        tileList().forEach((c,j)=>{const d=document.createElement("div");d.className="bss-ctile "+(conState(c)||"none");d.innerHTML=`<b>${esc(c.name)}</b><span>${esc(c.emulatorName||"")}</span><em>${esc(conStatus(c))}</em>`;
+        tileList().forEach((c,j)=>{const d=document.createElement("div");d.className="bss-ctile "+(conState(c)||"none");d.innerHTML=`<b>${esc(c.name)}</b><span>${esc(conEmu(c)||"")}</span><em>${esc(conStatus(c))}</em>`;
           d.onmouseenter=()=>{if(device==="mouse"&&focus!=="osk"&&!edit&&!(focus==="page"&&rowI===idx&&ci===j)){focus="page";rowI=idx;ci=j;render()}};
           d.onclick=()=>{if(edit)commitEdit();ci=j;rowI=idx;focus="page";openConsole(c.id)};wrap.append(d)});
         list.append(wrap);rowEls[idx]=wrap;gridEl=wrap;return}
@@ -2264,7 +2307,7 @@ function renderInfo(){const r=curRow(),s=sec();E.info.classList.toggle("open",in
   if(!r){E.ih.textContent=s.name;E.ip.textContent=s.lead||"";E.im.textContent="";E.is.innerHTML="";E.it.innerHTML=`<div class="pv">${device==="pad"?"Right or "+btnName("a"):"→ or Enter"} opens this page</div>`;return}
   const R=r.t==="result"?r.row:r,c=r.t==="consoles"?tileList()[ci]:null;
   E.ih.textContent=c?c.name:r.label;
-  E.ip.textContent=c?`Uses ${c.emulatorName||"its emulator"}. ${conStatus(c)}.`:(r.info||"");
+  E.ip.textContent=c?`Uses ${conEmu(c)||"its emulator"}. ${conStatus(c)}.`:(r.info||"");
   if(c)st=stHtml(conState(c)==="ok"?"ok":conState(c)==="warn"?"warn":"none",conStatus(c));
   E.im.textContent=R&&(typeof R.more==="function"?R.more():R.more)||"";
   if(R&&R.status){const x=svcState(R.status);st=svcChip(R.status);if(x.at&&(x.state==="ok"||x.state==="fail"))meta.push(["",`Checked ${when(x.at)}`])}
