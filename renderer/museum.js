@@ -258,11 +258,11 @@ window.Museum = (() => {
     if (old) { old.traverse(n => { if (n.geometry) n.geometry.dispose(); if (n.material) { [].concat(n.material).forEach(m => { const mm = m.map; if (mm && !(mm.userData && mm.userData.url)) mm.dispose(); m.dispose(); }); } }); (old.userData.texs || []).forEach(unref); wall.remove(old); }
   }
   // settings from the shelf: any subset of ROOM_DEF's keys
-  function setRoom(o) { const prev = Object.assign({}, room), ch = ks => ks.some(k => room[k] !== prev[k]); Object.assign(room, o || {}); applyLight(); if (ch(['wall', 'floor', 'shelf'])) applyRoomSurfaces(true); if (ch(['bench', 'plinths', 'ropes', 'posters'])) { buildExtras(); shadowDirty = true; } /* only what changed is rebuilt (each Room-menu step used to rebuild the extras) */ if (!roomObj) return;
+  function setRoom(o) { const prev = Object.assign({}, room), ch = ks => ks.some(k => room[k] !== prev[k]); Object.assign(room, o || {}); applyLight(); if (ch(['wall', 'floor', 'shelf'])) applyRoomSurfaces(true); if (ch(['bench', 'plinths', 'ropes', 'posters'])) { buildExtras(); shadowDirty = true; if (wide && !gals().length && isGalSel(wideSel)) { gaze = null; wideSel = tv ? tvIdx() : Math.min(Math.max(0, rowI), rows.length - 1); hooks.onSelect && hooks.onSelect(current()); } } /* only what changed is rebuilt (each Room-menu step used to rebuild the extras) */ if (!roomObj) return;
     // the Retro TV in or out, or a new stand / size / place: rebuilt at once (the reading corner moves for a TV in the middle,
     // the gallery pieces step aside), and a short look at it from the Room menu; its picture settings apply on the next frame
     const tvNow = !!(o && 'tv' in o ? o.tv : tvOn), lay = tvNow !== tvOn || (tvNow && ch(['tvStand', 'tvSize', 'tvPos'])), rackMoves = (tvNow && room.tvPos === 'centre') !== (tvOn && prev.tvPos === 'centre') || (tvNow && room.tvPos === 'centre' && ch(['tvStand', 'tvSize']));
-    if (lay) { const wasSel = wide && isTvSel(wideSel); tvOn = tvNow; if (!tvOn && tvView) { tvView = false; wide = true; wideSel = 0; } if (rackMoves && rack) setLibrary(lastLib); else { buildTV(); buildExtras(); } if (!tvOn) tvPeekAt = -1e9; else if (roomView) showTv(); if (wide) wideSel = wasSel && tv ? wideCount() - 1 : Math.min(wideSel, wideCount() - 1); hooks.onSelect && hooks.onSelect(current()); }
+    if (lay) { const wasSel = wide && isTvSel(wideSel); tvOn = tvNow; if (!tvOn && tvView) { tvView = false; wide = true; wideSel = 0; } if (rackMoves && rack) setLibrary(lastLib); else { buildTV(); buildExtras(); } if (!tvOn) tvPeekAt = -1e9; else if (roomView) showTv(); if (gaze) { gaze = null; } if (wide && isGalSel(wideSel) && !gals().length) wideSel = tv ? tvIdx() : Math.min(Math.max(0, rowI), rows.length - 1); if (wide) wideSel = wasSel && tv ? tvIdx() : wasSel ? Math.min(Math.max(0, rowI), rows.length - 1) : Math.max(0, Math.min(wideSel, wideCount() - 1)); hooks.onSelect && hooks.onSelect(current()); }
   }
   function showTv() { if (tv) { tvPeekAt = performance.now(); lastInput = woke(); } }
   // far rows get a small printed spine (a quarter of the pixels) so every case on the wall always shows its title;
@@ -892,10 +892,19 @@ window.Museum = (() => {
   let roomView = false, snapCam = false;
   // the wide view: the stick moves a soft gold frame between the shelves and the racks; A zooms in on the one it's on
   let wideSel = 0, wideFrame = null; // 0..rows-1: a shelf; rows + u: rack unit u
-  const wideCount = () => rows.length + (rack && rack.units ? rack.units.length : 0) + (tv ? 1 : 0);
-  const isTvSel = i => !!tv && i === wideCount() - 1;
+  // shelves, rack units, then the TV (the old range, now its own count: the TV is no longer the last entry) and,
+  // after it, one entry per side display — the plinths at each end of the room twice their margin away from the wall
+  const wideN = () => rows.length + (rack && rack.units ? rack.units.length : 0) + (tv ? 1 : 0);
+  const tvIdx = () => tv ? wideN() - 1 : -1;
+  const galXs = () => { const tvW = tvOn ? tvDims().W + 1.05 : 0, s = tvSide(); // the same spots buildExtras puts the side pieces at
+    return [-2.05 - (s === 'left' ? tvW : 0), (roomObj && roomObj.rackEnd || roomObj && roomObj.maxW || wallW) + 2.05 + (s === 'right' ? tvW : 0)]; };
+  const gals = () => room.plinths && roomObj ? galXs() : [];
+  const wideCount = () => wideN() + (gals().length ? 2 : 0);
+  const isTvSel = i => !!tv && i === tvIdx();
+  const isGalSel = i => !!gals().length && i >= wideN();
   function wideBox(i) {
     const plankT = .055; if (isTvSel(i)) return tvBox();
+    if (isGalSel(i)) { const px = galXs()[i - wideN()], fy = roomObj.bottom - .4; return { x0: px - .5, x1: px + .5, y0: fy - .05, y1: fy + 1.6, z: 1.12, label: 'Display case', sub: 'a favourite under glass' }; }
     if (i < rows.length) { const r = rows[i]; return { x0: -.47, x1: (roomObj ? roomObj.maxW : wallW) + .47, y0: r.y - H / 2 - plankT - .03, y1: r.y + ROW - H / 2 - plankT + .02, label: r.name, sub: `${r.games.length} game${r.games.length === 1 ? '' : 's'}` }; }
     const u = rack && rack.units[i - rows.length]; if (!u) { const r = rows[Math.max(0, Math.min(rows.length - 1, rowI))] || { y: 0 }; return { x0: -.47, x1: (roomObj ? roomObj.maxW : wallW) + .47, y0: r.y - H / 2 - plankT - .03, y1: r.y + ROW - H / 2 - plankT + .02, label: r.name || '', sub: '' }; }
     const plankT2 = .055; let top = ROW - H / 2 + .1, bot = rows[rows.length - 1].y - H / 2 - .1;
@@ -916,19 +925,33 @@ window.Museum = (() => {
   function wideFromHere() { const r = rows[rowI]; if (r && colI > r.boxes.length && rack && rack.units && rack.units.length) { const it = rackItem(); const u = it ? rack.units.findIndex(u => !!u.movie === !!it.movie && it.mesh.userData.home.x >= u.x0 && it.mesh.userData.home.x <= u.x1) : 0; return rows.length + Math.max(0, u); } return rowI; }
   function wideMove(dx, dy) {
     const n = wideCount(); if (!n) return; let i = wideSel;
-    if (isTvSel(i)) { if (dx < 0) { const U = (rack && rack.units) || [], pr = U.map((x, j) => j).filter(j => !U[j].movie && !U[j].band).sort((p, q) => U[q].x0 - U[p].x0); i = pr.length ? rows.length + pr[0] : Math.min(rows.length - 1, Math.max(0, rowI)); wideSel = i; hooks.onSelect && hooks.onSelect(current()); } return; } // the TV: left goes back to the reading corner
-    if (i < rows.length) { if (dy) i = Math.max(0, Math.min(rows.length - 1, i + dy)); else if (dx > 0 && n > rows.length) i = rows.length; }
+    if (isTvSel(i)) { if (dx < 0) { const U = (rack && rack.units) || [], pr = U.map((x, j) => j).filter(j => !U[j].movie && !U[j].band).sort((p, q) => U[q].x0 - U[p].x0); i = pr.length ? rows.length + pr[0] : Math.min(rows.length - 1, Math.max(0, rowI)); wideSel = i; hooks.onSelect && hooks.onSelect(current()); } else if (dx > 0 && gals().length) i = wideN(); return; } // the TV: left to the reading corner, right on to the side displays
+    if (isGalSel(i)) { const first = wideN(); // the side displays: left / right between the two ends, back past the first to the TV
+      if (dx < 0) i = i === first ? (tv ? tvIdx() : Math.min(rows.length - 1, Math.max(0, rowI))) : first;
+      else if (dx > 0 && i === first) i = first + 1; return; }
+    if (i < rows.length) { if (dy) i = Math.max(0, Math.min(rows.length - 1, i + dy)); else if (dx > 0 && n > rows.length) i = rack && rack.units && rack.units.length ? rows.length : wideN(); }
     else if (!rack || !rack.units) i = Math.min(rows.length - 1, Math.max(0, rowI)); // the rack went away (library emptied): back to the shelves
     else { const U = rack.units, u = U[i - rows.length], idx = j => rows.length + j;
       if (dy && u && u.band != null) { const want = u.band + dy, mid = (u.x0 + u.x1) / 2, j = U.findIndex(x => x.band === want && mid >= x.x0 - .01 && mid <= x.x1 + .01); if (want >= 0 && want <= 1 && j >= 0) i = idx(j); } // straight up / down: same column
       else if (dx) { const same = U.map((x, j) => j).filter(j => (U[j].band || 0) === ((u && u.band) || 0)).sort((p, q) => U[p].x0 - U[q].x0), at = same.indexOf(i - rows.length), t = at + dx;
-        i = t < 0 ? Math.min(rows.length - 1, Math.max(0, rowI)) : t < same.length ? idx(same[t]) : tv ? n - 1 : i; } // past the last unit: the TV
+        i = t < 0 ? Math.min(rows.length - 1, Math.max(0, rowI)) : t < same.length ? idx(same[t]) : tv ? tvIdx() : gals().length ? wideN() : i; } // past the last unit: the TV, then the side displays
       if (i >= rows.length && rack.units[i - rows.length] && !rack.units[i - rows.length].movie) rack.lastPrint = i - rows.length; }
     if (i !== wideSel) { wideSel = i; hooks.onSelect && hooks.onSelect(current()); }
+  }
+  // Looking around: A on a side display leans the camera over to it (a tween, then a locked gaze until you move on);
+  // the right stick, a mouse drag, or Q and E (app side) look left and right along the wall and ease level again
+  const look = { x: 0, y: 0, tx: 0, ty: 0 }; let lookIn = -1e9, gaze = null, gazeK = 0, lookF = 0;
+  const lookFree = () => active && wide && !intro.on && !tw.on && !roomView && !gaze && !delivery && !tvView && !fan && !reader;
+  function gazeAt(px) {
+    if (gaze && Math.abs(gaze.px - px) < .01) { gaze = null; look.tx = look.ty = 0; lastInput = lastNav = woke(); hooks.onSelect && hooks.onSelect(current()); return; } // A again: back to the whole wall
+    const fy = roomObj.bottom - .4; gaze = { px, x: px, y: fy + .9, z: .75 + 1.9, tx: px, ty: fy + 1.32, tz: .75 }; // stand in front of it, looking at the vitrine
+    look.tx = look.ty = 0; lastInput = lastNav = woke(); snd('zoom'); twStart({ x: gaze.x, y: gaze.y, z: gaze.z }, 0);
+    hooks.onSelect && hooks.onSelect(current());
   }
   function wideEnter() {
     const i = wideSel;
     if (isTvSel(i)) { wide = false; tvView = true; tvReturn = null; const was = tv.power && tv.pow > 0; tvPower(true); lastInput = lastNav = woke(); return { tv: true, playing: was }; } // already on (left playing): carry on
+    if (isGalSel(i)) { gazeAt(galXs()[i - wideN()]); return null; }
     if (i >= rows.length && !(rack && rack.units && rack.units[i - rows.length])) { wideSel = Math.max(0, Math.min(wideSel, wideCount() - 1)); hooks.onSelect && hooks.onSelect(current()); return null; } // the rack changed under the frame
     if (i >= rows.length && rack && rack.units[i - rows.length] && !rack.units[i - rows.length].n) return rack.units[i - rows.length].movie ? null : { find: rack.units[i - rows.length].guide ? 'guide' : 'magazine' }; // an empty rack: go find some
     wide = false; zoomAt = performance.now();
@@ -1009,7 +1032,7 @@ window.Museum = (() => {
     rowI = Math.min(rowI, rows.length - 1); colI = 0; wide = false; holding = null; heldCase = null; shadowRow = -1; lastInput = woke();
     // a visit that ended with something in your hands (hold A to play with the disc out, Stremio from a Blu-ray) left the room
     // dimmed, the camera's eye-level look and the hand zoom / pan behind: the next walk-in started dark and looking straight ahead
-    dimK = 0; holdLook = 0; driftK = 0; handZoom = handZoomT = 1; hPan.x = hPan.y = hPan.tx = hPan.ty = 0; hPan.lx = hPan.ly = 0; hold = { rx: 0, ry: 0, trx: 0, try: 0 }; roomView = false; preRow = -1; preOn = false;
+    dimK = 0; holdLook = 0; driftK = 0; handZoom = handZoomT = 1; hPan.x = hPan.y = hPan.tx = hPan.ty = 0; hPan.lx = hPan.ly = 0; hold = { rx: 0, ry: 0, trx: 0, try: 0 }; roomView = false; preRow = -1; preOn = false; gaze = null; gazeK = 0; lookF = 0; look.x = look.y = look.tx = look.ty = 0; lookIn = -1e9;
     // the mail: one delivery for everything new, and the walk-in ends at the first new game's place
     { const list = []; rows.forEach(r => r.boxes.forEach(b => { if (b.userData.mail) { b.userData.mk = list.length; list.push(b); } }));
       dvFrom = { rowI, colI };
@@ -1564,8 +1587,8 @@ window.Museum = (() => {
   const libBusy = () => !!(libHeld || fan || reader || (rack && rack.items.some(it => (it.mesh.userData.lift || 0) > 0)));
   function setLibrary(list) { if (!active || !rows.length) return; if (libBusy()) { libPending = list || []; return; } libPending = null; lastLib = list || []; const was = rackItem(), wasTv = wide && isTvSel(wideSel); buildRack(list); buildTV(); let r = rows[rowI]; if (r && colI > r.boxes.length) colI = Math.min(colI, r.boxes.length + rackLen(rowI));
     if (was && was.d && was.d.id != null && rack) { const id = was.d.id; for (let ri = 0; ri < rows.length; ri++) { const k = (rack.byRow[ri] || []).findIndex(it => it.d && it.d.id === id); if (k >= 0) { if (ri !== rowI && !wide) { rowI = ri; r = rows[ri]; } if (ri === rowI) colI = r.boxes.length + 1 + k; break; } } } // the same magazine stays selected, wherever it moved
-    if (was && !rackItem()) colI = r.boxes.length; if (wide) wideSel = wasTv ? wideCount() - 1 : Math.max(0, Math.min(wideSel, wideCount() - 1)); hooks.onSelect && hooks.onSelect(current()); }
-  function current() { const r = rows[rowI]; if (!r) return null; if (tvView && tv) return { tv: { meta: tv.meta, mode: tv.mode, card: tv.card, ch: room.tvCh || 'ads' }, row: r }; if (wide && tv && isTvSel(wideSel) && !delivery) return { wide: { label: 'Retro TV', sub: TV_CH[room.tvCh] || TV_CH.ads, tv: true, on: !!tv.power }, row: r }; if (delivery) return { delivery: { n: delivery.n, crate: delivery.crate, shelf: dvShelf(delivery.list), open: !!delivery.open, waiting: !delivery.shown }, parcel: delivery.shown && !delivery.open, crate: delivery.crate && !delivery.open ? delivery.n : 0, row: r }; if (wide && wideSel < wideCount()) { const b = wideBox(wideSel); return { wide: { label: b.label, sub: b.sub, rack: wideSel >= rows.length, kind: wideSel >= rows.length ? (rack.units[wideSel - rows.length].movie ? 'movie' : rack.units[wideSel - rows.length].guide ? 'guide' : 'magazine') : null, empty: wideSel >= rows.length && !rack.units[wideSel - rows.length].n }, row: r }; } if (fan && !fan.closing) return { lib: fan.it.box.issues[fan.i], fan: { i: fan.i, n: fan.n, series: fan.it.box.series, year: fan.it.box.years[fan.i] || 0 }, row: rows[fan.it.ri] || r }; if (colI > r.boxes.length) { const it = rackItem(); if (it) return it.box ? { lib: it.d, stack: { series: it.box.series, n: it.box.issues.length, years: yearSpan(it.box.years), guide: it.d.kind === 'guide' }, row: r } : { lib: it.d, row: r }; } if (colI >= r.boxes.length) return { console: true, row: r }; const bx = r.boxes[colI]; return { game: bx.userData.g, sealed: !!bx.userData.sleeve, row: r }; }
+    if (was && !rackItem()) colI = r.boxes.length; if (wide) wideSel = wasTv && tv ? tvIdx() : wasTv ? Math.min(Math.max(0, rowI), rows.length - 1) : Math.max(0, Math.min(wideSel, wideCount() - 1)); hooks.onSelect && hooks.onSelect(current()); }
+  function current() { const r = rows[rowI]; if (!r) return null; if (tvView && tv) return { tv: { meta: tv.meta, mode: tv.mode, card: tv.card, ch: room.tvCh || 'ads' }, row: r }; if (wide && tv && isTvSel(wideSel) && !delivery) return { wide: { label: 'Retro TV', sub: TV_CH[room.tvCh] || TV_CH.ads, tv: true, on: !!tv.power }, row: r }; if (delivery) return { delivery: { n: delivery.n, crate: delivery.crate, shelf: dvShelf(delivery.list), open: !!delivery.open, waiting: !delivery.shown }, parcel: delivery.shown && !delivery.open, crate: delivery.crate && !delivery.open ? delivery.n : 0, row: r }; if (wide && wideSel < wideCount()) { const b = wideBox(wideSel), gi = isGalSel(wideSel), ru = !gi && wideSel >= rows.length && rack && rack.units && rack.units[wideSel - rows.length] || null; return { wide: { label: b.label, sub: b.sub, rack: !gi && wideSel >= rows.length, gal: gi, kind: ru ? (ru.movie ? 'movie' : ru.guide ? 'guide' : 'magazine') : null, empty: ru ? !ru.n : false }, row: r }; } if (fan && !fan.closing) return { lib: fan.it.box.issues[fan.i], fan: { i: fan.i, n: fan.n, series: fan.it.box.series, year: fan.it.box.years[fan.i] || 0 }, row: rows[fan.it.ri] || r }; if (colI > r.boxes.length) { const it = rackItem(); if (it) return it.box ? { lib: it.d, stack: { series: it.box.series, n: it.box.issues.length, years: yearSpan(it.box.years), guide: it.d.kind === 'guide' }, row: r } : { lib: it.d, row: r }; } if (colI >= r.boxes.length) return { console: true, row: r }; const bx = r.boxes[colI]; return { game: bx.userData.g, sealed: !!bx.userData.sleeve, row: r }; }
   // Hands-on: A takes the case off the shelf into your hands (the room dims, a light falls on it) and the stick turns it.
   // X opens it on its hinge (the spine side): the disc / cartridge sits in the tray and the manual is clipped inside
   // the lid. X again takes the disc out (hold A then plays it), Y lifts the manual out to read, page by page. B steps
@@ -1809,6 +1832,7 @@ window.Museum = (() => {
     if (delivery) { if (delivery.shown && !delivery.open) { const ro = delivery.rot; ro.ty += dx * 45 * DEG; ro.tx = Math.max(-55 * DEG, Math.min(55 * DEG, ro.tx + dy * 30 * DEG)); lastInput = woke(); } return; } // the package in front of you: turn it to look it over
     if (!rows[rowI]) return; // closed (the wall already let go) or not built yet
     { const t = performance.now(); navRun = t - lastNav < 200 ? navRun + 1 : 0; lastInput = lastNav = t; unsleep(); } if (intro.on) skipFill();
+    if (gaze) gaze = null; look.tx = look.ty = 0; // moving resets the look (and leans back from a side display)
     if (fan) { if (dx) fanStep(dx); return; }
     if (holding || heldCase || libHeld) return;
     if (wide) { wideMove(dx, dy); return; }
@@ -1844,8 +1868,9 @@ window.Museum = (() => {
   }
   function back() {
     lastInput = woke(); if (intro.on) { skipFill(); return true; }
+    if (gaze) { gaze = null; look.tx = look.ty = 0; hooks.onSelect && hooks.onSelect(current()); return true; } // B while leaning to a side display: back to the whole wall
     if (delivery) { if (delivery.shown) skipOpening(); return true; }
-    if (tvView) { tvView = false; if (tvReturn && rows[tvReturn.rowI]) { rowI = tvReturn.rowI; colI = tvReturn.colI; wide = false; } else { wide = true; wideSel = wideCount() - 1; } tvReturn = null; hooks.onSelect && hooks.onSelect(current()); return true; } // off the TV, back where you were (it keeps playing; X switches it off)
+    if (tvView) { tvView = false; if (tvReturn && rows[tvReturn.rowI]) { rowI = tvReturn.rowI; colI = tvReturn.colI; wide = false; } else { wide = true; wideSel = tv ? tvIdx() : Math.min(Math.max(0, rowI), rows.length - 1); } tvReturn = null; hooks.onSelect && hooks.onSelect(current()); return true; } // off the TV, back where you were (it keeps playing; X switches it off)
     if (reader && !reader.out) { reader.out = true; snd('flip'); return true; }
     if (peek && peek.discT) { peek.discT = 0; discHome(); snd('discIn'); return true; }
     if (peek && peek.t) { peek.t = 0; clampPan(); snd('caseClose'); return true; } // (an open case lets the view pan further: bring it back inside a closed one's limits)
@@ -1857,7 +1882,12 @@ window.Museum = (() => {
     if (holding) { holding = null; return true; }
     if (!wide) { wide = true; wideSel = wideFromHere(); hooks.onSelect && hooks.onSelect(current()); return true; } return false;
   }
-  function turn(dx, dy) { lastInput = woke(); if (!holding && !heldCase && !libHeld) return; if (reader) return;
+  function turn(dx, dy) { lastInput = woke();
+    if (!holding && !heldCase && !libHeld) { // nothing in your hands: look around the wide view (the stick, a mouse drag, Q / E)
+      if (!lookFree()) return; lookIn = performance.now(); const k = reducedMo() ? .35 : 1;
+      look.tx = Math.max(-.62, Math.min(.62, look.tx - dx * .5 * k * DEG));
+      look.ty = Math.max(-.21, Math.min(.35, look.ty + dy * .3 * k * DEG)); return; }
+    if (reader) return;
     if (peek && peek.discT && peek.box === heldCase) { peek.dry = (peek.dry || 0) + dx; peek.drx = Math.max(-75, Math.min(75, (peek.drx || 0) + dy)); return; } // the disc turns in your hands; its case stays put, set aside
     if (libHeld && libHeld.rig && libHeld.rig.discT) { const rg = libHeld.rig; rg.dry = (rg.dry || 0) + dx; rg.drx = Math.max(-75, Math.min(75, (rg.drx || 0) + dy)); return; } // a Blu-ray's disc, the same
     hold.try += dx; hold.trx = Math.max(-60, Math.min(60, hold.trx + dy)); }
@@ -1942,7 +1972,7 @@ window.Museum = (() => {
         rw.lampOn = Math.max(rw.lampOn, Math.min(1, e)); rw.lamp.intensity = LAMP() * Math.max(0, strike) * over; });
       camTarget = overview(); // drift in to the overview while the lights come on, and stay on it
       if (intro.t > intro.len) endIntro();
-    } else camTarget = tvView && tv ? tvView0() : roomView ? (tv && now - tvPeekAt < (window.__musPeekMs || 2600) ? tvPeekView() : roomOverview()) : wide ? overview() : rowView();
+    } else camTarget = tvView && tv ? tvView0() : roomView ? (tv && now - tvPeekAt < (window.__musPeekMs || 2600) ? tvPeekView() : roomOverview()) : wide ? (gaze ? gaze : overview()) : rowView();
     // a view worked out while the window was minimised (0 × 0: the fit maths divides by it) is NaN, and the camera eases toward
     // its target, so one NaN froze it there for good (a black room after restoring the window): hold still instead
     if (!isFinite(camTarget.x + camTarget.y + camTarget.z)) camTarget = { x: camP.x, y: camP.y, z: camP.z };
@@ -2089,8 +2119,17 @@ window.Museum = (() => {
     const dx = driftK * Math.sin(now / 4200) * .18, dy = driftK * Math.sin(now / 5600) * .06, dz = driftK * Math.sin(now / 7000) * .25;
     // a case in your hands: the camera faces it straight on, at eye level, wherever it is (the shelf view looks down at the wall)
     holdLook = sm(holdLook, heldCase ? 1 : 0, 1 - Math.exp(-dt * 4));
+    gazeK = sm(gazeK, gaze ? 1 : 0, 1 - Math.exp(-dt * 4.5));
+    // the free look: steering it keeps it where you put it; hands off a moment, or a view it doesn't apply to, and it levels out
+    if (now - lookIn > 1900) { look.tx = 0; look.ty = 0; }
+    look.x = sm(look.x, look.tx, 1 - Math.exp(-dt * 7)); look.y = sm(look.y, look.ty, 1 - Math.exp(-dt * 7));
+    const lookF0 = wide && !intro.on && !roomView && !tvView && !delivery && !fan && !holding && !heldCase && !libHeld;
+    lookF = sm(lookF, lookF0 ? 1 : 0, 1 - Math.exp(-dt * 6));
     camera.position.set(camP.x + dx * (1 - holdLook), camP.y + .2 * (1 - holdLook) + dy * (1 - holdLook), camP.z + dz * (1 - holdLook));
-    camera.lookAt(camP.x + dx * .4 * (1 - holdLook), (camP.y - .05) * (1 - holdLook) + camP.y * holdLook, holdLook > 0.001 ? camP.z - 4 * holdLook - (1 - holdLook) * camP.z : 0);
+    { let lx = camP.x + dx * .4 * (1 - holdLook), ly = (camP.y - .05) * (1 - holdLook) + camP.y * holdLook, lz = holdLook > 0.001 ? camP.z - 4 * holdLook - (1 - holdLook) * camP.z : 0;
+      if (gazeK > .001) { lx += (gaze.tx - lx) * gazeK; ly += (gaze.ty - ly) * gazeK; lz += (gaze.tz - lz) * gazeK; } // leaning over to a side display: the gaze takes the look target
+      camera.lookAt(lx, ly, lz);
+      if ((Math.abs(look.x) > 1e-4 || Math.abs(look.y) > 1e-4) && lookF > .001) { camera.rotateY(look.x * lookF * (1 - gazeK)); camera.rotateX(look.y * lookF * (1 - gazeK)); } } // the look: turn in place, the wall straight ahead is level again
     if (delivery) stepDelivery(dt, now);
     if (tv) stepTV(dt, now);
     // shadows only re-render when a case in the lit row actually moved (the selected case alone used to force it every frame)
