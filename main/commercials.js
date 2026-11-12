@@ -6,8 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-let log = () => {}, dir = null, fetchBuf = null, fetchFile = null, memoFile = null, memo = null;
-function init(opts) { log = opts.log || log; dir = opts.dir; fetchBuf = opts.fetchBuf; fetchFile = opts.fetchFile || null; memoFile = opts.memoFile; }
+let log = () => {}, dir = null, fetchBuf = null, fetchFile = null, memoFile = null, memo = null, tick = null;
+function init(opts) { log = opts.log || log; dir = opts.dir; fetchBuf = opts.fetchBuf; fetchFile = opts.fetchFile || null; memoFile = opts.memoFile; tick = opts.tick || null; } // tick: progress for the UI (a "what's it doing" line): { phase, at, of, found, done }
 const CAP = 600 * 1024 * 1024; // the cache's size
 const CONSOLE = { gc: ['Nintendo GameCube', 'GameCube'], wii: ['Nintendo Wii', 'Wii'], wiiu: ['Wii U'], sw: ['Nintendo Switch'], sw2: ['Nintendo Switch 2', 'Switch 2'], psp: ['PSP', 'PlayStation Portable'], ps2: ['PlayStation 2', 'PS2'], ps3: ['PlayStation 3', 'PS3'], ps4: ['PlayStation 4', 'PS4'], ps5: ['PlayStation 5', 'PS5'], x360: ['Xbox 360'], n3ds: ['Nintendo 3DS', '3DS'], psx: ['PlayStation', 'PS1', 'PSX'], nes: ['Nintendo Entertainment System', 'NES'], snes: ['Super Nintendo', 'SNES'], n64: ['Nintendo 64', 'N64'], gb: ['Game Boy'], gbc: ['Game Boy Color'], gba: ['Game Boy Advance', 'GBA'], nds: ['Nintendo DS'], megadrive: ['Sega Genesis', 'Mega Drive'], mastersystem: ['Master System'], gamegear: ['Game Gear'], dreamcast: ['Dreamcast'], saturn: ['Sega Saturn', 'Saturn'], pcengine: ['TurboGrafx-16', 'PC Engine'], neogeo: ['Neo Geo', 'Neo-Geo'], arcade: ['arcade'], segacd: ['Sega CD', 'Mega-CD'], sega32x: ['Sega 32X', '32X'], atari2600: ['Atari 2600'], atarilynx: ['Atari Lynx'], wonderswan: ['WonderSwan'], dos: ['MS-DOS', 'DOS'] };
 const AD = /\b(commercials?|tv spots?|tv ads?|television (ad|commercial)s?|adverts?|advertisements?|ad)\b/i;
@@ -51,20 +51,26 @@ async function forConsole(sysId) {
 }
 const keyOf = (sysId, file) => sysId + '|' + String(file || '').toLowerCase();
 // look up ads for games not looked at yet (paced: one game at a time, waiting while you use the app or play)
+const say = (at, found, o = {}) => { if (tick) { try { tick(Object.assign({ phase: 'ads', at, of: 0, found, done: false }, o)); } catch {} } }; // the guide's progress line; never throws
 async function scan(games, opts = {}) {
   const m = load(), now = Date.now(); let found = 0, looked = 0, fails = 0;
-  for (const { sysId, file, title } of games) {
+  const todo = games.filter(({ sysId, file }) => { const e = m.games[keyOf(sysId, file)]; return !(e && (e.hit || now - e.at < 30 * 864e5)); }); // this round's games: tick counts only what will actually be searched
+  say(looked, found, { of: todo.length });
+  for (const { sysId, file, title } of todo) {
     if (opts.cancelled && opts.cancelled()) break;
     const k = keyOf(sysId, file), e = m.games[k]; if (e && (e.hit || now - e.at < 30 * 864e5)) continue;
     if (opts.idle) await opts.idle();
     // offline / the archive down: three failures in a row end this round with one log line (it used to log every game, unpaced)
-    let hit = null; try { hit = await forGame(sysId, title); fails = 0; } catch (e2) { if (++fails === 1) log('TV ads', title, e2.message); if (fails >= 3) { log('TV ads: the archive is not answering, trying again next time'); return found; } await new Promise(r => setTimeout(r, 1200)); continue; }
+    let hit = null; try { hit = await forGame(sysId, title); fails = 0; } catch (e2) { if (++fails === 1) log('TV ads', title, e2.message); if (fails >= 3) { log('TV ads: the archive is not answering, trying again next time'); say(looked, found, { done: true }); return found; } await new Promise(r => setTimeout(r, 1200)); continue; }
     m.games[k] = { at: Date.now(), title, hit }; looked++; if (hit) { found++; log('TV ad found:', title, '->', hit.title); } save();
+    say(looked, found, { of: todo.length });
     await new Promise(r => setTimeout(r, 1200)); // gentle on the archive
   }
+  say(looked, found, { phase: 'consoles', of: todo.length });
   const sys = [...new Set(games.map(g => g.sysId))];
   for (const s of sys) { const c = m.consoles[s]; if (c && now - c.at < 30 * 864e5) continue; if (opts.idle) await opts.idle(); try { m.consoles[s] = { at: Date.now(), hits: await forConsole(s) }; save(); } catch (e2) { log('TV console ads', s, e2.message); } }
   if (looked) log('TV ads: looked at', looked, 'games, found', found);
+  say(looked, found, { done: true }); // the guide clears its progress line when it hears this
   return found;
 }
 // every ad known: per game first, then the consoles'

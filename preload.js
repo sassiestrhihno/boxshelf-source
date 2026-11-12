@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('boxshelf', {
   stremioDetails: (type, id) => call('stremio:details', { type, id }),
   tvScan: () => call('tv:scan'), tvList: () => call('tv:list'), tvAdFor: (systemId, file) => call('tv:adFor', { systemId, file }), tvLocal: ad => call('tv:local', { ad }),
   onTvFound: cb => ipcRenderer.on('tv:found', (e, x) => cb(x)),
+  onTvProgress: cb => ipcRenderer.on('tv:progress', (e, x) => cb(x)),
+  onTvDl: cb => ipcRenderer.on('tv:dl', (e, x) => cb(x)),
   launchSteam: appid => call('launch:steam', { appid }),
   launchPc: id => call('launch:pc', { id }), // (beta.4) Epic, Quiver and hand-added games, by id
   findQuiver: () => call('pc:findQuiver'),

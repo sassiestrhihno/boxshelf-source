@@ -3138,7 +3138,13 @@ function openMuseum(at){uiCrumb("Museum");
     Museum.setRoom(musRoomKeys(musStyle())); // the room as you left it, built that way (not rebuilt a moment later)
     const ok=Museum.open(Object.assign(data,{mail:musStyle().mail!==false,owner:RA.on&&RA.profile&&RA.profile.user||"",hist:HIST,favs:(cfgInfo&&cfgInfo.config.ui.favorites)||[],lib:musLib(),tv:musStyle().tv===true,walkIn:musStyle().walkIn!==false&&!reduced()}),{onTvEnded:err=>err?tvFailed():tvNext(1),onTvChannel:d=>tvNext(d),onTvBand:d=>tvBand(d),booklet:mg=>makeBooklet(mg._g),libCover,movieArt:d=>Promise.all([movieDisc(d).catch(()=>null),movieInsert(d).then(u=>u&&u[0]||null).catch(()=>null)]).then(([disc,inside])=>({disc,inside})),libBack:d=>d.kind==="movie"?movieBack(d).catch(()=>null):api.libraryCover(d.id,"back").catch(()=>null),onSelect:museumSelect,okWord:()=>okWord(),onSound:n=>play_(n),log:m=>api.log&&api.log(m),onShown:()=>{if(musBootSplash)musBootSplash();if(mode==="museum")play_("museum")},onReady:ms=>api.log&&api.log("museum open: build+shaders "+Math.round(performance.now()-tOpen)+" ms (shaders "+ms+" ms)")});
     if(!ok){el.classList.remove("on","filling");el.setAttribute("aria-hidden","true");museumTeardown();mode="browse";ambient(true);toast("Couldn't start the museum (WebGL)");return}
-    renderMusHints();musApplyStyle(musStyle());libRefresh();if(api.onTvFound&&!tvS.hooked){tvS.hooked=true;api.onTvFound(()=>{if(mode==="museum"&&Museum.tvPowered()&&(tvCh()==="ads"||tvCh()==="mix")&&!tvS.list.length)tvStart()})}
+    renderMusHints();musApplyStyle(musStyle());libRefresh();if(api.onTvFound&&!tvS.hooked){tvS.hooked=true;api.onTvFound(()=>{if(mode==="museum"&&Museum.tvPowered()&&(tvCh()==="ads"||tvCh()==="mix")&&!tvS.list.length)tvStart()});if(api.onTvProgress)api.onTvProgress(p=>{tvS.prog=p||null;
+      // a finished round: refresh the guide's list with what it found (and restart an empty playlist)
+      if(p&&p.done&&p.found)tvLoad().then(()=>{if(tvS.guide)tvGuideRender(true);if(mode==="museum"&&Museum.tvPowered()&&(tvCh()==="ads"||tvCh()==="mix")&&!tvS.list.length)tvStart()});
+      if(tvS.guide)tvGuideRender(true);
+      // the at-TV card's "No ads found yet…" line carries the counts while the round is running
+      if(mode==="museum"){const c=Museum.current();if(c&&(c.tv||c.wide&&c.wide.tv))museumSelect(Museum.current())}});
+      if(api.onTvDl)api.onTvDl(x=>{tvS.dl=x||null;if(mode==="museum"){const c=Museum.current();if(c&&(c.tv||c.wide&&c.wide.tv))museumSelect(Museum.current())}})}
     if(musGuideNext){musGuideNext=false;setTimeout(()=>{if(tok!==musOpenTok||mode!=="museum")return;if(Museum.isFilling())Museum.skipFill();tvGuideGo()},350)} // Settings → Museum → "Choose what's on"
     clearInterval(musFillT);musFillT=setInterval(()=>{if(!Museum.isFilling()){el.classList.remove("filling");clearInterval(musFillT)}},200);
   }));
@@ -3165,7 +3171,7 @@ function museumSelect(c){
   else if(c.lib){const d=c.lib;$("musRow").textContent=d.kind==="guide"?"Strategy guide":"Magazine";$("musTitle").textContent=d.title;$("musMeta").textContent=[d.series,d.type==="pdf"?"PDF":d.pages?d.pages+" pages":""].filter(Boolean).join(" · ")}
   else if(c.tv){const m=c.tv.meta,ch=TV_BANDS.includes(c.tv.ch)?c.tv.ch:"ads",card=m?!!(m.trailer||m.recent):(ch==="trailers"||ch==="recent");$("musRow").textContent="Retro TV · "+TV_NAMES[ch];
     if(card){const tr=m?!!m.trailer:ch==="trailers";$("musTitle").textContent=m?m.game:tr?"No trailers yet":"Nothing played yet";$("musMeta").textContent=m?[c.tv.card&&c.tv.card.sub,tr?`${okWord()} to watch the trailer`:`${okWord()} to play it`].filter(Boolean).join(" · "):tr?"Trailers come with your games' LaunchBox details":"The games you play turn up here"}
-    else{const none=tvS.loaded&&!tvS.list.length,m=none?null:c.tv.meta; /* (an ad that failed leaves its name behind) */$("musTitle").textContent=m?(m.game||m.title):(none?"Nothing on yet":"Tuning in…");$("musMeta").textContent=m?[m.game&&m.title!==m.game?m.title:"",m.year,"from the Internet Archive"].filter(Boolean).join(" · "):(none?"No ads found yet: Boxshelf is still looking in the background (the first time takes a while)":"")}
+    else{const none=tvS.loaded&&!tvS.list.length,m=none?null:c.tv.meta; /* (an ad that failed leaves its name behind) */$("musTitle").textContent=m?(m.game||m.title):(none?"Nothing on yet":tvTuneWord());$("musMeta").textContent=m?[m.game&&m.title!==m.game?m.title:"",m.year,"from the Internet Archive"].filter(Boolean).join(" · "):(none?"No ads found yet: "+(tvProgWord()||"Boxshelf is still looking in the background (the first time takes a while)"):"")}
     museumSelect.first=false;renderMusHints();return}
   else if(c.delivery){if(musRoom.open)musRoomClose();const v=c.delivery,many=v.n>1,where=/ shelves$/.test(v.shelf)?`across ${v.shelf}`:`for your ${v.shelf} shelf`;$("musRow").textContent=many?"New arrivals":"New arrival";
     if(v.waiting){$("musTitle").textContent="Mail call";$("musMeta").textContent="Something has arrived for the collection…"}
@@ -3226,7 +3232,11 @@ function museumX(){const s=musHand();if(s.delivery)return;if(s.tv){tvS.tok++;cle
 // ---- the retro TV (Room menu → Retro TV): four channels, one playlist each; Y opens the TV guide ----
 // tvS.list is the playlist of the channel that's on: ads (a video each, from the Internet Archive) and title cards (a
 // game's trailer, or a game you played lately, shown for a few seconds). Shuffle all deals the three out in turn.
-const tvS={list:[],i:0,tok:0,ch:"ads",heldAd:null,heldFor:null,guide:null,gi:0,loaded:false,ads:[],bad:new Set(),want:null,dirty:false,saveT:0};
+const tvS={list:[],i:0,tok:0,ch:"ads",heldAd:null,heldFor:null,guide:null,gi:0,loaded:false,ads:[],bad:new Set(),want:null,dirty:false,saveT:0,prog:null,dl:null};
+// the commercial scan's progress, live: a line under the guide's list (and in the at-TV card while nothing is on yet)
+const tvProgWord=()=>{const p=tvS.prog;if(!p||p.done)return"";return p.phase==="consoles"?`Console commercials next${p.found?` · ${p.found} for your games so far`:""}`:`Looking for commercials · ${p.at||0}/${p.of||0}${p.found?` · ${p.found} found so far`:""}`};
+// a 120 MB ad downloading while the TV shows static: "Tuning in… downloading 34%" (tvS.dl: null when nothing is in flight)
+const tvTuneWord=()=>{const d=tvS.dl;return d&&d.of>64?`Tuning in… downloading ${Math.round(100*Math.max(0,Math.min(1,d.at/d.of)))}%`:"Tuning in…"};
 // the TV's sound: Boxshelf's volume (shelf, quick menu, Settings) × the Room menu's TV volume, nothing when muted
 const tvVol=()=>{const st=musStyle();return soundOn&&!st.tvMute?Math.max(0,Math.min(1,((cfgInfo&&cfgInfo.config.ui.volume)!=null?cfgInfo.config.ui.volume:.7)*.9*Math.max(0,Math.min(1,st.tvVol==null?1:+st.tvVol)))):0};
 const tvOwned=a=>{if(!a||a.console||!a.rom)return null;const sh=allShelves.find(x=>x.id===a.sysId);const g=sh&&(sh.items||[]).find(x=>x.kind==="rom"&&String(x.file||"").toLowerCase()===a.rom);return g?{sh,g}:null};
@@ -3241,7 +3251,7 @@ async function tvProgram(ch){if(ch==="trailers")return tvTrailerCards();if(ch===
   const src=[ads,tvTrailerCards(),tvRecentCards()].filter(x=>x.length),out=[];for(let k=0;out.length<150&&src.some(x=>k<x.length);k++)tvMix(src.filter(x=>k<x.length)).forEach(x=>out.push(x[k]));return out}
 // the playlist starts on `first` (an entry's key, or an ad object that may not be listed), else where you were last time
 function tvStart(first){tvTune(first)}
-async function tvTune(first){clearInterval(tvS.slideT);tvS.slideT=0;const tok=++tvS.tok;if(!Museum.tvPowered())return;const ch=tvCh();
+async function tvTune(first){clearInterval(tvS.slideT);tvS.slideT=0;const tok=++tvS.tok;tvS.dl=null;if(!Museum.tvPowered())return;const ch=tvCh();
   if(first==null&&tvS.want)first=tvS.want.key;tvS.want=null;if(first==null)first=tvLastKey(ch);if(tvS.guide)tvGuideClose(true);
   if(ch==="ads"||ch==="mix"){Museum.tvStatic();museumSelect(Museum.current())} // static while the ads are listed
   const L=await tvProgram(ch);if(tok!==tvS.tok||!Museum.tvPowered()||tvCh()!==ch)return;
@@ -3255,7 +3265,7 @@ async function tvPlayCur(){const tok=++tvS.tok;if(!Museum.tvPowered())return;con
   const ad=e;Museum.tvStatic();museumSelect(Museum.current());let url=null;try{url=await api.tvLocal(ad)}catch{}
   if(tok!==tvS.tok||!Museum.tvPowered())return;
   if(!url){api.log&&api.log("TV: couldn't fetch "+ad.title);tvDrop(ad);return tvPlayCur()}
-  Museum.tvShow(url,{title:ad.title,year:ad.year,game:ad.game||"",sysId:ad.sysId,rom:ad.rom,console:!!ad.console,key:ad.key},tvVol());renderMusHints();tvGuideMarks()}
+  Museum.tvShow(url,{title:ad.title,year:ad.year,game:ad.game||"",sysId:ad.sysId,rom:ad.rom,console:!!ad.console,key:ad.key},tvVol());tvS.dl=null;renderMusHints();tvGuideMarks()}
 // an entry by its key, from any channel (the guide lists more than a channel's playlist holds)
 function tvEntry(key){if(!key)return null;return tvS.ads.find(a=>a&&a.key===key)||(/^tr:/.test(key)?tvTrailerAll():/^rp:/.test(key)?tvRecentCards(60):[]).find(e=>e.key===key)||null}
 function tvDrop(e){tvS.bad.add(e.key);const k=tvS.list.indexOf(e);if(k>=0){tvS.list.splice(k,1);if(k<tvS.i)tvS.i--}if(tvS.i>=tvS.list.length)tvS.i=0}
@@ -3320,6 +3330,10 @@ function tvGuideRender(toNow){const G=tvS.guide;if(!G)return;const el=G.el,keep=
       r.addEventListener("click",ev=>{setInput("pointer");tvS.gi=k;G.moved=true;if(ev.target.closest(".tg-star")){tvGuidePaint();tvGuideFav();return}tvGuidePick()});
       L.appendChild(r);G.items.push(it)})});
   if(!G.items.length){const e=document.createElement("div");e.className="tg-empty";e.textContent=G.tab==="ads"?(tvS.loaded?"No commercials found yet. Boxshelf is still looking for them in the background (the first time takes a while).":"Looking for commercials…"):G.tab==="trailers"?"No trailers yet. They come with your games' LaunchBox details.":"Nothing played yet. The games you play turn up here.";L.appendChild(e)}
+  // the scan's progress: a small line under the list while the background round runs (gone when it ends or the tab changes)
+  { const word=tvProgWord(),foot=G.el.querySelector(".tg-prog");
+    if(G.tab==="ads"&&word){ if(!foot){const f=document.createElement("div");f.className="tg-prog";el.appendChild(f);foot=f} if(foot.textContent!==word)foot.textContent=word }
+    else if(foot)foot.remove() }
   // where the guide opens: on what's on now (when it's in this tab), else the top; a refresh keeps your place
   const now=(Museum.tvMeta()||{}).key;let i=keep?G.items.findIndex(x=>x.key===keep):-1;if(i<0&&now)i=G.items.findIndex(x=>x.key===now);tvS.gi=Math.max(0,i);
   if(toNow)L.scrollTop=0;tvGuideMarks();tvGuidePaint()}
@@ -3336,7 +3350,7 @@ function tvGuidePaint(){const G=tvS.guide;if(!G)return;const rows=G.el.querySele
 // "On now" on the row of what's playing (and the line under the title)
 function tvGuideMarks(){const G=tvS.guide;if(!G)return;const m=tvS.list.length?Museum.tvMeta():null,now=m&&m.key;G.el.querySelectorAll(".tg-row").forEach((r,k)=>{const it=G.items[k];r.classList.toggle("now",!!(now&&it&&it.key===now))});
   if(now&&!G.moved){const i=G.items.findIndex(x=>x.key===now);if(i>=0&&i!==tvS.gi){tvS.gi=i;tvGuidePaint()}} // until you move, the guide follows what's on
-  G.el.querySelector(".tg-nowline").textContent=m?`On now: ${m.game||m.title} · ${TV_NAMES[tvS.ch]||""}`:Museum.tvPowered()?"Tuning in…":""}
+  G.el.querySelector(".tg-nowline").textContent=m?`On now: ${m.game||m.title} · ${TV_NAMES[tvS.ch]||""}`:Museum.tvPowered()?tvTuneWord():""}
 function tvGuideMove(d){const G=tvS.guide;if(!G||!G.items.length)return;const n=Math.max(0,Math.min(G.items.length-1,tvS.gi+d));if(n===tvS.gi)return;tvS.gi=n;G.moved=true;tvGuidePaint();play_("tick",{dir:d})}
 function tvGuideTab(t){const G=tvS.guide;if(!G)return;const i=TV_BANDS.indexOf(G.tab),n=typeof t==="number"?TV_BANDS[(i+t+TV_BANDS.length)%TV_BANDS.length]:t;if(!TV_BANDS.includes(n)||n===G.tab)return;G.tab=n;G.moved=false;tvGuideRender(true);play_("tick",{dir:typeof t==="number"?t:1})}
 function tvGuideFav(){const G=tvS.guide;if(!G||!cfgInfo)return;const it=G.items[tvS.gi];if(!it||it.key==="__mix")return;const ui=cfgInfo.config.ui,f=tvFavs().filter(k=>k!==it.key),on=f.length===tvFavs().length;

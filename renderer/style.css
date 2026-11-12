@@ -730,6 +730,7 @@ html.no-splash #splash{display:none}
 .tv-guide .tg-row.on .tg-star,.tv-guide .tg-row:hover .tg-star{opacity:1}
 .tv-guide .tg-row.fav .tg-star{opacity:1;color:#ffcf5a}
 .tv-guide .tg-empty{padding:18px 10px;color:rgba(255,255,255,.65);font-size:14px;line-height:1.5}
+.tv-guide .tg-prog{padding:8px 10px 2px;color:#ffd98a;font-size:12.5px;letter-spacing:.02em;font-variant-numeric:tabular-nums}
 .tv-guide .tg-dock{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 -18px;padding:10px 18px 12px;border-top:1px solid rgba(255,255,255,.08);font-size:12px;opacity:.85}
 .tv-guide .tg-dock .mr-k,.tv-guide .tg-sh{display:inline-flex;align-items:center;gap:4px}
 .tv-guide .tg-dock .mr-k em{font-style:normal;margin-left:3px}

@@ -1890,7 +1890,7 @@ handle('tv:scan', async () => { if (tvScanning) return false; tvScanning = true;
     // the shelves as last scanned (a full re-scan of every games folder here blocked the main process on each museum visit)
     if (lastLib) { for (const s of lastLib) if (s && s.kind === 'console' && Array.isArray(s.games)) s.games.forEach(g => games.push({ sysId: s.id, file: g.file, title: g.title })); }
     else for (const { def, cfg: sc } of sysList(CONSOLES.map(c => c.id))) { let gs = []; try { gs = await scanSystemAsync(def, sc); } catch {} gs.forEach(g => games.push({ sysId: def.id, file: g.file, title: g.title })); } // (beta.10: async scan)
-    const n = await commercials.scan(games, { cancelled: () => !alive(), idle: async () => { await uiQuiet(); await gameIdle(); } }); if (n && alive()) win.webContents.send('tv:found', { n }); return true; }
+    const n = await commercials.scan(games, { cancelled: () => !alive(), idle: async () => { await uiQuiet(); await gameIdle(); }, tick: p => { try { if (alive() && win) win.webContents.send('tv:progress', p); } catch {} } }); if (n && alive()) win.webContents.send('tv:found', { n }); return true; }
   catch (e) { log('TV ads scan', e.message); return false; } finally { tvScanning = false; } });
 handle('tv:list', () => commercials.list());
 handle('tv:adFor', ({ systemId, file }) => commercials.adFor(String(systemId || ''), String(file || '')));
@@ -2851,9 +2851,11 @@ function startUp() {
     // (beta.10) gives up when nothing arrives for 60 s or it takes over 15 minutes in all (a stalled storage server hung it
     // for the whole session: that ad never played or retried); the rejection makes commercials.local() drop the .part
     fetchFile: async (url, dest, max) => { const ac = new AbortController(); let idle = setTimeout(() => ac.abort(), 60000); const all = setTimeout(() => ac.abort(), 15 * 60000);
-      try { const r = await net.fetch(url, { signal: ac.signal }); if (!r.ok || !r.body) { try { if (r.body) await r.body.cancel(); } catch {} return 0; } let n = 0;
+      try { const r = await net.fetch(url, { signal: ac.signal }); if (!r.ok || !r.body) { try { if (r.body) await r.body.cancel(); } catch {} return 0; } let n = 0, sent = 0; const of0 = +(r.headers.get('content-length') || 0);
         const { Readable, Transform } = require('stream');
-        await require('stream/promises').pipeline(Readable.fromWeb(r.body), new Transform({ transform(c, e, cb) { clearTimeout(idle); idle = setTimeout(() => ac.abort(), 60000); n += c.length; cb(n > max ? new Error('too big') : null, c); } }), fs.createWriteStream(dest));
+        await require('stream/promises').pipeline(Readable.fromWeb(r.body), new Transform({ transform(c, e, cb) { clearTimeout(idle); idle = setTimeout(() => ac.abort(), 60000); n += c.length;
+          if (n - sent > 1048576 || n >= of0) { sent = n; try { if (win) win.webContents.send('tv:dl', { at: n, of: of0 }); } catch {} } /* the at-TV card's "Tuning in… 34%"; ~1 MB steps */ cb(n > max ? new Error('too big') : null, c); } }), fs.createWriteStream(dest));
+        try { if (win) win.webContents.send('tv:dl', null); } catch {} // done
         return n; } finally { clearTimeout(idle); clearTimeout(all); } } });
   stremio.init({ log, fanartKey: () => (cfg && cfg.keys && cfg.keys.fanart) || '', artDir: path.join(app.getPath('userData'), 'stremio-art'), fetchBuf: async url => { const r = await net.fetch(url, { signal: AbortSignal.timeout(30000) }); /* (beta.10: a stalled answer gives up) */ if (r.status === 404) return null; if (!r.ok) throw new Error('HTTP ' + r.status); return Buffer.from(await r.arrayBuffer()); } }); // null = really not there; other failures throw, so nothing "missing" is cached for them
   icons.init(app.getPath('userData'), log);
