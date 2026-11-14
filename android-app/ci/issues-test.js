@@ -29,19 +29,20 @@ module.exports = async function issuesPass({ browser, base, check, OUT }) {
 
     const config = require(path.join(ROOT, 'main', 'config.js')), pcgames = require(path.join(ROOT, 'main', 'pcgames.js'));
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bx-issues-')), exe = path.join(tmp, 'Game.exe'); fs.writeFileSync(exe, 'MZ');
-    const cfg = config.defaults(); cfg.pc.custom = [{ id: 'a', title: 'On PC', exe, args: '', shelf: 'pc' }, { id: 'b', title: 'On Custom', exe, args: '' }, { id: 'c', title: 'Odd', exe, args: '', shelf: 'nope' }];
+    const cfg = config.defaults(); cfg.pc.custom = [{ id: 'a', title: 'On PC', exe, args: '', shelf: 'pc' }, { id: 'b', title: 'On Custom', exe, args: '' }, { id: 'c', title: 'Odd', exe, args: '', shelf: 'Not a shelf!' }]; // (beta.14: a console's id is kept too, ci/customshelf-test.js)
     config.sanitize(cfg);
     const games = pcgames.customGames(cfg.pc.custom);
     check('A game added by hand can be put on the PC shelf: its choice survives the settings check, other values are dropped',
       cfg.pc.custom[0].shelf === 'pc' && !('shelf' in cfg.pc.custom[1]) && !('shelf' in cfg.pc.custom[2]) && games[0].shelf === 'pc' && !games[1].shelf && !games[2].shelf,
       JSON.stringify(games.map(g => [g.title, g.shelf || ''])));
-    // (beta.10) main.js buildLibrary's own split line, run on those games (buildLibrary itself needs Electron): the PC shelf
-    // gets the one marked 'pc', Custom the rest; the Custom shelf is still made from what's left
-    const main = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8'), line = (/^[ \t]*const toPc = [^\r\n]*$/m.exec(main) || [''])[0];
-    let split = null; try { split = line ? new Function('mine', line + '\nreturn { toPc, onCustom };')(games) : null; } catch (e) { split = { error: e.message }; }
+    // (beta.10) main.js buildLibrary's split, run on those games (buildLibrary itself needs Electron): the PC shelf gets the
+    // one marked 'pc', Custom the rest; the Custom shelf is still made from what's left. (beta.14) The split is
+    // pcgames.placeCustom now (consoles' shelves too: ci/customshelf-test.js)
+    const main = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8'), line = /const \{ toPc, onCustom \} = pcgames\.placeCustom\(shelves, mine, CONSOLES, pcGame\)/.test(main);
+    let split = null; try { split = pcgames.placeCustom([], games, [], g => g); } catch (e) { split = { error: e.message }; }
     check('The PC library sorts those games onto the PC shelf and leaves the rest on Custom',
-      !!split && Array.isArray(split.toPc) && split.toPc.map(g => g.title).join() === 'On PC' && split.onCustom.map(g => g.title).join() === 'On Custom,Odd' && /onCustom\.length\) shelves\.push\(\{ id: 'custom'/.test(main),
-      JSON.stringify(split && (split.error || { pc: (split.toPc || []).map(g => g.title), custom: (split.onCustom || []).map(g => g.title) })) + (line ? '' : ' (the toPc line was not found in main.js)'));
+      line && !!split && Array.isArray(split.toPc) && split.toPc.map(g => g.title).join() === 'On PC' && split.onCustom.map(g => g.title).join() === 'On Custom,Odd' && /onCustom\.length\) shelves\.push\(\{ id: 'custom'/.test(main),
+      JSON.stringify(split && (split.error || { pc: (split.toPc || []).map(g => g.title), custom: (split.onCustom || []).map(g => g.title) })) + (line ? '' : ' (main.js no longer calls pcgames.placeCustom)'));
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
   }
 

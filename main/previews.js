@@ -32,7 +32,7 @@ function index(dir) {
     if (!exact.has(b)) exact.set(b, f); const k = key(n); if (k && !loose.has(k)) loose.set(k, f); }
   const v = { at: Date.now(), exact, loose, count: exact.size }; if (listing.size > 400) listing.clear(); listing.set(dir, v); return v;
 }
-function forget() { listing.clear(); }
+function forget() { listing.clear(); dirsMemo.clear(); }
 
 // ES-DE's own console folder names where they differ from Boxshelf's
 const ESDE = { sw: 'switch', sw2: 'switch2', x360: 'xbox360', megadrive: 'genesis', segacd: 'megacd', pcengine: 'tg16' };
@@ -54,10 +54,18 @@ function dirsFor(def, sc, opts = {}) {
   for (const d of opts.artDirs || []) { out.push(d); sub(d, 'videos'); }
   return [...new Set(out.map(d => path.resolve(d)))].filter(isDir);
 }
+// (perf) the same answer kept for a minute: preview:find and preview:warm ask for every game you rest on and its
+// neighbours, and each ask stat'ed ~30 folders on the main process
+const dirsMemo = new Map();
+function dirsKept(def, sc, opts = {}) {
+  const k = JSON.stringify([def.id, sc.romDirs || [], (opts.launchbox && opts.launchbox[def.id]) || '', opts.launchboxRoots || [], opts.dirs || [], opts.artDirs || []]);
+  const hit = dirsMemo.get(k); if (hit && Date.now() - hit.at < 60e3) return hit.dirs;
+  const dirs = dirsFor(def, sc, opts); if (dirsMemo.size > 200) dirsMemo.clear(); dirsMemo.set(k, { at: Date.now(), dirs }); return dirs;
+}
 // the video file for one console game, or null. game: { file, title }
 function findFile(def, sc, game, opts = {}, dirsKnown) { // dirsKnown (beta.10): dirsFor's answer, worked out once for a whole console
   const base = path.basename(game.file || '').replace(/\.[^.]+$/, '').toLowerCase(), k = key(game.title), kb = key(base);
-  const dirs = dirsKnown || dirsFor(def, sc, opts);
+  const dirs = dirsKnown || dirsKept(def, sc, opts);
   for (const d of dirs) { const ix = index(d); for (const b of [base, base + '-video', base + '-01', (game.title || '').toLowerCase() + '-01']) { const f = ix.exact.get(b); if (f) return f; } }
   for (const d of dirs) { const ix = index(d); const f = ix.loose.get(kb) || ix.loose.get(k); if (f) return f; }
   return null;
@@ -148,9 +156,10 @@ function steamIdOf(f) {
 }
 // keeps the Steam clips and the console trailer clips (main/ytclips.js, data\previews\youtube) under 400 MB together,
 // dropping the ones not shown for longest
+// (beta.14) and ScreenScraper's gameplay clips (main/trailers.js, data\previews\ss\<console>)
 function trim(limit = 400 << 20) {
-  let files = [];
-  for (const d of [steamDir(), path.join(dataDir, 'previews', 'youtube')]) { try { const names = fs.readdirSync(d), has = new Set(names.map(n => n.toLowerCase()));
+  let files = []; const ssRoot = path.join(dataDir, 'previews', 'ss'); let ssDirs = []; try { ssDirs = fs.readdirSync(ssRoot).map(n => path.join(ssRoot, n)).filter(isDir); } catch {}
+  for (const d of [steamDir(), path.join(dataDir, 'previews', 'youtube'), ...ssDirs]) { try { const names = fs.readdirSync(d), has = new Set(names.map(n => n.toLowerCase()));
     // (beta.12) a clip's sound counts too, and one left without its clip (the clip went while the sound was coming) goes
     for (const n of names) { const m = /^(.+)\.m4a$/i.exec(n); if (m && !has.has((m[1] + '.mp4').toLowerCase()) && !has.has((m[1] + '.hd.mp4').toLowerCase())) { try { fs.unlinkSync(path.join(d, n)); } catch {} } }
     files.push(...names.filter(n => /\.(mp4|m4a)$/i.test(n)).map(n => { const f = path.join(d, n), s = fs.statSync(f); return { f, size: s.size, at: s.mtimeMs }; })); } catch {} }

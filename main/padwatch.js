@@ -356,7 +356,8 @@ function FrontGame() { if ($appPid -le 0) { return $true }
 # (Sink: Boxshelf's see-through window below the game; KeepFront: the taskbar told the game's window is fullscreen, so it
 #  stays behind the game)
 # (F24 above: an unused key; the last process to send input may move the foreground, so Windows doesn't refuse it)
-$names = @{ 0x0001 = 'up'; 0x0002 = 'down'; 0x0004 = 'left'; 0x0008 = 'right'; 0x1000 = 'a'; 0x2000 = 'b'; 0x0010 = 'start'; 0x0400 = 'home' }
+# (the menu's buttons; beta.14: Y, LB and RB too, for the Home menu's Achievements: Y sorts, LB / RB switch tabs)
+$names = @{ 0x0001 = 'up'; 0x0002 = 'down'; 0x0004 = 'left'; 0x0008 = 'right'; 0x1000 = 'a'; 0x2000 = 'b'; 0x0010 = 'start'; 0x0400 = 'home'; 0x8000 = 'y'; 0x0100 = 'lb'; 0x0200 = 'rb' }
 # $held / $backHeld: when (ms on $clk) the quit combo / a lone View started being held, 0 = not held (-1: View waits to be
 # let go after it opened the menu). Timed, not counted in passes: the loop's real period drifts with PowerShell's overhead.
 $clk = [System.Diagnostics.Stopwatch]::StartNew(); $ms = 1
@@ -389,7 +390,7 @@ Write-Output "READY"
 $keys = @{ 0x0001 = 0x26; 0x0002 = 0x28; 0x0004 = 0x25; 0x0008 = 0x27; 0x0010 = 0x0D; 0x2000 = 0x1B; 0x4000 = 0x20; 0x8000 = 0x7A; 0x0100 = 0x25; 0x0200 = 0x27 }
 $repeatable = @(0x0001, 0x0002, 0x0004, 0x0008, 0x0100, 0x0200)
 while ($true) {
-  $now = Get-Date; $ms = $clk.ElapsedMilliseconds + 1
+  $now = [DateTime]::Now; $ms = $clk.ElapsedMilliseconds + 1
   if ($parentPid -gt 0 -and ($now - $parentAt).TotalSeconds -gt 2) { $parentAt = $now
     $pp = Get-Process -Id $parentPid -ErrorAction SilentlyContinue; if (-not $pp) { ReleaseClick; TbBack; exit }
     try { if ($parentStart -and $pp.StartTime -ne $parentStart) { ReleaseClick; TbBack; exit } } catch {} }
@@ -434,7 +435,7 @@ while ($true) {
     elseif (($now - $t0).TotalSeconds -gt 40) { $fsDone = $true }
   }
   # commands from Boxshelf: MENU 1/0 (menu open: report buttons, don't act as a mouse), KEYS <spec> [<spec>…]
-  if ($cmd -and (Test-Path -LiteralPath $cmd)) {
+  if ($cmd -and [System.IO.File]::Exists($cmd)) {
     # take the file over first (a rename is atomic), so a line Boxshelf appends meanwhile lands in a fresh file, never lost
     $work = $cmd + '.w'; Move-Item -LiteralPath $cmd -Destination $work -Force -ErrorAction SilentlyContinue
     $lines = @(Get-Content -LiteralPath $work -ErrorAction SilentlyContinue); Remove-Item -LiteralPath $work -ErrorAction SilentlyContinue
@@ -461,7 +462,7 @@ while ($true) {
   for ($i = 0; $i -lt 6; $i++) { # 0-3 XInput, 4 Nintendo pads, 5 PlayStation pads (HID)
     # no pad in this slot (during the last sample): a hold in progress starts over when it's back
     if ([int]$acc[$i] -lt 0 -and $passes -gt 0) { $held[$i] = 0; $seenAt[$i] = 0; if ($backHeld[$i] -gt 0) { $backHeld[$i] = 0 }; if ($i -ge 4) { $hidLive[$i - 4] = $false }; continue }
-    $s = New-Object -TypeName 'XI+ST'
+    $s = [XI+ST]::new()
     if ([XI]::Get($i, [ref]$s) -ne 0) { $held[$i] = 0; $seenAt[$i] = 0; if ($backHeld[$i] -gt 0) { $backHeld[$i] = 0 }; if ($i -ge 4) { $hidLive[$i - 4] = $false }; continue }
     $g = $s.Gamepad; $b = [int]$g.wButtons
     if ($seenAt[$i] -eq 0) { $seenAt[$i] = $ms }
@@ -581,9 +582,10 @@ function start(comboName, holdMs, onQuit, opts = {}) {
     .replace('__HOME__', () => psb(opts.home)).replace('__NIN__', () => psb(opts.nin)).replace('__BACKHOME__', () => psb(opts.home && opts.backHome !== false)).replace('__PARENT__', () => num(process.pid)).replace('__SELF__', () => /^\d+$/.test(selfHwnd) ? selfHwnd : '0')
     .replace('__CMD__', () => psq(opts.cmdFile || '')).replace('__DLL__', () => psq(dllPath())).replace('__TBHIDE__', () => psb(opts.taskbarHidden));
   cmdFile = opts.cmdFile || null; if (cmdFile) { try { require('fs').unlinkSync(cmdFile); } catch {} }
+  menuOn = false; if (!opts.shelf) shelfPad = false; /* (a new helper starts with MENU 0; the shelf's asks again below, see isMenuOpen) */
   if (focusWant && !opts.appPid && Date.now() - focusWant.at < 8000) setTimeout(() => focusWant && command('FOCUS ' + focusWant.h), 0);
   // a helper that (re)starts while the Home menu is still open must report the menu's buttons again (it starts with MENU 0)
-  if (opts.isMenuOpen) setTimeout(() => { try { if (opts.isMenuOpen()) command('MENU 1'); } catch {} }, 0); /* asked just before the game's helper went away (only the shelf's helper repeats it, never a game's) */
+  if (opts.isMenuOpen || shelfPad) setTimeout(() => { try { const m = !!(opts.isMenuOpen && opts.isMenuOpen()); if (m) menuOn = true; if (m || shelfPad) command('MENU 1'); } catch {} }, 0); /* asked just before the game's helper went away (only the shelf's helper repeats it, never a game's) */
   // The script runs from a temp file: passed inline (-EncodedCommand) it outgrew Windows' 32,767-character command
   // line and the helper silently never started (no Guide, no quit combo). UTF-8 with a BOM for Windows PowerShell 5.1.
   const ps1 = require('path').join(require('os').tmpdir(), `boxshelf-pad-${process.pid}-${++runs}.ps1`);
@@ -647,7 +649,12 @@ function sweepTemp() {
 // Commands to the running helper go through a small file it checks every loop (stdin isn't reliable from PowerShell).
 let cmdFile = null, pendingKeys = new Map(), keySeq = 0; // each KEYS command carries an id, answered by KEYS-DONE <id>
 function command(line) { if (!proc || !cmdFile) return false; try { require('fs').appendFileSync(cmdFile, line + '\r\n'); return true; } catch (e) { log('padwatch command', e.message); return false; } }
-function setMenu(on) { return command('MENU ' + (on ? 1 : 0)); }
+// (beta.14, #1) shelfPad: the shelf gets nothing from a PlayStation pad Windows has connected (some DualSense pads over
+// Bluetooth never reach Chromium), so the shelf's helper reports its buttons all the time and main.js passes them on.
+// Only ever on for the shelf's own helper: a game's helper starts with it off (start()), so a media app keeps its pointer.
+let menuOn = false, shelfPad = false;
+function setMenu(on) { menuOn = !!on; return command('MENU ' + ((menuOn || shelfPad) ? 1 : 0)); }
+function setShelfPad(on) { shelfPad = !!on; return command('MENU ' + ((menuOn || shelfPad) ? 1 : 0)); }
 let focusWant = null;
 // hwnd: a window handle as a decimal string. Also replayed once by the next helper that starts within a few seconds.
 function focusOnce(hwnd) { return hwnd ? command('FOCUS ' + String(hwnd)) : false; } // just now (not repeated for the next helper, unlike focusWindow)
@@ -719,4 +726,4 @@ const isRunning = () => !!proc;
 let selfHwnd = '0'; function setSelf(hwnd) { selfHwnd = String(hwnd || '0'); }
 // the last Home came from a Nintendo pad (slot 4): the Home menu then follows its A/B layout under Confirm "Match my controller"
 let homeNin = false; const homeFromNintendo = () => homeNin;
-module.exports = { init, start, stop, isRunning, setMenu, sendKeys, COMBOS, front, focusWindow, focusOnce, focusPending, homeFromNintendo, setSelf, cover, taskbar, taskbarSync, taskbarGuard };
+module.exports = { init, start, stop, isRunning, setMenu, setShelfPad, sendKeys, COMBOS, front, focusWindow, focusOnce, focusPending, homeFromNintendo, setSelf, cover, taskbar, taskbarSync, taskbarGuard };

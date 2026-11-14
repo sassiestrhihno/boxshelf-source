@@ -1616,7 +1616,7 @@ window.Museum = (() => {
   const heldReady = () => heldCase && (heldCase.userData.lift || 0) > .9;
   function buildPeek(b) {
     const THREE = T(), u = b.userData, g = u.g; b.geometry.computeBoundingBox(); const sz = b.geometry.boundingBox.getSize(new THREE.Vector3());
-    const d = sz.x, h = sz.y, w = sz.z, lt = Math.max(.012, d * .2), tray = d - lt, sys = (rows[u.ri] && rows[u.ri].id) || '';
+    const d = sz.x, h = sz.y, w = sz.z, sys = (rows[u.ri] && rows[u.ri].id) || '';
     const kind = g.media === 'cart' ? 'cart' : g.media === 'umd' ? 'umd' : 'disc', kit = window.Inspect3D && Inspect3D.kit;
     const col = new THREE.Color(u.st.caseColor), inner = col.clone().lerp(new THREE.Color(0xffffff), .12);
     const caseM = new THREE.MeshStandardMaterial({ color: col, roughness: .42 }), innerM = new THREE.MeshStandardMaterial({ color: inner, roughness: .55 });
@@ -1628,64 +1628,38 @@ window.Museum = (() => {
     // opened before its cover arrived: put it on when it does (it stayed blank)
     if (!u.front.map && lidT) { if (lidT.userData.state === 'ok') { frontM.map = lidT; frontM.color.set(0xffffff); } else whenLoaded(lidT, () => { if (!peek || peek.box !== b || frontM.map) return; frontM.map = lidT; frontM.color.set(0xffffff); frontM.needsUpdate = true; }, () => {}); }
     const mesh = (geo, m) => { geos.push(geo); return new THREE.Mesh(geo, m); };
-    // The same moulded case as Inspect: rounded-rectangle back and lid with this console's corner radius and soft
-    // bevels, one continuous rounded wall ring, a moulded interior (disc well and finger notches, hub rosette, cart
-    // cradle…). Built face-on (x across, y up, z out of the cover) and turned so the cover faces +x and the spine +z.
+    // (beta.14) the same case as Inspect's, from the one shared builder (Inspect3D.kit.buildCase): a moulded keep case, a
+    // CD jewel case or a printed card box, with the booklet at its real size under its tabs and the media at real size.
+    // Built face-on (x across, y up, z out of the cover) and turned so the cover faces +x and the spine +z.
     const L = new THREE.Group(); L.rotation.y = Math.PI / 2; rig.add(L);
-    const rc = Math.max(.01, Math.min(w * .45, w * (u.st.rc || .04))), bev = Math.min(.0028, d * .05);
-    const rr = (W, H, R) => { const sh = new THREE.Shape(), x = -W / 2, y = -H / 2; R = Math.max(.001, Math.min(R, W / 2 - .001, H / 2 - .001));
-      sh.moveTo(x + R, y); sh.lineTo(x + W - R, y); sh.quadraticCurveTo(x + W, y, x + W, y + R); sh.lineTo(x + W, y + H - R); sh.quadraticCurveTo(x + W, y + H, x + W - R, y + H);
-      sh.lineTo(x + R, y + H); sh.quadraticCurveTo(x, y + H, x, y + H - R); sh.lineTo(x, y + R); sh.quadraticCurveTo(x, y, x + R, y); return sh; };
-    const face = (W, H, R, m) => { const fg = new THREE.ShapeGeometry(rr(W, H, R), 12), uv = fg.attributes.uv, pos = fg.attributes.position; for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / W + .5, pos.getY(i) / H + .5); uv.needsUpdate = true; return mesh(fg, m); };
-    const slab = (W, H, R, Tk, m) => { const sg = new THREE.ExtrudeGeometry(rr(W - 2 * bev, H - 2 * bev, R - bev), { depth: Math.max(.0005, Tk - 2 * bev), bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 2, curveSegments: 10 }); sg.translate(0, 0, -(Tk - 2 * bev) / 2); return mesh(sg, m); };
-    // local z: the back of the case at -d/2, the cover at +d/2; the tray is everything under the lid
-    const tb = Math.min(.008, tray * .3), z0 = -d / 2;
-    const back = slab(w, h, rc, tb, caseM); back.position.z = z0 + tb / 2; back.castShadow = true; L.add(back);
-    const outFace = face(w - .004, h - .004, rc, u.backM || caseM); outFace.rotation.y = Math.PI; outFace.position.z = z0 - .0006; L.add(outFace);
-    const R = g.mediaSize ? w * g.mediaSize / 2 : Math.min(w, h) * (kind === 'umd' ? .34 : .44); // the real disc size for this console (a GameCube disc is a small 8 cm one), as in Inspect
-    const my = kit && kit.discLift ? kit.discLift(kind, sys) * h : 0; let inM = innerM;
-    if (kit) { const it = kit.interiorTexture(u.st.caseColor, kind, (w - .02) / h, (h - .02) / h, (kind === 'cart' ? w * .42 / 1.8 : R) / h, sys); texs.push(it); own.push(it); inM = new THREE.MeshStandardMaterial({ map: it, roughness: .7 }); mats.push(inM); }
-    const floorZ = z0 + tb; const inFace = face(w - .02, h - .02, rc * .8, inM); inFace.position.z = floorZ + .0004; L.add(inFace);
-    const wall = Math.min(.011, w * .03), Dw = tray - tb;
-    { const ringS = rr(w, h, rc), hole = rr(w - 2 * wall, h - 2 * wall, rc - wall); ringS.holes.push(new THREE.Path(hole.getPoints(40)));
-      const rg = new THREE.ExtrudeGeometry(ringS, { depth: Dw, bevelEnabled: false, curveSegments: 12 }); const ring = mesh(rg, [innerM, caseM]); ring.position.z = floorZ; ring.castShadow = true; L.add(ring); }
-    // the printed spine wraps the hinge side (local -x)
-    const sp = mesh(new THREE.PlaneGeometry(d - .003, h - rc * 1.1), u.spine); sp.rotation.y = -Math.PI / 2; sp.position.set(-w / 2 - .0008, 0, 0); L.add(sp);
-    // the hub rosette (collar, ten springy fingers, push button) or the UMD's pegs
-    const hubM = new THREE.MeshStandardMaterial({ color: inner, roughness: .5 }), btnM = new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color(0), .25), roughness: .35 }); mats.push(hubM, btnM);
-    const hubH = Math.max(.004, Math.min(.016, Dw * .7));
-    if (kind === 'disc') { const hr = R * .135, hub = new THREE.Group(); hub.position.set(0, my, floorZ); L.add(hub);
-      const collar = mesh(new THREE.CylinderGeometry(hr * 1.45, hr * 1.6, hubH * .22, 40), hubM); collar.rotation.x = Math.PI / 2; collar.position.z = hubH * .11; hub.add(collar);
-      const fg = new THREE.BoxGeometry(hr * .4, hr * .32, hubH * .7); geos.push(fg);
-      for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2, f = new THREE.Mesh(fg, hubM); f.position.set(Math.cos(a) * hr * .7, Math.sin(a) * hr * .7, hubH * .6); f.rotation.z = a + Math.PI / 2; f.rotation.x = .25; hub.add(f); }
-      const btn = mesh(new THREE.CylinderGeometry(hr * .45, hr * .5, hubH, 28), btnM); btn.rotation.x = Math.PI / 2; btn.position.z = hubH * .55; hub.add(btn); }
-    else if (kind === 'umd') { const pg = new THREE.BoxGeometry(R * .14, R * .14, hubH * .8); geos.push(pg); [[-1, 1], [1, 1], [-1, -1], [1, -1]].forEach(([sx, sy]) => { const peg = new THREE.Mesh(pg, hubM); peg.position.set(sx * R * 1.1, sy * R * 1.2, floorZ + hubH * .4); L.add(peg); }); }
-    // the lid, hinged on the spine edge; the pivot keeps the old name/axis so the opening animation is unchanged
-    const pivot = new THREE.Group(); pivot.position.set(-w / 2, 0, d / 2 - lt / 2); L.add(pivot);
-    const lid = slab(w, h, rc, lt, caseM); lid.position.x = w / 2; lid.castShadow = true; pivot.add(lid);
-    const cover = face(w - .004, h - .004, rc, frontM); cover.position.set(w / 2, 0, lt / 2 + .0006); pivot.add(cover);
-    const under = face(w - .01, h - .01, rc * .9, innerM); under.rotation.y = Math.PI; under.position.set(w / 2, 0, -lt / 2 - .0004); pivot.add(under);
-    // the manual, clipped inside the lid, and its two clips
-    const manU = g.manualPage || (g.booklet && g.manualPages && g.manualPages[0]) || null, manT = manU ? loadTex(manU, 'front') : null; if (manT) texs.push(manT);
-    const manM = new THREE.MeshStandardMaterial({ color: manT ? 0xffffff : 0xece5d6, map: manT, roughness: .8 }); mats.push(manM);
-    const man = mesh(new THREE.PlaneGeometry(w * .8, h * .86), manM); man.rotation.y = Math.PI; man.position.set(w / 2 + w * .02, 0, -lt / 2 - .0018); pivot.add(man);
-    if (manT) whenLoaded(manT, () => { if (kit && kit.coverRect) kit.fitCover(man, kit.coverRect(manT.image, typeof ImageBitmap !== 'undefined' && manT.image instanceof ImageBitmap), w * .8, h * .86); }, () => { manM.map = null; manM.color.set(0xece5d6); manM.needsUpdate = true; });
-    { const cg = new THREE.BoxGeometry(w * .07, h * .09, .004); geos.push(cg); [.34, -.34].forEach(y => { const c = new THREE.Mesh(cg, caseM); c.position.set(w * .135, y * h, -lt / 2 - .003); pivot.add(c); }); }
+    const sp = kit.caseSpec(sys, u.st), man = kit.manualDims(sp, w, h), md = kit.mediaDims(sp, { kind, size: g.mediaSize || (kind === 'umd' ? .6 : .8) }, w, h);
+    const boxy = sp.pack === 'box', lt = boxy ? 0 : Math.max(.012, d * .2), tray = d - lt, tb = boxy ? 0 : Math.min(.008, tray * .3);
+    // the media fits the case it's in (here the case is the shelf's own thickness)
+    if (md.kind === 'cart') md.ct = Math.max(.004, Math.min(md.ct, boxy ? (d - .006 - (man ? man[2] : 0) - .014) / .6 : tray - tb - .006 - (man ? man[2] + .004 : 0)));
+    const std = p => { const q = Object.assign({}, p); delete q.clearcoat; delete q.clearcoatRoughness; const m = new THREE.MeshStandardMaterial(q); return m; };
+    const manU = g.manualPage || (g.booklet && g.manualPages && g.manualPages[0]) || null, manT = manU && man ? loadTex(manU, 'front') : null; if (manT) texs.push(manT);
+    const B = kit.buildCase(THREE, { w, h, D: tray, lt, tb, z0: -d / 2, s: sp, md, man, lite: true, mat: std, front: frontM, back: u.backM || null, spine: u.spine, manualMap: manT,
+      caseColor: u.st.caseColor, caseSide: u.st.caseColor, edge: 0, wrap: false, rc: Math.max(.01, Math.min(w * .45, w * (u.st.rc || .04))), open: 168, shadow: true,
+      tex: (key, make) => { const t = new THREE.CanvasTexture(make()); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; texs.push(t); own.push(t); return t; } });
+    L.add(B.g); B.geos.forEach(x => geos.push(x)); B.mats.forEach(x => mats.push(x));
+    const pivot = B.pivot, manG = B.manG, manM = B.manMat;
+    if (manT && B.manPage) whenLoaded(manT, () => { const p = B.manPage.geometry.parameters; kit.fitPage(B.manPage, kit.coverRect(manT.image, typeof ImageBitmap !== 'undefined' && manT.image instanceof ImageBitmap), p.width, p.height, B.pageRange[0], B.pageRange[1]); }, () => { manM.map = null; manM.color.set(0xece5d6); manM.needsUpdate = true; });
+    const R = md.R || .1, my = B.y0, mx = B.x0, Dw = tray - tb;
     // the disc (label art on top, the real mirrored data side underneath) or a cartridge, in its own group so it can come out
-    const faceX = -d / 2 + tb + Math.min(hubH * .9, Dw * .6), artT = g.disc ? loadTex(g.disc, 'front') : null; if (artT) texs.push(artT);
-    const media = new THREE.Group(); media.position.set(faceX, my, 0); rig.add(media); const spinner = new THREE.Group(); media.add(spinner);
+    const faceX = B.seat, artT = g.disc ? loadTex(g.disc, 'front') : null; if (artT) texs.push(artT);
+    const media = new THREE.Group(); media.position.set(faceX, my, -mx); rig.add(media); const spinner = new THREE.Group(); media.add(spinner);
     const M = new THREE.Group(); M.rotation.y = Math.PI / 2; spinner.add(M);
     if (kind === 'cart') {
       const cm = new THREE.MeshStandardMaterial({ color: artT ? 0xffffff : 0x26272d, map: artT, roughness: .5 }), shell = new THREE.MeshStandardMaterial({ color: 0x24252b, roughness: .55 }); mats.push(cm, shell);
-      const cw = w * .42, ch = cw * 1.1, ct = Math.min(.012, lt * .55, Dw * .8); /* thinner than the lid, so a closed (thin) Switch case never shows it through the cover */
-      const c = mesh(new window.BS3D.RoundedBoxGeometry(cw, ch, ct, 2, Math.min(.006, ct * .45)), [shell, shell, shell, shell, cm, shell]); c.position.set(0, 0, ct / 2); M.add(c);
-      const pins = mesh(new THREE.BoxGeometry(cw * .7, ch * .1, ct + .001), new THREE.MeshStandardMaterial({ color: 0xc9a24a, metalness: .8, roughness: .35 })); mats.push(pins.material); pins.position.set(0, -ch / 2 + ch * .07, ct / 2); M.add(pins);
+      const cw = md.cw, ch = md.ch, ct = md.ct; /* (beta.14) real size, as thin as the case leaves room for, so a closed case never shows it through the cover */
+      const c = mesh(new window.BS3D.RoundedBoxGeometry(cw, ch, ct, 2, Math.min(.006, ct * .45, cw * .08)), [shell, shell, shell, shell, cm, shell]); c.position.set(0, 0, ct / 2); M.add(c);
+      const pins = mesh(new THREE.BoxGeometry(cw * .7, ch * .1, .001), new THREE.MeshStandardMaterial({ color: 0xc9a24a, metalness: .8, roughness: .35 })); mats.push(pins.material); pins.position.set(0, -ch / 2 + ch * .07, -.0005); M.add(pins); /* (beta.14, #32) contacts on the back only */
     } else {
       const TH = .0035, lab = new THREE.MeshStandardMaterial({ color: artT ? 0xffffff : 0xd9dde6, map: artT, metalness: artT ? .1 : .85, roughness: artT ? .35 : .18 }); mats.push(lab);
       const planar = (rg, Rr) => { const pa = rg.attributes.position, uv = rg.attributes.uv; for (let i = 0; i < pa.count; i++) uv.setXY(i, .5 + pa.getX(i) / (2 * Rr), .5 + pa.getY(i) / (2 * Rr)); return rg; };
       const top = mesh(planar(new THREE.RingGeometry(R * .22, R, 96), R), lab); top.position.z = TH / 2; M.add(top);
       const clear = new THREE.MeshStandardMaterial({ color: 0xe8eef8, transparent: true, opacity: .35, roughness: .05, metalness: .1, side: THREE.DoubleSide }); mats.push(clear);
-      const fmt = sys === 'ps3' || sys === 'ps4' || sys === 'ps5' || sys === 'wiiu' ? 'bd' : sys === 'gc' ? 'gc' : 'dvd';
+      const fmt = sp.disc || (sys === 'ps3' || sys === 'ps4' || sys === 'ps5' || sys === 'wiiu' ? 'bd' : sys === 'gc' ? 'gc' : 'dvd');
       let hc = 0; for (const ch of (g.title || 'disc')) hc = (hc * 31 + ch.charCodeAt(0)) >>> 0;
       const code = `${(sys || 'DSC').toUpperCase()}-${hc % 9000 + 1000}-${String.fromCharCode(65 + hc % 26)}${String.fromCharCode(65 + (hc >> 5) % 26)}  ${(hc >> 9) % 90 + 10}`;
       const dt = kit ? kit.discBackTexture(fmt, code) : null; if (dt) { texs.push(dt); own.push(dt); }
@@ -1694,12 +1668,12 @@ window.Museum = (() => {
       const rim = mesh(new THREE.RingGeometry(R * .985, R, 96), clear); rim.rotation.y = Math.PI; rim.position.z = -TH / 2; M.add(rim);
       const hubT = mesh(new THREE.RingGeometry(R * .14, R * .22, 48), clear); hubT.position.z = TH / 2; M.add(hubT);
       const edge = mesh(new THREE.CylinderGeometry(R, R, TH, 96, 1, true), clear); edge.rotation.x = Math.PI / 2; M.add(edge);
-      if (kind === 'umd') { const sm2 = new THREE.MeshStandardMaterial({ color: 0xdfe6ff, transparent: true, opacity: .22, roughness: .1 }); mats.push(sm2); const sh = mesh(new window.BS3D.RoundedBoxGeometry(R * 2.3, R * 2.5, Math.min(.03, Dw * .8), 2, .012), sm2); sh.position.set(0, -R * .1, 0); M.add(sh); }
+      if (kind === 'umd') { const sm2 = new THREE.MeshStandardMaterial({ color: 0xdfe6ff, transparent: true, opacity: .22, roughness: .1 }); mats.push(sm2); const sh = mesh(new window.BS3D.RoundedBoxGeometry(md.sw, md.sh, Math.max(.006, Math.min(.03, md.st, Dw * .8)), 2, Math.min(.012, md.st * .45)), sm2); sh.position.set(0, -R * .1, 0); M.add(sh); }
     }
     b.add(rig);
     if (!HIDE.length) for (let i = 0; i < 6; i++) HIDE.push(new THREE.MeshBasicMaterial({ visible: false }));
     if (b.material !== HIDE) u.realMat = b.material; const keep = u.realMat || b.material; b.material = HIDE;
-    return { box: b, rig, L, pivot, man, manM, media, spinner, faceX, my, w, k: 0, t: 1, disc: 0, discT: 0, keep, mats, geos, texs, own };
+    return { box: b, rig, L, pivot, man: manG, manM, media, spinner, faceX, my, mx, w, anim: B.anim, movers: B.movers, pack: sp.pack, info: B.info, discW: md.kind !== 'cart' ? 2 * R / w : null, k: 0, t: 1, disc: 0, discT: 0, keep, mats, geos, texs, own };
   }
   function endPeek() {
     closeReader(true);
@@ -1725,7 +1699,7 @@ window.Museum = (() => {
     reader = { grp, left, right, leafPivot, leafF, leafB, sh, geos, mats, pages, s: 0, n: spreadCount(pages.length), texs: new Map(), fade: 0, out: false, flip: null, zoom: 1, zoomT: 1, pan: 0, panT: 0, aspect: .7 };
     // a first page that's a whole spread or print sheet: swap in just its front cover once that's cut out
     const kit = window.Inspect3D && Inspect3D.kit, r0 = reader; if (kit && kit.coverCrop && !g.booklet) kit.coverCrop(pageUrl(pages[0])).then(u => { if (!u || reader !== r0) return; r0.pages = [u].concat(pages.slice(1)); const old = r0.texs.get(0); if (old) { unref(old); r0.texs.delete(0); } showSpread(r0.s); }, () => {});
-    showSpread(0); if (peek) peek.man.visible = false; snd('flip'); return true;
+    showSpread(0); if (peek && peek.man) peek.man.visible = false; snd('flip'); return true;
   }
   // textures by page index, shared; pages near the open spread are kept (and the next ones preloaded), the rest let go
   function pageTex(i) { const r = reader; if (!r || i < 0 || i >= r.pages.length) return null; if (!r.texs.has(i)) { const t = loadTex(pageUrl(r.pages[i]), 'page'); r.texs.set(i, t); whenLoaded(t, () => { const im = t.image; if (reader === r && im && im.width && im.height && i === 0) r.aspect = im.width / im.height; paintAll(); }, () => {}); } return r.texs.get(i); }
@@ -1749,7 +1723,7 @@ window.Museum = (() => {
   function closeReader(now) {
     const r = reader; if (!r) return; if (!now) { r.out = true; return; }
     reader = null; try { scene.remove(r.grp); r.geos.forEach(g => g.dispose()); r.mats.forEach(m => m.dispose()); r.texs.forEach(t => unref(t)); } catch {}
-    if (peek) peek.man.visible = true;
+    if (peek && peek.man) peek.man.visible = true;
   }
   function frameReader(dt) {
     const r = reader; if (!r) return;
@@ -2107,11 +2081,11 @@ window.Museum = (() => {
       else {
         if (peek.box.material !== HIDE) { peek.box.userData.realMat = peek.box.material; peek.keep = peek.box.material; peek.box.material = HIDE; }
         const want = peek.box === heldCase && heldReady() ? peek.t : 0; if (!want) peek.discT = 0; /* closing: the disc / cartridge goes home first, the lid only shuts once it's back in the tray (it used to shut with the cart still outside, floating over the cover) */ const tgt = want || peek.disc > .02 ? 1 : 0; peek.k = sm(peek.k, tgt, 1 - Math.exp(-dt * (tgt ? 4.2 : 6))); if (Math.abs(peek.k - tgt) < 1e-3) peek.k = tgt;
-        peek.pivot.rotation.y = -168 * DEG * ss(peek.k); moved(peek.pivot);
+        const an = peek.anim(ss(peek.k)); peek.movers.forEach(moved); /* (beta.14) the lid on its hinge, or a card box's flap and tray (an: how far the box and its media move over) */
         const dT = peek.discT && peek.k > .95 ? 1 : 0; peek.disc = sm(peek.disc, dT, 1 - Math.exp(-dt * (dT ? 3.6 : 9))); if (Math.abs(peek.disc - dT) < 1e-3) peek.disc = dT;
-        const e = ss(peek.disc); peek.media.position.set(peek.faceX + e * .3, (peek.my || 0) * (1 - e), 0); peek.media.scale.setScalar(1 + .55 * e);
+        const e = ss(peek.disc); peek.media.position.set(peek.faceX + e * .3, ((peek.my || 0) + an.my + an.cy) * (1 - e), -((peek.mx || 0) + an.mx + an.cx) * (1 - e)); peek.media.scale.setScalar(1 + .55 * e);
         // disc out: the case slides away to the side and back, out of view, and the disc alone sits in your hands
-        if (peek.L) { peek.L.position.set(-e * .5, -e * .25, -e * peek.w * 2.4); peek.L.visible = e < .985; moved(peek.L); }
+        if (peek.L) { peek.L.position.set(-e * .5, -e * .25 + an.cy, -e * peek.w * 2.4 - an.cx); peek.L.visible = e < .985; moved(peek.L); }
         const idle = performance.now() - lastInput > 1500; peek.spinV = sm(peek.spinV || 0, peek.disc > .95 && idle ? .35 : 0, 1 - Math.exp(-dt * 2));
         if (peek.discT) peek.spinner.rotation.x += dt * peek.spinV; else { peek.spinV = 0; peek.spinner.rotation.x = Math.abs(peek.spinner.rotation.x) < 1e-3 ? 0 : sm(peek.spinner.rotation.x, 0, 1 - Math.exp(-dt * 7)); }
         { const kd = 1 - Math.exp(-dt * (peek.discT ? 7 : 14)), tY = peek.discT ? peek.dry || 0 : 0, tX = peek.discT ? peek.drx || 0 : 0; peek.cry = sm(peek.cry || 0, tY, kd); peek.crx = sm(peek.crx || 0, tX, kd); if (Math.abs(peek.cry - tY) < .01) peek.cry = tY; if (Math.abs(peek.crx - tX) < .01) peek.crx = tX; const f = peek.discT ? 1 : e; /* going home it's square again by the time it reaches the tray */ peek.media.rotation.set(peek.crx * f * DEG, peek.cry * f * DEG, 0); }
@@ -2269,5 +2243,5 @@ window.Museum = (() => {
     lastInput = woke(); startUnwrap(b); snd('unlock'); endShim(); const m = shimMesh(b); b.add(m); shim = { box: b, mesh: m, t: 0, fast: true }; burst(b);
     hooks.onSelect && hooks.onSelect(current()); return true; }
   function glStats() { if (!renderer) return null; const i = renderer.info; let lights = 0, shadowL = 0; scene && scene.traverse(o => { if (o.isLight && o.visible && o.intensity > 0) { lights++; if (o.castShadow) shadowL++; } }); return { calls: i.render.calls, tris: i.render.triangles, geos: i.memory.geometries, texs: i.memory.textures, progs: (i.programs || []).length, progNames: (i.programs || []).map(p => p.name + '#' + p.id), lights, shadowL, pr: renderer.getPixelRatio(), aa: !!(renderer.getContext().getContextAttributes() || {}).antialias, shadows: renderer.shadowMap.enabled }; }
-  return { _perf: reset => { const o = Object.assign({}, facc), r = rows[rowI]; o.pending = r ? r.boxes.filter((b, i) => Math.abs(i - colI) <= 4 && !b.userData.mail && !b.userData.frontLoaded).length : -1; if (reset) Object.keys(facc).forEach(k => facc[k] = 0); return o; }, stats: glStats, tvShow, tvCard, tvStatic, tvOff, tvVolume, watchTv, tvMeta: () => tv && tv.power ? tv.meta : null, tvPower: on => { tvPower(!!on); hooks.onSelect && hooks.onSelect(current()); }, tvPowered: () => !!(tv && tv.power), tvAvail: () => !!tv, showTv, _tv: () => tv && { mode: tv.mode, power: tv.power, pow: tv.pow, gain: tv.gain, gt: tv.gT, base: tv.base, vol: tv.video ? tv.video.volume : null, box: [tv.box.min.x, tv.box.max.x, tv.box.min.y, tv.box.max.y], card: tv.card && tv.card.title, crt: tvM && tvM.U.uCrt.value, prog: tv.screen.material === (tvM && tvM.screenV) ? 'video' : 'still' }, lightFade: () => lightK, _dv: () => delivery && { rot: delivery.rot, shown: delivery.shown, ot: delivery.open && delivery.open.t }, skipDelivery, setHoldA: v => { holdA = !!v; if (holdA) nudge(); }, resealAll, opened: () => unwrapped.size, preloadModel, _snapCam: () => { snapCam = true; }, _cam: () => ({ x: camP.x, y: camP.y, z: camP.z, tx: lastTg ? lastTg.x : 0, ty: lastTg ? lastTg.y : 0, tz: lastTg ? lastTg.z : 0, on: tw.on, s: tw.s, t: tw.t, d: tw.d, zoom: tw.zoom, key: twKey, pre: preOn ? preRow : -1, fk: wideFrame ? wideFrame.userData.k : 0, up: fst.up, fr: fst.fr, sp: fst.sp, sh: fst.sh, row: fst.row, js: fst.jsMs, upQ: upQ.length }), setRoomView: on => { roomView = !!on; lastInput = woke(); }, setGuideView: on => { guideView = !!on; lastInput = woke(); }, setLibrary, consoleFit, setConsoleFit, toConsole, setRoom, room: () => Object.assign({}, room), handX, handY, handState, wrapPull, unwrapHeld, zoomHand, panHand, leanHand, turnPage, readerZoom, readerPan, lights: () => Object.entries(LIGHTS).map(([id, l]) => [id, l.name]), setLighting, lighting: () => lightId, _rows: () => rows, _rack: () => rack && rack.items, available, open, close, warm, _lights: () => { let n = 0, spots = 0; if (scene) scene.traverseVisible(o => { if (o.isLight) { n++; if (o.isSpotLight) spots++; } }); return { n, spots }; }, setPaused: (p, why = 'x') => { if (p) pauseWhy.add(why); else pauseWhy.delete(why); paused = pauseWhy.size > 0; if (!paused && active && !raf) { lastT = 0; raf = requestAnimationFrame(frame); } }, wake: () => { if (window.bsPlatform && window.bsPlatform.os === 'android') lastInput = woke(); } /* a change from outside (the bottom screen, the Room menu) counts as input: woken, and not straight back to sleep */, sleeping: () => pauseWhy.has('idle') /* (the reader and the dimmed screen each hold their own pause: waking from a dim mustn't unpause under an open magazine) */, setShadows: on => { window.__musNoShadows = !on; if (renderer) { renderer.shadowMap.enabled = wantShadows(); renderer.shadowMap.needsUpdate = true; rows.forEach(r => { r.lamp.castShadow = false; }); shadowRow = -1; } }, move, jump, activate, back, bottomRow, pickCol, pickAt, unwrapCol, refreshArt, turn, release, skipFill, current, fanLift /* (beta.11) Y in a file box's fan */, isActive: () => active, isHolding: () => !!holding || !!heldCase || !!libHeld, isHoldingCase: () => !!heldCase, isFilling: () => intro.on, isWide: () => wide, setRow: i => { rowI = Math.max(0, i | 0); colI = 0; } };
+  return { _peek: () => peek ? { pack: peek.pack, info: peek.info, discW: peek.discW, k: peek.k } : null /* (beta.14 test hook: the case open in your hands) */, _perf: reset => { const o = Object.assign({}, facc), r = rows[rowI]; o.pending = r ? r.boxes.filter((b, i) => Math.abs(i - colI) <= 4 && !b.userData.mail && !b.userData.frontLoaded).length : -1; if (reset) Object.keys(facc).forEach(k => facc[k] = 0); return o; }, stats: glStats, tvShow, tvCard, tvStatic, tvOff, tvVolume, watchTv, tvMeta: () => tv && tv.power ? tv.meta : null, tvPower: on => { tvPower(!!on); hooks.onSelect && hooks.onSelect(current()); }, tvPowered: () => !!(tv && tv.power), tvAvail: () => !!tv, showTv, _tv: () => tv && { mode: tv.mode, power: tv.power, pow: tv.pow, gain: tv.gain, gt: tv.gT, base: tv.base, vol: tv.video ? tv.video.volume : null, box: [tv.box.min.x, tv.box.max.x, tv.box.min.y, tv.box.max.y], card: tv.card && tv.card.title, crt: tvM && tvM.U.uCrt.value, prog: tv.screen.material === (tvM && tvM.screenV) ? 'video' : 'still' }, lightFade: () => lightK, _dv: () => delivery && { rot: delivery.rot, shown: delivery.shown, ot: delivery.open && delivery.open.t }, skipDelivery, setHoldA: v => { holdA = !!v; if (holdA) nudge(); }, resealAll, opened: () => unwrapped.size, preloadModel, _snapCam: () => { snapCam = true; }, _cam: () => ({ x: camP.x, y: camP.y, z: camP.z, tx: lastTg ? lastTg.x : 0, ty: lastTg ? lastTg.y : 0, tz: lastTg ? lastTg.z : 0, on: tw.on, s: tw.s, t: tw.t, d: tw.d, zoom: tw.zoom, key: twKey, pre: preOn ? preRow : -1, fk: wideFrame ? wideFrame.userData.k : 0, up: fst.up, fr: fst.fr, sp: fst.sp, sh: fst.sh, row: fst.row, js: fst.jsMs, upQ: upQ.length }), setRoomView: on => { roomView = !!on; lastInput = woke(); }, setGuideView: on => { guideView = !!on; lastInput = woke(); }, setLibrary, consoleFit, setConsoleFit, toConsole, setRoom, room: () => Object.assign({}, room), handX, handY, handState, wrapPull, unwrapHeld, zoomHand, panHand, leanHand, turnPage, readerZoom, readerPan, lights: () => Object.entries(LIGHTS).map(([id, l]) => [id, l.name]), setLighting, lighting: () => lightId, _rows: () => rows, _rack: () => rack && rack.items, available, open, close, warm, _lights: () => { let n = 0, spots = 0; if (scene) scene.traverseVisible(o => { if (o.isLight) { n++; if (o.isSpotLight) spots++; } }); return { n, spots }; }, setPaused: (p, why = 'x') => { if (p) pauseWhy.add(why); else pauseWhy.delete(why); paused = pauseWhy.size > 0; if (!paused && active && !raf) { lastT = 0; raf = requestAnimationFrame(frame); } }, wake: () => { if (window.bsPlatform && window.bsPlatform.os === 'android') lastInput = woke(); } /* a change from outside (the bottom screen, the Room menu) counts as input: woken, and not straight back to sleep */, sleeping: () => pauseWhy.has('idle') /* (the reader and the dimmed screen each hold their own pause: waking from a dim mustn't unpause under an open magazine) */, setShadows: on => { window.__musNoShadows = !on; if (renderer) { renderer.shadowMap.enabled = wantShadows(); renderer.shadowMap.needsUpdate = true; rows.forEach(r => { r.lamp.castShadow = false; }); shadowRow = -1; } }, move, jump, activate, back, bottomRow, pickCol, pickAt, unwrapCol, refreshArt, turn, release, skipFill, current, fanLift /* (beta.11) Y in a file box's fan */, isActive: () => active, isHolding: () => !!holding || !!heldCase || !!libHeld, isHoldingCase: () => !!heldCase, isFilling: () => intro.on, isWide: () => wide, setRow: i => { rowI = Math.max(0, i | 0); colI = 0; } };
 })();

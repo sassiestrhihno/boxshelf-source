@@ -66,10 +66,147 @@ function list() {
     const bg = prepared(path.join(dir, bgName)); if (!bg) continue;
     const sys = {};
     for (const n of files) { const k = n.replace(PIC, '').toLowerCase(); if (n !== bgName && sysIds.has(k)) { const p = prepared(path.join(dir, n)); if (p) sys[k] = p; } }
+    // (beta.14) Make a theme's extras: a night picture, a video loop, and how it looks / moves / sounds (see LOOK below)
+    let vids = []; try { vids = fs.readdirSync(dir).filter(n => VIDEO.test(n)); } catch {}
+    const nightName = files.find(n => /^night\./i.test(n)), vidName = vids.find(n => /^background\./i.test(n)) || null;
     out.push({ id, name: (typeof j.name === 'string' && j.name.trim() ? j.name.trim() : d.name).slice(0, 40), folder: d.name, bg, sys,
-      accent: isHex(j.accent) ? j.accent.trim().toLowerCase() : accentOf(bg), shade: clamp(j.shade, 0, .9, .35), blur: j.blur === true, glow: clamp(j.glow, 0, 1, .35) });
+      accent: isHex(j.accent) ? j.accent.trim().toLowerCase() : accentOf(bg), shade: clamp(j.shade, 0, .9, .35), blur: j.blur === true, glow: clamp(j.glow, 0, 1, .35),
+      night: nightName && nightName !== bgName ? prepared(path.join(dir, nightName)) : null, video: vidName ? path.join(dir, vidName) : null, ...look(j) });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+// a video theme still needs a picture (background.jpg…): its first frame or any still, shown while the video loads and
+// at the Low level; a folder with only a video gets a plain dark backdrop picture written beside it
+const VIDEO = /\.(mp4|webm)$/i;
+// (beta.14) the newer theme.json fields, each checked and given its default when missing (older files keep working)
+const ONE = (v, list, d) => (list.includes(v) ? v : d);
+function look(j) {
+  const soften = j.soften != null ? clamp(j.soften, 0, 22, 0) : (j.blur === true ? 22 : 0); // (an older "blur": true is the 22 px it always was)
+  return {
+    soften, vignette: clamp(j.vignette, 0, 1, 0), focus: ONE(j.focus, ['center', 'top', 'bottom'], 'center'), floor: ONE(j.floor, ['glow', 'mirror', 'none'], 'glow'),
+    motion: ONE(j.motion, ['none', 'drift', 'zoom'], 'none'), particles: ONE(j.particles, ['none', 'dust', 'stars', 'snow', 'sparks'], 'none'), scanlines: j.scanlines === true,
+    accentAuto: !isHex(j.accent), sound: typeof j.sound === 'string' && /^[\w-]{1,32}$/.test(j.sound) ? j.sound : '', music: typeof j.music === 'string' && /^[\w-]{1,32}$/.test(j.music) ? j.music : '',
+    when: ONE(j.when, ['always', 'evening'], 'always'), shelves: Array.isArray(j.shelves) ? j.shelves.filter(s => typeof s === 'string' && sysIds.has(s)).slice(0, 40) : []
+  };
+}
+function folderOf(id) {
+  const t = list().find(x => x.id === id); if (!t) throw new Error('That theme is not there any more.');
+  return path.join(ROOT, t.folder);
+}
+const PIC_OR_VIDEO = /\.(jpe?g|png|webp|svg|mp4|webm)$/i;
+// Make a theme → Save: a new folder (or the theme being changed), its pictures copied in under their fixed names, and
+// theme.json with everything chosen. files: { background, night, sys: { gc: path… } }, a path or '' to remove (night,
+// a console's picture). Returns the theme's id.
+function save(o) {
+  o = o || {}; const j = o.json && typeof o.json === 'object' ? o.json : {}, files = o.files || {};
+  const nm = (String(j.name || '').trim() || 'My theme').slice(0, 40);
+  // (beta.14) every chosen file checked first, so a refused one never leaves a half-made theme folder behind
+  const chosen = [files.background, files.night, ...Object.values(files.sys || {})].filter(v => v);
+  for (const f of chosen) { if (!PIC_OR_VIDEO.test(String(f))) throw new Error('Choose a JPG, PNG, WebP or SVG picture, or an MP4 / WebM video.'); let ok = false; try { ok = fs.statSync(f).isFile(); } catch {} if (!ok) throw new Error('That file is not there any more.'); }
+  let dir;
+  if (o.id) dir = folderOf(o.id);
+  else {
+    if (!files.background) throw new Error('Choose a picture for your theme first.');
+    const base = nm.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/, '').trim() || 'My theme';
+    fs.mkdirSync(ROOT, { recursive: true });
+    let folder = base; for (let n = 2; fs.existsSync(path.join(ROOT, folder)); n++) folder = `${base} ${n}`;
+    dir = path.join(ROOT, folder); fs.mkdirSync(dir);
+  }
+  const put = (src, stem) => {
+    if (!PIC_OR_VIDEO.test(String(src))) throw new Error('Choose a JPG, PNG, WebP or SVG picture, or an MP4 / WebM video.');
+    if (!fs.statSync(src).isFile()) throw new Error('That file is not there any more.');
+    const isVid = VIDEO.test(src);
+    // the old file of that name goes (another type of picture, or a picture swapped for a video)
+    try { for (const n of fs.readdirSync(dir)) if (n.toLowerCase().startsWith(stem + '.') && (isVid ? VIDEO.test(n) : PIC.test(n)) && path.join(dir, n) !== src) fs.unlinkSync(path.join(dir, n)); } catch {}
+    const dst = path.join(dir, stem + path.extname(src).toLowerCase()); if (path.resolve(dst) !== path.resolve(src)) fs.copyFileSync(src, dst);
+  };
+  const drop = stem => { try { for (const n of fs.readdirSync(dir)) if (n.toLowerCase().startsWith(stem + '.') && PIC_OR_VIDEO.test(n)) fs.unlinkSync(path.join(dir, n)); } catch {} };
+  if (files.background) {
+    put(files.background, 'background');
+    // a video: the old still stays as its picture; with none there yet, a dark one is written so the theme still lists
+    if (VIDEO.test(files.background)) { let has = false; try { has = fs.readdirSync(dir).some(n => /^background\./i.test(n) && PIC.test(n)); } catch {} if (!has) fs.writeFileSync(path.join(dir, 'background.svg'), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 9"><rect width="16" height="9" fill="#0b0c14"/></svg>`); }
+  }
+  if (files.video === '') { try { for (const n of fs.readdirSync(dir)) if (/^background\./i.test(n) && VIDEO.test(n)) fs.unlinkSync(path.join(dir, n)); } catch {} }
+  if (files.night === '') drop('night'); else if (files.night) put(files.night, 'night');
+  for (const [k, v] of Object.entries(files.sys || {})) { if (!sysIds.has(k)) continue; if (v === '') drop(k); else if (v) put(v, k); }
+  const out = { name: nm };
+  if (isHex(j.accent)) out.accent = j.accent.trim().toLowerCase();
+  out.shade = clamp(j.shade, 0, .9, .35); out.glow = clamp(j.glow, 0, 1, .35); out.soften = clamp(j.soften, 0, 22, 0); out.blur = out.soften > 0;
+  Object.assign(out, look({ ...j, soften: out.soften })); delete out.accentAuto;
+  fs.writeFileSync(path.join(dir, 'theme.json'), JSON.stringify(out, null, 2));
+  log('Custom theme saved:', path.basename(dir));
+  return 'custom-' + (slug(path.basename(dir)) || 'theme');
+}
+// Remove: the folder goes to the Recycle Bin / Trash (trash is main.js's shell.trashItem)
+async function remove(id, trash) { const dir = folderOf(id); if (trash) await trash(dir); else fs.rmSync(dir, { recursive: true, force: true }); log('Custom theme removed:', path.basename(dir)); return true; }
+
+// ---------- Share: a theme as one .zip (a friend adds it with "Add a shared theme") ----------
+// A small zip writer and reader of our own (deflate through zlib): only a theme's own files go in, and only those
+// (pictures, a video, theme.json, by their fixed names) come out, whatever else the zip holds or however it's laid out.
+const zlib = require('zlib');
+const CRC_T = (() => { const t = new Int32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c; } return t; })();
+const crc32 = b => { if (typeof zlib.crc32 === 'function') return zlib.crc32(b) >>> 0; let c = -1; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+function zipWrite(entries) {
+  const parts = [], central = []; let off = 0; const d = new Date(), dt = ((d.getFullYear() - 1980) << 9 | (d.getMonth() + 1) << 5 | d.getDate()) & 0xffff, tm = (d.getHours() << 11 | d.getMinutes() << 5 | (d.getSeconds() >> 1)) & 0xffff;
+  for (const { name, data } of entries) {
+    const nb = Buffer.from(name, 'utf8'), packed = VIDEO.test(name) || /\.(jpe?g|png|webp)$/i.test(name) ? null : zlib.deflateRawSync(data), body = packed && packed.length < data.length ? packed : data, method = body === data ? 0 : 8, crc = crc32(data);
+    const h = Buffer.alloc(30); h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(20, 4); h.writeUInt16LE(0x0800, 6); h.writeUInt16LE(method, 8); h.writeUInt16LE(tm, 10); h.writeUInt16LE(dt, 12);
+    h.writeUInt32LE(crc, 14); h.writeUInt32LE(body.length, 18); h.writeUInt32LE(data.length, 22); h.writeUInt16LE(nb.length, 26); h.writeUInt16LE(0, 28);
+    const c = Buffer.alloc(46); c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6); c.writeUInt16LE(0x0800, 8); c.writeUInt16LE(method, 10); c.writeUInt16LE(tm, 12); c.writeUInt16LE(dt, 14);
+    c.writeUInt32LE(crc, 16); c.writeUInt32LE(body.length, 20); c.writeUInt32LE(data.length, 24); c.writeUInt16LE(nb.length, 28); c.writeUInt32LE(off, 42);
+    parts.push(h, nb, body); central.push(c, nb); off += 30 + nb.length + body.length;
+  }
+  const cd = Buffer.concat(central), e = Buffer.alloc(22); e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(entries.length, 8); e.writeUInt16LE(entries.length, 10); e.writeUInt32LE(cd.length, 12); e.writeUInt32LE(off, 16);
+  return Buffer.concat([...parts, cd, e]);
+}
+const ZIP_MAX = 200 * 1024 * 1024, ENTRY_MAX = 120 * 1024 * 1024;
+function zipRead(buf) {
+  let e = -1; for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (buf.readUInt32LE(i) === 0x06054b50) { e = i; break; }
+  if (e < 0) throw new Error("That file isn't a zip.");
+  const n = buf.readUInt16LE(e + 10), out = []; let p = buf.readUInt32LE(e + 16);
+  for (let k = 0; k < n && p + 46 <= buf.length; k++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(p + 10), csize = buf.readUInt32LE(p + 20), usize = buf.readUInt32LE(p + 24), nl = buf.readUInt16LE(p + 28), xl = buf.readUInt16LE(p + 30), cl = buf.readUInt16LE(p + 32), lo = buf.readUInt32LE(p + 42);
+    const name = buf.slice(p + 46, p + 46 + nl).toString('utf8'); p += 46 + nl + xl + cl;
+    if (/\/$/.test(name) || usize > ENTRY_MAX || lo + 30 > buf.length || buf.readUInt32LE(lo) !== 0x04034b50) continue;
+    const ds = lo + 30 + buf.readUInt16LE(lo + 26) + buf.readUInt16LE(lo + 28), raw = buf.slice(ds, ds + csize);
+    out.push({ name, get: () => method === 0 ? raw : method === 8 ? zlib.inflateRawSync(raw, { maxOutputLength: ENTRY_MAX }) : null });
+  }
+  return out;
+}
+// export: the theme's folder as <Name>.zip in `destDir` (main.js passes the Desktop); returns the file written
+function exportZip(id, destDir) {
+  const dir = folderOf(id), entries = [];
+  for (const n of fs.readdirSync(dir)) { const f = path.join(dir, n); let st; try { st = fs.statSync(f); } catch { continue; } if (!st.isFile() || st.size > ENTRY_MAX) continue;
+    if (n.toLowerCase() === 'theme.json' || PIC_OR_VIDEO.test(n)) entries.push({ name: n, data: fs.readFileSync(f) }); }
+  if (!entries.length) throw new Error('That theme has no files to share.');
+  const base = path.basename(dir).replace(/[<>:"/\\|?*\x00-\x1f]/g, '') || 'Theme';
+  let file = path.join(destDir, `${base} (Boxshelf theme).zip`); for (let k = 2; fs.existsSync(file); k++) file = path.join(destDir, `${base} (Boxshelf theme) ${k}.zip`);
+  fs.mkdirSync(destDir, { recursive: true }); fs.writeFileSync(file, zipWrite(entries)); log('Custom theme shared:', path.basename(file));
+  return file;
+}
+// import: a shared theme's .zip becomes a new folder (named after its theme.json, else the zip). Only its pictures, a
+// video and theme.json are taken, by their file names alone (folders inside the zip don't matter)
+function importZip(file) {
+  if (!/\.zip$/i.test(String(file || ''))) throw new Error('Choose a theme .zip file.');
+  const st = fs.statSync(file); if (st.size > ZIP_MAX) throw new Error('That zip is too big for a theme.');
+  const got = {};
+  for (const en of zipRead(fs.readFileSync(file))) {
+    const n = en.name.split(/[\\/]/).pop(), low = n.toLowerCase(), stem = low.replace(/\.[^.]+$/, '');
+    if (low === 'theme.json' || (PIC_OR_VIDEO.test(n) && (stem === 'background' || stem === 'night' || sysIds.has(stem)))) { if (!got[low]) got[low] = en; }
+  }
+  if (!Object.keys(got).some(n => /^background\./.test(n))) throw new Error("That zip doesn't hold a Boxshelf theme (no background picture in it).");
+  let j = {}; if (got['theme.json']) { try { const o = JSON.parse(String(got['theme.json'].get() || '').replace(/^﻿/, '')); if (o && typeof o === 'object' && !Array.isArray(o)) j = o; } catch {} }
+  const nm = (typeof j.name === 'string' && j.name.trim() ? j.name.trim() : path.basename(file).replace(/\.zip$/i, '').replace(/\s*\(Boxshelf theme\)(\s*\d+)?$/i, '')).slice(0, 40) || 'Shared theme';
+  const base = nm.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/, '').trim() || 'Shared theme';
+  fs.mkdirSync(ROOT, { recursive: true }); let folder = base; for (let k = 2; fs.existsSync(path.join(ROOT, folder)); k++) folder = `${base} ${k}`;
+  const dir = path.join(ROOT, folder); fs.mkdirSync(dir);
+  try {
+    let total = 0; // (one entry at a time; and no more than 400 MB unpacked in all)
+    for (const [n, en] of Object.entries(got)) { const data = en.get(); if (!data) continue; total += data.length; if (total > 400 * 1024 * 1024) throw new Error('it unpacks to more than 400 MB'); if (n === 'theme.json') { fs.writeFileSync(path.join(dir, n), JSON.stringify({ ...j, name: nm }, null, 2)); continue; } fs.writeFileSync(path.join(dir, n), data); }
+  } catch (e) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} throw new Error("That theme's zip couldn't be read: " + e.message); }
+  log('Custom theme added from a zip:', folder);
+  return 'custom-' + (slug(folder) || 'theme');
 }
 
 // "Make a theme from a picture": a new folder named after the picture (or the name given), the picture copied in as
@@ -135,4 +272,4 @@ function ensureExamples() {
   } catch (e) { log('Custom themes: could not make the folder', e.message); }
 }
 
-module.exports = { init, root, list, create, ensureExamples, _slug: slug };
+module.exports = { init, root, list, create, save, remove, exportZip, importZip, ensureExamples, _slug: slug, _zipWrite: zipWrite, _zipRead: zipRead };

@@ -1,7 +1,7 @@
 # beta.12 plan
 
 Everything below ships in beta.12. "Seamless play" is built so it can be taken out on its own without touching the rest.
-Nothing is released until Paul has tried the last test build and says go. At most two helpers at a time.
+Nothing is released until the owner has tried the last test build and says go. At most two helpers at a time.
 
 ## Test build 1: done work (waiting on the last test run)
 - The 27 fixes from the bug review, plus the 5 issues the second review found in them.
@@ -37,7 +37,7 @@ blackouts, the Home button works for every game, and the shelf comes back just a
   (on) falls back to today's exact behaviour when off.
 
 ## Test build 3: Details redesign
-The "Recommended" layout Paul chose: the 3D case on the left, the page beside it over the game's own art; the trailer at
+The "Recommended" layout that was chosen: the 3D case on the left, the page beside it over the game's own art; the trailer at
 the top, then info, screenshots, the manual, achievements; detailed playtime and stats. Boxshelf's own look (not
 Playnite's or LaunchBox's). Controller and touch, smooth on the Thor, a device-test check for each part.
 

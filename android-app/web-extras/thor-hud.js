@@ -32,7 +32,7 @@
   }
   // catch the smoothness test's result lines (they go through boxshelf.log)
   const api = window.boxshelf;
-  if (api && api.log) { const orig = api.log.bind(api); try { api.log = m => { const s = String(m); if (/smoothness/i.test(s)) { smooth.push(s.replace(/^.*?smoothness/i, 'smoothness')); if (smooth.length > 6) smooth.shift(); if (view === 'off') setView('big'); else draw(); } return orig(m); }; } catch {} }
+  if (api && api.log) { const orig = api.log.bind(api); try { api.log = m => { const s = String(m); if (/smoothness/i.test(s)) { smooth.push(s.replace(/^.*?smoothness/i, 'smoothness')); if (smooth.length > 6) smooth.shift(); if (view === 'off' && /smoothness test/i.test(s)) setView('big'); else if (view !== 'off') draw(); } /* (beta.14: only the Smoothness test opens the meter; the shelf's own once-a-minute "shelf smoothness" note popped it up in normal use) */ return orig(m); }; } catch {} }
   // Settings → System → Test meter (on Android only: this file is the Android build's), beside the Smoothness test
   const prevPatch = window.BS_SETTINGS_PATCH;
   window.BS_SETTINGS_PATCH = (sections, h) => {

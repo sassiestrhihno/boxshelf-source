@@ -48,7 +48,7 @@ async function splitManual(dir, base, crop, opts = {}) {
   const ls = opts.ls || require('./dircache').fresh; // opts.ls: a run's shared folder listings (one listing per folder, not per game)
   const files = ls.names(dir).filter(f => f.toLowerCase().startsWith(pre) && /-manual-\d+\.(jpe?g|png)$/i.test(f)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   if (!files.length) return 0;
-  const sizes = files.map(f => sizeOf(path.join(dir, f)));
+  const sizes = []; for (const f of files) sizes.push(await sizeOfAsync(path.join(dir, f))); // (fs.promises: the background spreads pass reads every manual's pages, sync reads held the app up)
   if (!sizes.some(spread)) return 0;
   // a booklet that is landscape on every page (a digital manual laid out sideways) is left as it is
   if (!opts.scan && !sizes.some(z => z && z[1] >= z[0]) && sizes.every(z => z && Math.abs(z[0] / z[1] - sizes[0][0] / sizes[0][1]) < .02) && files.length > 2) return 0;

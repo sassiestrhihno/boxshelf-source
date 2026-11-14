@@ -23,6 +23,7 @@ const CONSOLE_HELP={
   psp:"PPSSPP runs PSP games. Point to PPSSPPWindows64.exe.",
   wiiu:"Cemu runs Wii U games. Point to Cemu.exe. Games can be .wua files (Cemu's one-file format, best), .wud / .wux disc images, or extracted game folders (the shelf finds code\\*.rpx and reads the title from meta\\meta.xml). Disc images need your keys.txt set up in Cemu. Install updates and DLC inside Cemu (File → Install game title).",
   ps2:"PCSX2 runs PS2 games. Point to pcsx2-qt.exe. Games are .iso, .chd, .cso or .zso images. PCSX2 needs a PS2 BIOS of its own (set it up in PCSX2 once). RetroAchievements works here too: log in inside PCSX2 (Settings → Achievements).",
+  xbox:"xemu runs original Xbox games. Point to xemu.exe; set its BIOS, boot ROM and hard disk image in xemu once. Games are .iso discs in XISO format (a plain Redump .iso won't start: convert it with extract-xiso).",
   x360:"Xenia runs Xbox 360 games. Point to xenia_canary.exe (or xenia.exe; if you pick Xenia Manager, Boxshelf finds the Canary build inside its Emulators folder). Titles, art and info come from the title ID inside each game, so file names don't have to be exact. Games can be .iso discs, extracted folders with a default.xex inside (the folder name is the title), XBLA .xex files or .zar archives.",
   ps3:"RPCS3 runs PS3 games. Point to rpcs3.exe (install the PS3 system software in RPCS3 first: File → Install Firmware). Disc games are folders (Game\\PS3_GAME\\USRDIR\\EBOOT.BIN); digital games live in RPCS3's dev_hdd0\\game folder — add that as a games folder too. Titles come from each game's PARAM.SFO; installed patches are left off the shelf.",
   n3ds:"Azahar runs 3DS games. Point to azahar.exe. Games are decrypted .3ds / .cci / .cxi images, Azahar's compressed .zcci, or decrypted .cia files (Boxshelf installs a .cia into Azahar the first time you play it). Encrypted copies won't start.",
@@ -239,7 +240,7 @@ function renderBody0(b){
 // only at eden-emu.dev (look-alike sites serve fakes)
 const OFFICIAL={gc:[["Dolphin","https://dolphin-emu.org/download/"]],wii:[["Dolphin","https://dolphin-emu.org/download/"]],wiiu:[["Cemu","https://cemu.info/"]],sw:[["Eden","https://eden-emu.dev/downloads"]],sw2:[["Eglantine","https://github.com/Djihads80/Eglantine/releases"]],
   psp:[["PPSSPP","https://www.ppsspp.org/download/"]],ps2:[["PCSX2","https://pcsx2.net/downloads/"]],ps3:[["RPCS3","https://rpcs3.net/download"]],ps4:[["shadPS4","https://shadps4.net/downloads"]],ps5:[["KytyPS5","https://github.com/Jetsku/KytyPS5/releases"]],n3ds:[["Azahar","https://azahar-emu.org/pages/download/"]],
-  x360:[["Xenia","https://xenia.jp/download/"],["Xenia Manager","https://github.com/xenia-manager/xenia-manager"]],
+  x360:[["Xenia","https://xenia.jp/download/"],["Xenia Manager","https://github.com/xenia-manager/xenia-manager"]],xbox:[["xemu","https://xemu.app/"]],
   // (beta.6) the retro shelves: RetroArch (one download for all of them; cores from its Online Updater) and each one's best standalone
   ...(()=>{const RA=["RetroArch","https://www.retroarch.com/?page=platforms"],o={psx:[["DuckStation","https://github.com/stenzek/duckstation/releases"],RA],nds:[["melonDS","https://melonds.kuribo64.net/downloads.php"],RA],
     gba:[RA,["mGBA","https://mgba.io/downloads.html"]],n64:[RA,["RMG","https://github.com/Rosalie241/RMG/releases"]],megadrive:[RA,["BlastEm","https://www.retrodev.com/blastem/downloads.html"]],dreamcast:[RA,["Flycast","https://github.com/flyinghead/flycast/releases"]],saturn:[RA],pcengine:[RA],neogeo:[RA],arcade:[RA],segacd:[RA],sega32x:[RA],atari2600:[RA],atarilynx:[RA],wonderswan:[RA],dos:[RA]};
@@ -277,6 +278,7 @@ function toggle(label,checked,onchange,id){
 }
 
 function welcome(b){
+  if(winWizard()&&bringPage(b))return; /* (beta.14) another Boxshelf's setup on this PC: offered first */
   if(onAndroid())head(b,"Welcome","Let's connect your emulators and games","Boxshelf looks for the emulator apps on this device and the game folders you've already let it see. Next you'll see the consoles it found first; every other console is one tap away under More consoles.");
   else head(b,"Welcome to Boxshelf","Let's find your games","Boxshelf looks for your emulators, games, Steam library and streaming apps. Next you pick which consoles you play, and it's ready in a minute.");
   if(winWizard())return welcomeWin(b);
@@ -292,10 +294,51 @@ function welcomeWin(b){
       desc:detecting?"Looking…":"Searches this PC, then shows the consoles it found, already ticked.",
       onclick:async()=>{if(detecting)return;await runDetect(true);searched=true;pickInit();if(step===0)step=1;render()}}), /* (beta.10) only moves on if you're still on Welcome */
     wzRow({icon:"list",title:"I'll pick them myself",info:"self",attrs:{"data-choice":"self"},desc:"Tick the consoles you play, then point to each one's emulator and games folder.",
-      onclick:()=>{pickInit();step=1;render()}})));
+      onclick:()=>{pickInit();step=1;render()}}),
+    api.bringChoose&&!(info.config&&info.config.setupDone)?wzRow({icon:"download",busy:bringPicking,title:"I've used Boxshelf before",info:"old",attrs:{"data-choice":"old"},
+      desc:"Choose your old Boxshelf folder to bring its settings, favourites and play history over.",onclick:bringChoose}):null));
   wzInfo={fn:welcomeInfo,def:"find"};
 }
+/* ---------- (beta.14) Bring my setup over ----------
+   A fresh Boxshelf folder on a PC where another Boxshelf has a finished setup (main/updateflow.js, installs.json): the first
+   page offers it. Copy it over brings its settings, favourites, history, picks, sounds and themes (and, ticked, the
+   downloaded extras), then Boxshelf restarts straight into the shelf. Start fresh goes on to the usual first run */
+let bring,bringPicking=false;
+function bringLoad(){if(bring!==undefined||!api.bringFind)return;bring=null;
+  Promise.resolve(api.bringFind()).then(f=>{if(!f||bring)return;bring={found:f,extras:false,mb:null,busy:false,pct:0};
+    if(steps[step]&&steps[step].id==="welcome"&&$("setup").classList.contains("on"))render();
+    bringSizeLoad()}).catch(()=>{})}
+function bringSizeLoad(){if(api.bringSize)Promise.resolve(api.bringSize()).then(n=>{if(!bring)return;bring.mb=Math.max(1,Math.round((+n||0)/1048576));const l=$("suBody").querySelector("[data-bring-mb]");if(l)l.textContent=bringExtrasLabel()}).catch(()=>{})}
+/* (beta.14) "I've used Boxshelf before": nothing was found (a Boxshelf from before installs.json somewhere unusual), so
+   the old folder is chosen in the system's folder picker; a folder with a finished setup opens the same Welcome back page */
+async function bringChoose(){if(bringPicking||(bring&&bring.busy))return;bringPicking=true;render();
+  try{const f=await api.bringChoose();if(f){bring={found:f,chosen:true,extras:false,mb:null,busy:false,pct:0};bringSizeLoad()}}
+  catch(e){Shelf.toast(e.message||String(e))}
+  finally{bringPicking=false;if(steps[step]&&steps[step].id==="welcome"&&$("setup").classList.contains("on"))render()}}
+const bringExtrasLabel=()=>`Also copy downloaded extras${bring&&bring.mb!=null?` (${bring.mb} MB)`:""}`;
+function bringPage(b){bringLoad();if(!bring||!bring.found)return false;const f=bring.found;
+  head(b,"Welcome back",`Use your setup from Boxshelf ${f.version||""}`.trim(),bring.chosen?"That folder has a Boxshelf that's already set up. Copy it over to start with its settings, favourites, play history and picks. Your games and emulators stay where they are.":"Boxshelf found another copy of itself on this PC, already set up. Copy it over to start with its settings, favourites, play history and picks. Your games and emulators stay where they are.");
+  b.append(el("div",{class:"field"},el("div",{class:"lbl"},bring.chosen?"Your old folder":"Found in"),el("div",{class:"d-cmd",text:f.dataDir})));
+  const inp=el("input",{type:"checkbox",id:"bringExtras",disabled:bring.busy});inp.checked=!!bring.extras;inp.addEventListener("change",()=>{if(bring)bring.extras=inp.checked});
+  b.append(el("div",{class:"wz-rows",style:"margin-top:18px"},
+    wzRow({icon:"download",busy:bring.busy,title:"Copy it over",chip:"Recommended",info:"bring",attrs:{"data-choice":"bring"},desc:bring.busy?`Copying… ${bring.pct}%`:"Boxshelf restarts with your setup and opens straight to the shelf.",onclick:bringGo}),
+    wzRow({icon:"later",title:"Start fresh",info:"fresh",attrs:{"data-choice":"fresh"},desc:"Set up Boxshelf from the beginning. The other copy keeps its own setup.",onclick:bringNo})),
+    el("label",{class:"switch wz-bring-x",style:"margin-top:16px"},inp,el("span",{"data-bring-mb":"",text:bringExtrasLabel()})),
+    el("p",{class:"hint-text",text:"Extras are thumbnails, video previews, screenshots and other downloads Boxshelf can fetch again."}));
+  wzInfo={fn:welcomeInfo,def:"bring"};return true}
+async function bringGo(){if(!bring||bring.busy)return;bring.busy=true;bring.pct=0;render();
+  const say=t=>{const d=$("suBody").querySelector('[data-choice="bring"] small');if(d)d.textContent=t};
+  const off=api.onBringProgress?api.onBringProgress(p=>{if(!bring||!p||!p.total)return;bring.pct=Math.min(100,Math.floor(p.done*100/p.total));say(`Copying… ${bring.pct}%`)}):null;
+  try{await api.bringCopy(!!bring.extras);say("Restarting…")}
+  catch(e){if(bring)bring.busy=false;Shelf.toast(e.message||String(e));render()}finally{if(typeof off==="function")off()}}
+function bringNo(){if(bring&&bring.busy)return;Promise.resolve(api.bringSkip&&api.bringSkip()).catch(()=>{});bring=null;render()}
 function welcomeInfo(key){
+  if(key==="bring")return {h:"What comes over",p:"Everything you set up, copied into this folder. The other copy isn't changed.",
+    li:["Settings, favourites and play history","Your shelves, Art Studio and manual picks","Sound packs, custom themes and console looks","Keys and passwords (on this same PC)","Ticked: thumbnails, previews and other downloads"]};
+  if(key==="old")return {h:"Used Boxshelf before?",p:"Point to the folder your old Boxshelf ran from, and its setup comes over here. The old folder isn't changed.",
+    li:["It's the folder with a \"data\" folder inside it","Usually in Downloads or on the Desktop","From now on, Update now (Settings › System) updates in place and keeps everything"]};
+  if(key==="fresh")return {h:"Start fresh",p:"Nothing is copied. You set Boxshelf up as if it were new, and the other copy keeps its own setup.",
+    li:["Back up settings and Restore settings can still bring your settings over later."]};
   if(key==="self")return {h:"Set it up yourself",p:"Nothing is searched. Your consoles lists every console Boxshelf can run, and you tick the ones you play.",
     li:["Finish setting up asks only for what those still need: the emulator program and a games folder.","Search again on Your consoles can still look for them."]};
   const emus=[...new Set(info.consoles.map(c=>c.emulatorName).filter(Boolean))],apps=(info.apps||[]).map(a=>a.name);
@@ -394,7 +437,7 @@ function pickCard(x,big){
 }
 // (beta.7) the folded "More consoles" list: small tick chips grouped by maker, so 30-odd consoles stay a tidy page
 const PICK_FAMILIES=[["Nintendo",["nes","snes","n64","gc","wii","wiiu","sw","sw2","gb","gbc","gba","nds","n3ds"]],["PlayStation",["psx","ps2","ps3","ps4","ps5","psp"]],
-  ["Sega",["mastersystem","megadrive","segacd","sega32x","saturn","dreamcast","gamegear"]],["Retro & arcade",[]],["Xbox, PC & apps",["x360","steam"]]];
+  ["Sega",["mastersystem","megadrive","segacd","sega32x","saturn","dreamcast","gamegear"]],["Retro & arcade",[]],["Xbox, PC & apps",["xbox","x360","steam"]]];
 function pickFamily(id){if(/^app:/.test(id))return "Xbox, PC & apps";for(const[f,ids]of PICK_FAMILIES)if(ids.includes(id))return f;return "Retro & arcade"}
 function pickChip(x){const on=x.on();
   return el("button",{type:"button",class:"wz2-chip"+(on?" on":""),role:"checkbox","aria-checked":String(on),"data-pick":x.id,title:x.status(),onclick:()=>{x.set(!x.on());changed();render()}},
@@ -1079,7 +1122,7 @@ let pvClipAsked=false;
 function pvClipStart(){if(pvClipAsked)return;if(pvClipOk&&(pvClipAsked=true)&&api.clipHelper&&(cfg.ui.previews||"off")!=="off"&&cfg.ui.previewClips!==false)api.clipHelper().catch(()=>{})}
 async function doneSection(b){
   pvClipStart(); // (beta.8) the console trailer helper, in the background (Settings → Video previews shows how it went)
-  head(b,"All set","Here's your library",onAndroid()?"You can change any of this later in Settings (press S, or View on the controller: Create on a PlayStation pad, − on a Switch pad).":"You can change any of this later in Settings (press S, or open the quick menu with Menu on the controller and pick Settings)."); /* (beta.12: on Windows / Linux View opens a game's Details) */
+  head(b,"All set","Here's your library",onAndroid()?"You can change any of this later in Settings (press S, or View on the controller: Create on a PlayStation pad, − on a Switch pad).":"You can change any of this later in Settings (press S, or open the quick menu with Menu on the controller and pick Settings). F11 switches between full screen and a window"+(window.bsPlatform&&bsPlatform.has&&bsPlatform.has("winMode")?" (Screen in the quick menu does too).":".")); /* (beta.12: on Windows / Linux View opens a game's Details) */
   const grid=el("div",{class:"summary-grid"},el("div",{class:"sum"},el("span",{class:"scanning"}),el("span",{text:" Scanning…"})));b.append(grid);
   // Windows: the art was chosen on the Box art page; here its first download shows its progress (covers:auto from
   // main.js autoCovers, which the scan below starts), then points to the Art Studio
@@ -1107,9 +1150,19 @@ async function doneSection(b){
   if(winWizard()){grid.classList.add("wz-tiles"); // (beta.11) Settings' console tiles: the shelf, what runs it, a dot and its games
     shelves.forEach(s=>{const n=s.games.length,w=s.kind==="apps"?"app":"game",def=info.consoles.find(c=>c.id===s.id),sc=def&&cfg.systems[s.id],ok=!def||!!(sc&&sc.emulator),emu=def?def.emulatorName||"Emulator":s.kind==="apps"?"Media shelf":"PC games";
       grid.append(el("div",{class:"sum wz-tile"},el("span",{class:"wz2-name",text:s.name}),el("span",{class:"wz2-emu",text:emu}),
-        el("span",{class:"wz2-st"},el("span",{class:"wz-dot "+(ok?"ok":"warn"),"aria-hidden":"true"}),`${ok?"Ready":`${emu} not set`} · ${n} ${w}${n===1?"":"s"}`)))});return}
+        el("span",{class:"wz2-st"},el("span",{class:"wz-dot "+(ok?"ok":"warn"),"aria-hidden":"true"}),`${ok?"Ready":`${emu} not set`} · ${n} ${w}${n===1?"":"s"}`)))});
+    biosDone(b,shelves);return}
   shelves.forEach(s=>grid.append(el("div",{class:"sum"},el("b",{text:String(s.games.length)}),el("span",{text:`${s.name} ${s.kind==="apps"?"apps":"games"}`}))));
 }
+// (beta.14, Windows) the last page: a BIOS a picked console can't start without, once the settings are saved (the check is
+// Set up for me's: RetroArch's files for the console, PCSX2's and DuckStation's BIOS folder). Each with its folder.
+async function biosDone(b,shelves){if(!api.emuSetupStatus)return;const miss=[];
+  for(const s of shelves){const def=info.consoles.find(c=>c.id===s.id);if(!def||!s.games.length)continue;
+    try{const st=await api.emuSetupStatus(s.id),x=st&&st.supported&&st.bios;if(x&&!x.ok&&x.need!=="opt")miss.push({id:s.id,name:def.name,emu:st.name||def.emulatorName||"its emulator"})}catch{}}
+  if(!miss.length||!b.isConnected)return;
+  b.append(el("section",{class:"card grp wz2-bios"},el("div",{class:"wz2-fh"},el("span",{class:"wz2-fname",text:"Still needed: BIOS files"})),
+    el("p",{class:"hint-text",text:"These consoles need a BIOS from your own console before their games start. Boxshelf reminds you before you play, and Settings → Library lists them under Needs attention."}),
+    ...miss.map(m=>fixRow(m.name,`${m.emu} needs a BIOS`,false,api.openBiosFolder?el("button",{type:"button",class:"btn small",onclick:()=>Promise.resolve(api.openBiosFolder(m.id)).catch(e=>Shelf.toast(e.message||String(e)))},"Open the BIOS folder"):null))))}
 async function finish(){if(finishing)return;finishing=true;try{await finishNow()}finally{finishing=false}}
 async function finishNow(){pickInit();const hd=applyLook();cfg.setupDone=true;wizard=false;
   // (beta.10) "Sharpest art": saved first (the consoles you picked must exist for main), then each console's style through api.artStyle, before the shelf's rescan

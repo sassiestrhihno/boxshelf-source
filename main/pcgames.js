@@ -252,9 +252,36 @@ function quiverGames(chosen) {
 }
 
 // ---------- games added by hand (cfg.pc.custom: [{ id, title, exe, args }]) ----------
+// (beta.10) shelf 'pc' = shown on the PC shelf instead of Custom; (beta.14) or a console's id ('n64'): on that console's
+// shelf. Anything else (none, 'custom', junk) is the Custom shelf
+const shelfId = v => typeof v === 'string' && /^[a-z0-9_-]{1,24}$/.test(v) && v !== 'custom' ? v : '';
 function customGames(list) {
   return (Array.isArray(list) ? list : []).filter(c => c && typeof c.exe === 'string' && c.exe && isFile(c.exe)).slice(0, 500)
-    .map(c => ({ id: 'custom-' + slug(c.id || c.title || path.basename(c.exe)), source: 'custom', title: String(c.title || path.basename(c.exe, '.exe')).trim().slice(0, 120), exe: c.exe, args: typeof c.args === 'string' ? c.args.slice(0, 1000) : '', ...(c.shelf === 'pc' ? { shelf: 'pc' } : {}) })); // (beta.10: shelf 'pc' = shown on the PC shelf instead of Custom)
+    .map(c => ({ id: 'custom-' + slug(c.id || c.title || path.basename(c.exe)), source: 'custom', title: String(c.title || path.basename(c.exe, '.exe')).trim().slice(0, 120), exe: c.exe, args: typeof c.args === 'string' ? c.args.slice(0, 1000) : '', ...(shelfId(c.shelf) ? { shelf: shelfId(c.shelf) } : {}) }));
+}
+// (beta.14) Quiver's games and the ones added by hand, shared out: { toPc, onCustom } for the PC and Custom shelves, and a
+// game added by hand whose shelf is a console's goes onto that console's shelf in `shelves` (as pcGame(g), so Play still
+// starts its own program). The console's shelf gets each one at its place by title (the others keep their order); a
+// console with no shelf (no games, or turned off) gets one, where it sits in `systems`' order. An id that isn't a known
+// console falls back to Custom, so a game is never lost. Quiver's games always stay on Custom
+const byTitle = (a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: 'base' });
+function placeCustom(shelves, games, systems, pcGame) {
+  const defs = (Array.isArray(systems) ? systems : []).filter(d => d && typeof d.id === 'string'), order = defs.map(d => d.id), toPc = [], onCustom = [], to = new Map();
+  for (const g of Array.isArray(games) ? games : []) { if (!g) continue;
+    const id = shelfId(g.shelf);
+    if (id === 'pc') toPc.push(g);
+    else if (id && g.source === 'custom' && order.includes(id)) { if (!to.has(id)) to.set(id, []); to.get(id).push(g); }
+    else onCustom.push(g); }
+  for (const [id, list] of to) {
+    let sh = shelves.find(s => s && s.kind === 'console' && s.id === id);
+    if (!sh) { const def = defs.find(d => d.id === id), at = order.indexOf(id);
+      sh = { id, kind: 'console', name: def.name || id, emulatorName: def.emulatorName, hasEmulator: false, games: [] };
+      let k = shelves.findIndex(s => s && (s.kind !== 'console' || order.indexOf(s.id) > at)); if (k < 0) k = shelves.length;
+      shelves.splice(k, 0, sh); }
+    if (!Array.isArray(sh.games)) sh.games = [];
+    for (const g of list) { const x = pcGame(g); let k = sh.games.findIndex(o => o && byTitle(o, x) > 0); if (k < 0) k = sh.games.length; sh.games.splice(k, 0, x); }
+  }
+  return { toPc, onCustom };
 }
 // a title from a program's name: "SoH-Ship-of-Harkinian.exe" → "SoH Ship of Harkinian"
 const titleFromExe = exe => path.basename(String(exe || ''), path.extname(String(exe || ''))).replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Game';
@@ -314,5 +341,5 @@ async function steamSearch(term, exact) {
   const want = norm(t); return items.filter(x => norm(x.name) === want).slice(0, 3);
 }
 
-module.exports = { init, epicGames, quiverGames, quiverFind, quiverRoots, customGames, titleFromExe, mainExe, remember, byId, all, steamIdOf, matchSteam, steamSearch, EPIC_DIR,
+module.exports = { init, epicGames, quiverGames, quiverFind, quiverRoots, customGames, placeCustom, titleFromExe, mainExe, remember, byId, all, steamIdOf, matchSteam, steamSearch, EPIC_DIR,
   storeGames, gogGames, ubisoftGames, eaGames, xboxGames, parseReg, xboxRoots, eaFromDirs, xboxScan };

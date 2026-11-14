@@ -2,8 +2,8 @@
 //   Details, redone in Settings' look: Close in the header, section labels, no empty fact rows, the hint bar shows what
 //   Details does (Back; not the shelf's Letter / Shuffle), and the buttons leave most of the panel to the game.
 //   Filters from your own library: a decade and a genre keep only those games.
-//   Collections: Details → Collections, a new one typed in, becomes a shelf of its own with that game; Settings → Shelf →
-//   Collections lists it. Screenshots: library-*.png.
+//   Collections (beta.14: My shelves): Details → My shelves, a new one typed in, becomes a shelf of its own with that game;
+//   Settings → Library → My shelves lists it and its page renames / deletes it. Screenshots: library-*.png.
 'use strict';
 const path = require('path');
 
@@ -25,11 +25,11 @@ module.exports = async function libraryPass({ browser, base, check, OUT }) {
     const d = await page.evaluate(() => {
       const det = document.getElementById('details'), act = det.querySelector('.d-actions'), r = det.getBoundingClientRect(), a = act.getBoundingClientRect();
       const rows = [...document.querySelectorAll('#dGrid > div')].map(x => ({ k: x.querySelector('dt').textContent, v: x.querySelector('dd').textContent.trim() }));
-      return { open: Shelf.getMode() === 'details', closeInHero: !!det.querySelector('.d-hero #dClose'), info: !document.getElementById('dSecInfo').hidden,
+      return { open: Shelf.getMode() === 'details', closeInHero: !!det.querySelector('.d-hero #dClose'), info: !!document.getElementById('dGrid').closest('.dv-sec[data-s="overview"]'), /* (beta.14: the facts are a list in Overview) */
         rows, empty: rows.filter(x => !x.v).length, hints: [...document.querySelectorAll('#hints .lab')].map(x => x.textContent), actShare: a.height / r.height, width: r.width,
-        cols: !document.getElementById('dCols').hidden };
+        cols: !document.getElementById('dCols').hidden || !!(document.getElementById('dAddTo') && !document.getElementById('dAddTo').hidden) }; /* (beta.14: Add to… covers My shelves, so My shelves steps aside when it shows) */
     });
-    check('Details (Windows): Close sits in the header, Game info has a section label, and no fact row is left empty',
+    check('Details (Windows): Close sits in the header, the facts are a list in Overview, and no fact row is left empty',
       d.open && d.closeInHero && d.info && d.rows.length > 0 && d.empty === 0, JSON.stringify({ open: d.open, closeInHero: d.closeInHero, info: d.info, rows: d.rows.length, empty: d.empty }));
     check('Details (Windows): the hint bar shows what Details does (Back), not the shelf\'s Letter or Shuffle',
       d.hints.includes('Back') && !d.hints.includes('Letter') && !d.hints.includes('Shuffle'), JSON.stringify(d.hints));
@@ -45,22 +45,23 @@ module.exports = async function libraryPass({ browser, base, check, OUT }) {
       L.filter('all'); await w(500); return out; });
     check('Filters: the library\'s own decades and genres are offered, and each keeps only its games',
       f.decades > 0 && f.genres > 0 && f.dec && f.dec.ok && f.gen && f.gen.ok, JSON.stringify(f));
-    // collections: Details → Collections → New collection (typed) → a shelf of its own with this game
+    // collections (beta.14: "My shelves"): Details → My shelves → New shelf (typed) → a shelf of its own with this game
     const g0 = await page.evaluate(() => Shelf._lib.cur());
     await page.evaluate(g => Setup.open({ page: 'collections', id: g.id, title: g.title }), g0);
-    await page.waitForFunction(() => /New collection/.test((document.getElementById('bss') || {}).innerText || ''), null, { timeout: 30000 });
+    await page.waitForFunction(() => /New shelf/.test((document.getElementById('bss') || {}).innerText || ''), null, { timeout: 30000 });
     await pause(700);
-    // (the page opens on its first row, New collection: Enter starts typing in it, as on a keyboard)
+    // (with no shelves yet the page opens on its only row, New shelf: Enter starts typing in it, as on a keyboard)
     await page.keyboard.press('Enter'); await pause(500); await page.keyboard.type('Couch co-op'); await pause(200); await page.keyboard.press('Enter'); await pause(1200);
     const c = await page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms));
       const col = Shelf._lib.shelves().find(s => s.col), out = { tabs: [...document.querySelectorAll('#tabs > *')].map(e => e.textContent.trim()), col: col ? { name: col.name, ids: col.ids } : null };
       if (window.Settings && Settings.isOpen && Settings.isOpen()) { await Settings.close(); await w(900); }
-      Setup.open({ page: 'shelf' }); await w(1200); const row = [...document.querySelectorAll('#bss .bss-row')].find(x => /^Collections/.test(x.innerText.trim())); if (row) { row.click(); await w(900); }
+      Setup.open({ page: 'shelf-cols' }); const find = () => [...document.querySelectorAll('#bss .bss-row')].find(x => /^Couch co-op/.test(x.innerText.trim()));
+      for (let i = 0; i < 40 && !find(); i++) await w(150); await w(300); out.list = (document.getElementById('bss') || {}).innerText || '';      const row = find(); if (row) { row.click(); await w(900); }
       out.manage = (document.getElementById('bss') || {}).innerText || ''; return out; });
     await page.screenshot({ path: path.join(OUT, 'library-collections.png') });
     check('Collections: a new one typed in from Details becomes a shelf (its own tab) with that game on it',
       !!c.col && c.col.name === 'Couch co-op' && c.col.ids.includes(g0.id) && c.tabs.some(t => /Couch co-op/.test(t)), JSON.stringify({ col: c.col, tabs: c.tabs }));
-    check('Collections: Settings → Shelf → Collections lists it to rename or delete', /Couch co-op/.test(c.manage) && /Delete Couch co-op/.test(c.manage), c.manage.slice(0, 300));
+    check('Collections: Settings → Library → My shelves lists it, and its own page renames or deletes it', /Your shelves[\s\S]*Couch co-op/i.test(c.list) && /Rename/.test(c.manage) && /Delete this shelf/.test(c.manage), JSON.stringify({ list: c.list.slice(-300), manage: c.manage.slice(-400) }));
     check('Library pass (Windows page): no script errors', !errors.length, errors.slice(0, 3).join(' | '));
   } catch (e) { check('Library pass ran to the end', false, e && e.stack ? e.stack.split('\n').slice(0, 2).join(' ') : e); }
   await ctx.close();

@@ -12,8 +12,17 @@ contextBridge.exposeInMainWorld('boxshelf', {
     : { os: 'windows', caps: { steam: true, power: true, homeMenu: true, emuSettings: true, autostart: true, displays: true, folders: true, companionServer: true, winMode: true, dolphinIpl: true, raAutoConfig: true } },
   getConfig: () => call('config:get'),
   openExternal: url => call('app:openExternal', { url }),
+  qrCode: text => call('app:qr', { text }), // (beta.14) a QR (an SVG) for an https address: Settings › IGDB's developer console
   updateCheck: force => call('app:updateCheck', { force: !!force }), // (1.82) { current, latest, newer, url, links } or { error }
   onUpdate: cb => ipcRenderer.on('app:update', (_e, r) => cb(r)),
+  // (beta.14) Update now (main/updateflow.js): { state: idle | downloading | unpacking | ready | installing | error, version, pct, error, support, why, selfRestart }
+  updateInfo: () => call('update:info'), updateStart: () => call('update:start'), updateCancel: () => call('update:cancel'), updateInstall: () => call('update:install'),
+  onUpdateState: fn => { const h = (_e, d) => fn(d); ipcRenderer.on('update:state', h); return () => ipcRenderer.removeListener('update:state', h); },
+  // (beta.14) the safety copy made before the last update ({ safety: { version, at, files } | null, problems }) and its Undo (restarts)
+  keepInfo: () => call('keep:info'), keepUndo: () => call('keep:undo'),
+  // (beta.14) first run: another Boxshelf's setup on this PC ({ version, dataDir, lastRun } | null), its extras' size, copy it (restarts) or not
+  bringFind: () => call('bring:find'), bringSize: () => call('bring:size'), bringCopy: extras => call('bring:copy', { extras: !!extras }), bringSkip: () => call('bring:skip'), bringChoose: () => call('bring:choose'),
+  onBringProgress: fn => { const h = (_e, d) => fn(d); ipcRenderer.on('bring:progress', h); return () => ipcRenderer.removeListener('bring:progress', h); },
   restoreEmuSettings: () => call('emucfg:restore'),
   // (beta.7) Set up for me
   emuSetupStatus: (systemId) => call('emusetup:status', { systemId }), emuSetupPlan: (systemId) => call('emusetup:plan', { systemId }),
@@ -34,6 +43,11 @@ contextBridge.exposeInMainWorld('boxshelf', {
   customThemes: () => call('customThemes:list'), // (1.76) picture themes: Custom themes\<name>\
   customThemeCreate: (file, name) => call('customThemes:create', { file, name }),
   customThemesOpen: () => call('customThemes:open'),
+  customThemeSave: o => call('customThemes:save', o), // (beta.14) Make a theme: { id?, json, files: { background, night, video, sys } }
+  customThemeRemove: id => call('customThemes:remove', { id }),
+  customThemeExport: id => call('customThemes:export', { id }), // the theme as a .zip on the Desktop
+  customThemeImport: file => call('customThemes:import', { file }),
+  customThemePreviewUrl: file => call('customThemes:previewUrl', { file }), // a picture just chosen, for Make a theme's preview
   sw2Builds: file => call('sw2:builds', { file }), // Switch 2: the Eglantine builds to choose from at Play
   sw2AddBuild: exe => call('sw2:addBuild', { exe }), // (beta.11) "+ Add another emulator" in that list
   onLaunchStatus: cb => ipcRenderer.on('launch:status', (_e, t) => cb(t)),
@@ -66,7 +80,10 @@ contextBridge.exposeInMainWorld('boxshelf', {
   setTheme: (systemId, kind, file) => call('themes:set', { systemId, kind, file }),
   removeTheme: (systemId, kind) => call('themes:remove', { systemId, kind }),
   // Customize → Find a logo: { ok, list:[{ key, source, label, licence, by, preview }], offline }
-  findLogos: systemId => call('themes:findLogos', { systemId: String(systemId || '') }),
+  findLogos: (systemId, more) => call('themes:findLogos', { systemId: String(systemId || ''), more: !!more }),
+  findLogoWeb: systemId => call('themes:findLogoWeb', { systemId: String(systemId || '') }),
+  padFallback: on => call('pads:fallback', { on: !!on }),  onPadFallbackButton: fn => ipcRenderer.on('pads:fallbackButton', (e, r) => fn(r)),
+  onLogoInstalled: fn => ipcRenderer.on('logos:installed', (e, r) => fn(r)),
   useLogo: (systemId, key) => call('themes:useLogo', { systemId: String(systemId || ''), key: String(key || '') }),
   restoreLogo: systemId => call('themes:restoreLogo', { systemId: String(systemId || '') }),
   saveConsoleFit: (systemId, patch) => call('themes:fit', { systemId, patch }),
@@ -117,7 +134,32 @@ contextBridge.exposeInMainWorld('boxshelf', {
   songs: () => call('songs:list'),
   songRead: file => call('songs:read', { file }),
   openSongsFolder: () => call('songs:open'),
-  raProgress: (systemId, title, force) => call('ra:progress', { systemId, title, force }),
+  // (beta.14) Settings > Sound: sound packs, Kenney's free packs, real instruments, Your music (main/soundpacks.js)
+  soundPacks: () => call('sounds:packs'),
+  soundPackRead: (id, file) => call('sounds:read', { id, file }),
+  soundPackImport: paths => call('sounds:import', { paths }),
+  soundPackPick: kind => call('sounds:pick', { kind }),
+  soundPackUpdate: (id, patch) => call('sounds:update', { id, patch }),
+  soundPackRemove: id => call('sounds:remove', { id }),
+  soundPackExport: id => call('sounds:export', { id }),
+  soundPackFolder: id => call('sounds:openFolder', { id }),
+  onSoundPacks: fn => { const h = (_e, d) => fn(d); ipcRenderer.on('sounds:changed', h); return () => ipcRenderer.removeListener('sounds:changed', h); },
+  kenneyGet: id => call('sounds:kenney', { id }),
+  kenneyStop: () => call('sounds:kenneyStop'),
+  onKenney: fn => { const h = (_e, d) => fn(d); ipcRenderer.on('sounds:kenney', h); return () => ipcRenderer.removeListener('sounds:kenney', h); },
+  instStatus: () => call('sounds:inst'),
+  instDownload: () => call('sounds:instGet'),
+  instRemove: () => call('sounds:instRemove'),
+  instRead: (inst, midi) => call('sounds:instRead', { inst, midi }),
+  onInstProgress: fn => { const h = (_e, d) => fn(d); ipcRenderer.on('sounds:instProgress', h); return () => ipcRenderer.removeListener('sounds:instProgress', h); },
+  musicList: () => call('music:list'),
+  musicRead: file => call('music:read', { file }),
+  openMusicFolder: () => call('music:open'),
+  musicAdd: kind => call('music:add', { kind }),
+  songsFromDownloads: take => call('songs:downloads', { take: !!take }),
+  findMidiOnline: () => call('songs:findOnline'),
+  raProgress: (systemId, title, force, titleId, file) => call('ra:progress', { systemId, title, force, titleId: titleId ? String(titleId) : undefined, file: file ? String(file) : undefined }),
+  emuPopups: (kind, on) => call('emu:popups', { kind: String(kind || ''), on: on !== false }),
   raShelf: (systemId, titles) => call('ra:shelf', { systemId, titles }),
   raProfile: () => call('ra:profile'),
   raEnabled: () => call('ra:enabled'),
@@ -130,8 +172,11 @@ contextBridge.exposeInMainWorld('boxshelf', {
   // (beta.7) Add games
   scanGameFolder: (root) => call('games:scanFolder', { root }), gameTitles: (exes) => call('games:titleFor', { exes }), gameCovers: (items) => call('games:covers', { items }),
   playniteFind: (dir) => call('playnite:find', { dir }), emulatorIn: (dir, systemId) => call('games:emuIn', { dir, systemId }), playnitePlan: (dir) => call('playnite:plan', { dir }),
+  moreShots: (o) => call('shots:more', o || {}), // (beta.14) Details: more screenshots for a console game with fewer than 6 (main/moreshots.js)
+  moreInfo: (o) => call('info:more', o || {}), // (beta.14) Details: IGDB's info for a console game whose LaunchBox info has gaps (main/igdb.js; only with IGDB keys)
   previewFind: (o) => call('preview:find', o || {}), previewWarm: (list) => call('preview:warm', Array.isArray(list) ? list : []),previewYt: (id, rect, muted) => call('preview:yt', { id, rect, muted }), previewYtMove: (rect, show) => call('preview:ytMove', { rect, show }),
-  previewYtStop: () => call('preview:ytStop'), previewClipAudio: url => call('preview:clipAudio', { url: String(url || '') }), /* (beta.12) a clip's sound for Details' box */ previewCount: () => call('preview:count'), previewClearSteam: () => call('preview:clearSteam'),
+  trailerChoices: (o) => call('trailer:choices', o || {}), trailerSet: (o) => call('trailer:set', o || {}), /* (beta.14) Details → Change trailer */
+  previewYtStop: () => call('preview:ytStop'),previewClipAudio: url => call('preview:clipAudio', { url: String(url || '') }), /* (beta.12) a clip's sound for Details' box */ previewCount: () => call('preview:count'), previewClearSteam: () => call('preview:clearSteam'),
   onPreviewYt: (fn) => { const h = (_e, d) => fn(d); ipcRenderer.on('preview:yt', h); return () => ipcRenderer.removeListener('preview:yt', h); },
   // (beta.8) console trailers: a clip became ready; the helper's status, download and progress; clearing the clips
   onPreviewClip: (fn) => { const h = (_e, d) => fn(d); ipcRenderer.on('preview:clip', h); return () => ipcRenderer.removeListener('preview:clip', h); },
@@ -175,7 +220,7 @@ contextBridge.exposeInMainWorld('boxshelf', {
   // Settings (1.55)
   listDisplays: () => call('display:list'),
   moveToDisplay: id => call('display:move', { id: String(id == null ? '' : id) }),
-  backupSettings: () => call('settings:backup'),
+  backupSettings: o => call('settings:backup', { keys: !!(o && o.keys) }), // (beta.14) keys: include keys and passwords
   restoreSettings: () => call('settings:restore'),
   reportProblem: () => call('app:reportProblem'),
   clearHistory: () => call('history:clear'),

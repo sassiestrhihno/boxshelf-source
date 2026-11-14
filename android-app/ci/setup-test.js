@@ -42,7 +42,54 @@ module.exports = async function setupPass({ browser, base, check, OUT }) {
   { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'emusetup-test.js')], { encoding: 'utf8' }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
     const bad = out.split('\n').filter(l => l.startsWith('❌'));
     check('Set up for me: RetroArch, DuckStation, PCSX2 and Dolphin files written, your own mapping and BIOS kept, Undo puts them back (ci/emusetup-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
-
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'whatsnew-notes-test.js')], { encoding: 'utf8' }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('What\'s new: this version (and the Android app\'s) has its notes, so an update always shows what changed (ci/whatsnew-notes-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'keepsetup-test.js')], { encoding: 'utf8', timeout: 180000 }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Updates keep your setup (beta.14): the release file only from GitHub, checked; the helper swaps the program and keeps data\\ and your files; safety copy, Undo, Bring my setup over, backups with and without keys (ci/keepsetup-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'logofind-test.js')], { encoding: 'utf8' }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Find a logo: a Commons search for any console keeps only free, see-through logos of that console; Search the web takes only real pictures (ci/logofind-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'steam-dead-drive-test.js')], { encoding: 'utf8' }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Steam: a library on a drive that never answers is left out after a few seconds instead of freezing the app (#34, ci/steam-dead-drive-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'config-keep-test.js')], { encoding: 'utf8' }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Settings file: a beta.14 theme, sound (packs, instruments) and Your music survive a restart; old names move, junk falls back (ci/config-keep-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'shelfadds-config-test.js')], { encoding: 'utf8' }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Settings file (beta.14): + Add to…\'s games on other shelves and an automatic My shelf\'s rule survive a restart; junk is dropped (ci/shelfadds-config-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'homemenu-focus-test.js')], { encoding: 'utf8' }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Home menu over Azahar: the game is paused, then the menu takes the focus so it shows over the fullscreen game; Resume gives it back (ci/homemenu-focus-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'raemu-test.js')], { encoding: 'utf8' }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('RetroAchievements: PCSX2\'s sign-in is found in a business or translated OneDrive Documents folder too (#28, ci/raemu-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'xeniaach-test.js')], { encoding: 'utf8' }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Xbox 360 achievements read from Xenia\'s profile files; its pop-up switch changes only its own line (ci/xeniaach-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'rpcs3troph-test.js')], { encoding: 'utf8' }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('PS3 trophies read from RPCS3 (grades, pictures, hidden ones, found by TROPDIR or name); its pop-up switch (ci/rpcs3troph-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'artqueue-test.js')], { encoding: 'utf8', timeout: 90000 }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Art Studio downloads: a site that hangs never holds up the part on screen, ScreenScraper waits in its own lane, a pick starts at once, a cut-off picture is tried again, every new picture gets a new address (ci/artqueue-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'bgwork-test.js')], { encoding: 'utf8', timeout: 120000 }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Background work: the manual search, the re-check, the spreads check, GameTDB\'s refresh and the preview lookups read the disk without holding the app up, with the same results (ci/bgwork-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'moreshots-test.js')], { encoding: 'utf8', timeout: 60000 }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Details\' screenshots: a game short of 6 is topped up (ScreenScraper, libretro, IGDB), gameplay first, duplicates dropped, sources without an account skipped, nothing fetched twice or for a full game (ci/moreshots-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'customshelf-test.js')], { encoding: 'utf8' }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Custom games on any shelf (beta.14): a console\'s id is kept, placeCustom puts each on its console\'s shelf (made if needed), Custom for anything else, PC for pc (ci/customshelf-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'trailers-test.js')], { encoding: 'utf8', timeout: 60000 }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('Better trailers (beta.14): ScreenScraper\'s gameplay clip, then IGDB\'s trailer, then LaunchBox\'s link and a search; a demo disc isn\'t taken for the game; the clip fetched once; Change trailer wins; no secret kept, logged or in an address (ci/trailers-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
+  { let out = '', ok = true; try { out = execFileSync(process.execPath, [path.join(__dirname, 'igdbinfo-test.js')], { encoding: 'utf8', timeout: 60000 }); } catch (e) { ok = false; out = String(e.stdout || e.message); }
+    const bad = out.split('\n').filter(l => l.startsWith('❌'));
+    check('IGDB game info (beta.14): one IGDB question gives a game\'s screenshots and info, only gaps are filled (LaunchBox\'s values stay), kept and not asked again, a busy IGDB asked again, 4 a second at most, keys never in an address or log (ci/igdbinfo-test.js)', ok && !bad.length, bad.join(' | ') || (out.trim().split('\n').pop() || '')); }
   // ---------- the page ----------
   const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   ctx.setDefaultTimeout(90000);
@@ -66,7 +113,7 @@ module.exports = async function setupPass({ browser, base, check, OUT }) {
       const pad = q('#suFoot .wz-hints .wz-pad'); o.hints = !!pad && getComputedStyle(pad).display === 'none'; document.body.classList.add('pad-input'); o.padHints = !!pad && getComputedStyle(pad).display !== 'none'; document.body.classList.remove('pad-input');
       if (document.activeElement) document.activeElement.blur(); return o; });
     check('First run (beta.11): full screen in Settings\' look: icon + status sidebar (names unchanged), the choices as rows (icon, title, line, chevron), an info card that follows the focus, the hint pill (pad buttons with a controller)',
-      look.full && look.icons === 6 && look.labels === 'Welcome|Your consoles|Finish setting up|Box art|Accounts|Done' && look.acct === 'Optional' && look.rows === 2 && look.parts &&
+      look.full && look.icons === 6 && look.labels === 'Welcome|Your consoles|Finish setting up|Box art|Accounts|Done' && look.acct === 'Optional' && look.rows === 3 /* (beta.14: + I've used Boxshelf before) */ && look.parts &&
       /looks for/.test(look.info1) && /yourself/.test(look.info2) && look.hints && look.padHints, JSON.stringify(look));
     await page.getByRole('button', { name: 'Find my emulators and games' }).click(); await pause(1800);
     const tiles = await page.evaluate(() => { const t = document.querySelector('.wz2-grid .wz2-card'); return { emu: !!(t && t.querySelector('.wz2-emu')), dot: !!(t && t.querySelector('.wz-dot')),

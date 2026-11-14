@@ -15,7 +15,7 @@ const NAMES = {
   segacd: ['Sega CD', 'Sega Mega-CD'], sega32x: ['Sega 32X'], saturn: ['Sega Saturn'], dreamcast: ['Sega Dreamcast'],
   pcengine: ['NEC TurboGrafx-16', 'NEC PC Engine'], neogeo: ['SNK Neo Geo AES', 'SNK Neo Geo'], arcade: ['MAME'],
   atari2600: ['Atari 2600'], atarilynx: ['Atari Lynx'], wonderswan: ['Bandai WonderSwan', 'Bandai WonderSwan Color'],
-  x360: ['Microsoft Xbox 360'],
+  x360: ['Microsoft Xbox 360'], xbox: ['Microsoft Xbox'],
 };
 const key = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 const exists = async f => { try { await fs.promises.access(f); return true; } catch { return false; } };

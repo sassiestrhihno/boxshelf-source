@@ -37,7 +37,7 @@ function defaults() {
     // (beta.7) Set up for me (main/emusetup.js): auto = the first run sets up emulators that look new; graphics = the preset
     // (auto: picked for this PC); resume = RetroArch carries on where you left off; pending = emulators to set up at their
     // next launch (not opened yet when setup ran: their settings file comes with the first run)
-    emuSetup: { auto: true, graphics: 'auto', resume: false, pending: [] },
+    emuSetup: { auto: true, graphics: 'auto', resume: false, shape: 'auto', sharp: false, crt: false, pending: [] },
     apps,
     ra: { user: '', key: '', enabled: true },
     // (beta.12, Windows) RocketLauncher (main/rocket.js): its program, which consoles start through it (off · all · some:
@@ -48,11 +48,11 @@ function defaults() {
     // (beta.12) RomM (main/romm.js): the server's address, its HTTPS check skipped for a home server's own certificate,
     // and whether games not on this device show (with a cloud badge). Its sign-in token is keys.rommToken (kept by main)
     romm: { server: '', skipTls: false, cloud: true },
-    keys: { fanart: '', steamgriddb: '', ssUser: '', ssPass: '', ssDevId: '', ssDevPass: '', rommToken: '', rommTokenServer: '' }, // Settings → Accounts & services: personal API keys, kept encrypted on disk (steamgriddb: Art Studio posters; ss*: the ScreenScraper sign-in, 1.71)
+    keys: { fanart: '', steamgriddb: '', ssUser: '', ssPass: '', ssDevId: '', ssDevPass: '', rommToken: '', rommTokenServer: '', igdbId: '', igdbSecret: '' }, /* (beta.14: igdb*: a Twitch developer app's Client ID and Secret, for IGDB's screenshots) */ // Settings → Accounts & services: personal API keys, kept encrypted on disk (steamgriddb: Art Studio posters; ss*: the ScreenScraper sign-in, 1.71)
     // Art Studio: styles = per console shelf style (a console without one follows defaultArtStyle(ui), i.e. the old Box art
     // region / Prefer HD settings, so nothing changes until a style is chosen); locks = per game parts auto-fetch never touches
     art: { styles: {}, locks: {} },
-    ui: { sound: true, startFullscreen: true, buttons: 'auto', performance: 'auto', quitCombo: true, quitComboKeys: 'l3+r3', soundTheme: 'aero', volume: .7, ambient: false, ambientLevel: .02, music: 'off', musicLevel: .4, rumble: true, soundRev: 4, autoCovers: false, autoManuals: false, artLibrary: '', attract: true, attractMinutes: 3, attractPace: 'normal', attractWander: true,shuffleAll: true, favorites: [], collections: [], background: 'blur', theme: 'spectrum', sort: 'az', filter: 'all', museumLight: 'gallery', homeMenu: true, homeLayout: 'side', hideTaskbar: true, seamless: true, screenMode: '', windowBounds: null, uiScale: 1, previews: 'off', previewSound: false, previewYoutube: true, previewClips: true, previewDirs: [], previewDelay: 1.5, previewHint: false, clipHint: false, deckHint: false, leaveHint: false, lastSeenVersion: '', // (beta.7) video previews; lastSeenVersion: the version whose What's new was shown: off / details / shelf (Details and behind the shelf); the first run asks
+    ui: { sound: true, startFullscreen: true, buttons: 'auto', performance: 'auto', quitCombo: true, quitComboKeys: 'l3+r3', soundTheme: 'aero', volume: .7, ambient: false, ambientLevel: .02, music: 'off', musicLevel: .4, rumble: true, soundRev: 4, autoCovers: false, autoManuals: false, artLibrary: '', attract: true, attractMinutes: 3, attractPace: 'normal', attractWander: true,shuffleAll: true, favorites: [], collections: [], background: 'blur', theme: 'spectrum', sort: 'az', filter: 'all', museumLight: 'gallery', homeMenu: true, homeLayout: 'side', hideTaskbar: true, seamless: true, screenMode: '', windowBounds: null, uiScale: 1, previews: 'off', previewSound: false, previewYoutube: true, previewClips: true, previewDirs: [], previewDelay: 5, previewDelay5: false, previewHint: false, clipHint: false, deckHint: false, leaveHint: false, lastSeenVersion: '', // (beta.7) video previews; lastSeenVersion: the version whose What's new was shown: off / details / shelf (Details and behind the shelf); the first run asks
       // 1.55 Settings
       updateCheck: true, // (1.82) Settings → System → Check for new betas
       openInto: 'last', display: '', safeArea: 100, clock: 'full', clock24: false, reduceMotion: false, dimMinutes: 0, confirmButton: 'auto', scrollSpeed: 'normal', artRegion: 'auto', audioOut: '', hidden: [], museumStyle: { walkIn: true } }
@@ -94,12 +94,16 @@ function upgrade(cfg) {
     // 1.76: Background → Game artwork became the Artwork theme (and Soft blur the default under every theme, or the Blur theme)
     if (cfg.ui.background === 'art') { cfg.ui.theme = 'artwork'; cfg.ui.background = 'blur'; }
     // 1.75: the ten extra themes (themes-extra.js) on Windows too; 1.76: Artwork and Blur
-    if (!['spectrum', 'classic', 'keys', 'arcade', 'aurora', 'midnight', 'artwork', 'blur', 'cube', 'blueshift', 'swirl', 'pocket', 'oled', 'walnut', 'forest', 'crt', 'vhs', 'synth'].includes(cfg.ui.theme || 'spectrum') && !/^custom-[a-z0-9-]{1,48}$/.test(String(cfg.ui.theme))) cfg.ui.theme = 'spectrum'; // (custom-…: a picture theme from Custom themes\, 1.76; the shelf falls back to Spectrum itself if its folder is gone)
-    if (!['aero', 'melody', 'musicbox'].includes(cfg.ui.soundTheme || 'aero')) cfg.ui.soundTheme = 'aero';
+    // (beta.14) any well-formed id is kept: the lists that stood here knew none of beta.14's themes (Nebula, Starfield…),
+    // sounds (Disc-era, packs "pack:<id>", instruments) or Your music, so each restart put Spectrum / Aero / Drift back.
+    // The shelf itself falls back for an id it doesn't know (app.js themeId, retired themes through BS_THEME_RETIRED)
+    const okId = v => typeof v === 'string' && /^[a-z0-9][a-z0-9:_-]{0,63}$/i.test(v);
+    if (!okId(cfg.ui.theme || 'spectrum')) cfg.ui.theme = 'spectrum'; // (custom-…: a picture theme from Custom themes\, 1.76; the shelf falls back to Spectrum itself if its folder is gone)
+    if (!okId(cfg.ui.soundTheme || 'aero')) cfg.ui.soundTheme = 'aero';
     // 1.77: the ambient tracks (Drift / Night / Glow) took over from Calm / Lounge / Chime. (1.82: new installs start with
     // the music off; a saved config always has ui.music, so existing choices are kept)
     const MU = { calm: 'drift', lounge: 'night', chime: 'glow' }; if (MU[cfg.ui.music]) cfg.ui.music = MU[cfg.ui.music];
-    if (!['drift', 'night', 'glow', 'off'].includes(cfg.ui.music || 'drift')) cfg.ui.music = 'drift';
+    if (!okId(cfg.ui.music || 'drift')) cfg.ui.music = 'drift';
     if (!['chime', 'crystal', 'pulse', 'horizon', 'keys'].includes(cfg.ui.bootSound || 'chime')) cfg.ui.bootSound = 'chime';
   }
   for (const s of CONSOLES) {
@@ -205,22 +209,34 @@ function sanitize(cfg) {
   const ui = cfg.ui, d = defaults().ui;
   // per-game emulator overrides: plain paths only, a sane number of them
   // (beta.5: title = the name the player gave it) (beta.12: status = Details' Status, one of GAME_STATUS)
-  const games = {}; if (isObj(cfg.games)) for (const [id, v] of Object.entries(cfg.games).slice(0, 5000)) { if (typeof id !== 'string' || id.length > 2048 || !isObj(v)) continue; const e = typeof v.emulator === 'string' ? v.emulator.trim().slice(0, 1024) : '', t = typeof v.title === 'string' ? v.title.replace(/\s+/g, ' ').trim().slice(0, 120) : '', st = GAME_STATUS.includes(v.status) ? v.status : ''; if (e || t || st) games[id] = { ...(e ? { emulator: e } : {}), ...(t ? { title: t } : {}), ...(st ? { status: st } : {}) }; }
+  // (beta.14: trailer = Details' Change trailer: 'ss', 'none' or 'yt:<YouTube id>')
+  const games = {}; if (isObj(cfg.games)) for (const [id, v] of Object.entries(cfg.games).slice(0, 5000)) { if (typeof id !== 'string' || id.length > 2048 || !isObj(v)) continue; const e = typeof v.emulator === 'string' ? v.emulator.trim().slice(0, 1024) : '', t = typeof v.title === 'string' ? v.title.replace(/\s+/g, ' ').trim().slice(0, 120) : '', st = GAME_STATUS.includes(v.status) ? v.status : '', tr = typeof v.trailer === 'string' && /^(ss|none|yt:[\w-]{6,20})$/.test(v.trailer) ? v.trailer : ''; if (e || t || st || tr) games[id] = { ...(e ? { emulator: e } : {}), ...(t ? { title: t } : {}), ...(st ? { status: st } : {}), ...(tr ? { trailer: tr } : {}) }; }
   cfg.games = games;
   // (beta.7) your collections (shelves of your own): [{ id, name, ids: [game ids] }], a sane number and size
   ui.lastSeenVersion = typeof ui.lastSeenVersion === 'string' ? ui.lastSeenVersion.slice(0, 40) : '';
   if (!['off', 'details', 'shelf'].includes(ui.previews)) ui.previews = 'off'; for (const k of ['previewSound', 'previewYoutube', 'previewClips']) if (typeof ui[k] !== 'boolean') ui[k] = d[k];
-  { const n = +ui.previewDelay; ui.previewDelay = [0.5, 1, 1.5, 2, 3, 5, 8, 10, 15].includes(n) ? n : 1.5; } // (beta.8: more choices, half a second to 15 seconds)
+  { const n = +ui.previewDelay; ui.previewDelay = [0.5, 1, 1.5, 2, 3, 5, 8, 10, 15].includes(n) ? n : 5; } // (beta.8: more choices, half a second to 15 seconds)
+  // (beta.14) previews wait 5 s by default (1.5 s started them while you were still looking around): a config still on the
+  // old default moves to 5 once; a delay chosen since (1.5 included) is kept
+  if (ui.previewDelay5 !== true) { if (ui.previewDelay === 1.5) ui.previewDelay = 5; ui.previewDelay5 = true; }
   { if (typeof ui.clipHint !== 'boolean') ui.clipHint = false; if (typeof ui.deckHint !== 'boolean') ui.deckHint = false; if (typeof ui.leaveHint !== 'boolean') ui.leaveHint = false; if (typeof ui.deckScaled !== 'boolean') ui.deckScaled = false; }
   ui.previewDirs = [...new Set((Array.isArray(ui.previewDirs) ? ui.previewDirs : []).filter(x => typeof x === 'string' && x && x.length <= 1024))].slice(0, 20);
   ui.collections = (Array.isArray(ui.collections) ? ui.collections : []).filter(c => isObj(c) && typeof c.id === 'string' && c.id && typeof c.name === 'string').slice(0, 50)
-    .map(c => ({ id: c.id.slice(0, 40), name: c.name.replace(/\s+/g, ' ').trim().slice(0, 40) || 'Collection', ids: [...new Set((Array.isArray(c.ids) ? c.ids : []).filter(x => typeof x === 'string' && x && x.length <= 1024))].slice(0, 5000) }));
+    .map(c => ({ id: c.id.slice(0, 40), name: c.name.replace(/\s+/g, ' ').trim().slice(0, 40) || 'Collection', ids: [...new Set((Array.isArray(c.ids) ? c.ids : []).filter(x => typeof x === 'string' && x && x.length <= 1024))].slice(0, 5000),
+      // (beta.14) a shelf that fills itself (Settings → My shelves → Fill it automatically; app.js autoRuleGames): { kind, value }
+      ...(isObj(c.rule) && ['genre', 'status', 'never', 'console'].includes(c.rule.kind) ? { rule: { kind: c.rule.kind, value: c.rule.kind === 'never' ? '' : String(typeof c.rule.value === 'string' || typeof c.rule.value === 'number' ? c.rule.value : '').slice(0, 80) } } : {}) }));
+  // (beta.14) + Add to…: games shown on another shelf as well as their own, { "<shelf id>": ["<game id>", ...] }. Shelf ids
+  // as main's (short, lower case), game ids plain strings, up to 100 shelves of 2000 games; an empty list is dropped
+  { const a = isObj(ui.shelfAdds) ? ui.shelfAdds : {}, out = {};
+    for (const [k, v] of Object.entries(a).slice(0, 100)) { if (!/^[a-z0-9_-]{1,24}$/.test(k) || !Array.isArray(v)) continue; const ids = [...new Set(v.filter(x => typeof x === 'string' && x && x.length <= 1024))].slice(0, 2000); if (ids.length) out[k] = ids; }
+    ui.shelfAdds = out; }
   // (beta.4) games added by hand: plain paths and names only, a sane number of them
   if (isObj(cfg.pc)) { const s = (v, n) => typeof v === 'string' ? v.trim().slice(0, n) : '';
-    cfg.pc.custom = (Array.isArray(cfg.pc.custom) ? cfg.pc.custom : []).filter(c => isObj(c) && s(c.exe, 1024)).slice(0, 2000).map(c => ({ id: s(c.id, 80) || s(c.title, 80) || s(c.exe, 80), title: s(c.title, 120), exe: s(c.exe, 1024), args: s(c.args, 1000), ...(s(c.src, 20) ? { src: s(c.src, 20) } : {}), ...(c.shelf === 'pc' ? { shelf: 'pc' } : {}) })); // (beta.7: src 'playnite' marks an import, for Remove what was imported; up to 2000 games) (beta.10: shelf 'pc' = on the PC shelf instead of Custom)
+    cfg.pc.custom = (Array.isArray(cfg.pc.custom) ? cfg.pc.custom : []).filter(c => isObj(c) && s(c.exe, 1024)).slice(0, 2000).map(c => ({ id: s(c.id, 80) || s(c.title, 80) || s(c.exe, 80), title: s(c.title, 120), exe: s(c.exe, 1024), args: s(c.args, 1000), ...(s(c.src, 20) ? { src: s(c.src, 20) } : {}), ...(typeof c.shelf === 'string' && /^[a-z0-9_-]{1,24}$/.test(c.shelf) && c.shelf !== 'custom' ? { shelf: c.shelf } : {}) })); // (beta.7: src 'playnite' marks an import, for Remove what was imported; up to 2000 games) (beta.10: shelf 'pc' = on the PC shelf instead of Custom; beta.14: or a console's id, main.js checks it's a known one)
     cfg.pc.pnDirs = isObj(cfg.pc.pnDirs) ? Object.fromEntries(Object.entries(cfg.pc.pnDirs).slice(0, 60).map(([k, v]) => [String(k).slice(0, 20), (Array.isArray(v) ? v : []).filter(x => typeof x === 'string' && x.length <= 1024).slice(0, 50)])) : {}; // (the games folders a Playnite import added)
     cfg.pc.quiverPath = s(cfg.pc.quiverPath, 1024); for (const k of ['epic', 'quiver', 'gog', 'ubisoft', 'ea', 'xbox']) if (typeof cfg.pc[k] !== 'boolean') cfg.pc[k] = true; } // (beta.7: the four new stores)
   { const e = isObj(cfg.emuSetup) ? cfg.emuSetup : {}; cfg.emuSetup = { auto: e.auto !== false, graphics: ['auto', 'fast', 'balanced', 'pretty'].includes(e.graphics) ? e.graphics : 'auto', resume: e.resume === true,
+    shape: ['auto', 'original', 'wide'].includes(e.shape) ? e.shape : 'auto', sharp: e.sharp === true, crt: e.crt === true, // (beta.14) Set up for me's Picture choices
     pending: [...new Set((Array.isArray(e.pending) ? e.pending : []).filter(x => typeof x === 'string' && x && x.length <= 1024))].slice(0, 40) }; }
   cfg.emuSeen = Array.isArray(cfg.emuSeen) ? [...new Set(cfg.emuSeen.filter(x => typeof x === 'string' && x && x.length <= 1024))].slice(0, 20) : [];
   for (const [k, list] of Object.entries(ONE_OF)) if (!list.includes(ui[k])) ui[k] = d[k];

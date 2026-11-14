@@ -11,7 +11,7 @@ const REPOS = [REPO, 'sassiestrhihno/boxshelf-source'];
 const PAGE = `https://github.com/${REPO}`;
 const LINKS = { page: PAGE, releases: `${PAGE}/releases`, issues: `${PAGE}/issues/new/choose` };
 
-let log = () => {}, last = null, inflight = null;
+let log = () => {}, last = null, inflight = null, rels = [];
 function init(logger) { if (logger) log = logger; }
 
 // "1.82.0-beta.1" → { nums: [1, 82, 0], pre: ['beta', 1] }; a release without a pre part is newer than its betas
@@ -65,6 +65,8 @@ async function check(current, force = false) {
       const list = got.flatMap(g => g.status === 'fulfilled' && Array.isArray(g.value) ? g.value : []);
       const best = list.filter(r => r && !r.draft && parse(r.tag_name)).sort((p, q) => compare(q.tag_name, p.tag_name))[0];
       const latest = best ? String(best.tag_name).replace(/^v/, '') : null;
+      // (beta.14) every release of that version (the beta page's first): Update now takes its file from the first that has one
+      rels = latest ? list.filter(r => r && !r.draft && parse(r.tag_name) && compare(r.tag_name, latest) === 0) : [];
       last = { current, latest, newer: !!latest && compare(latest, current) > 0, url: best ? best.html_url : LINKS.releases,
         notes: best && typeof best.body === 'string' ? best.body.slice(0, 2000) : '', checkedAt: Date.now() };
       log('Update check:', latest ? `newest ${latest}${last.newer ? ' (newer)' : ''}` : 'no releases yet');
@@ -77,4 +79,6 @@ async function check(current, force = false) {
   return inflight;
 }
 
-module.exports = { init, check, compare, LINKS };
+// (beta.14) the newest check's releases of one version (main/updateflow.js picks this platform's file from them)
+const releases = v => (v ? rels.filter(r => compare(r.tag_name, v) === 0) : []);
+module.exports = { init, check, compare, releases, LINKS, REPOS };

@@ -638,3 +638,8 @@ body.bss-reduce .bsa-card.dk.sel .im.disc img{animation:none}
 .bsa-pv.sbig .bsa-nb .sp{flex:none;height:94%;width:auto;aspect-ratio:26/146}
 .bsa-pv.sbig .bsa-nb .sp.me{height:100%;aspect-ratio:30/156}
 .bsa-pv.sbig .bsa-nb .sp .bsa-ph.spine{font-size:12px}
+
+/* (beta.14) the theme grid opens with A: closed, the chosen tile has a quiet ring; open, a bright one and the other tiles brighten */
+.bss-row.cur.theme .bss-tile.on{box-shadow:inset 0 0 0 2px rgba(255,255,255,.6),0 10px 26px -8px rgba(0,0,0,.6)}
+.bss-root.tgrid .bss-row.cur.theme .bss-tile{opacity:.8}
+.bss-root.tgrid .bss-row.cur.theme .bss-tile.on{opacity:1;box-shadow:0 0 0 3px #6b8cff,inset 0 0 0 2px #fff,0 12px 30px -8px rgba(107,140,255,.7)}

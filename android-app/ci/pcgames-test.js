@@ -163,7 +163,7 @@ module.exports = async function pcGamesPass({ browser, base, check, newPage }) {
       st.page.includes('Add programs') && st.page.includes('Scan a folder of games') && (!st.hasPn || st.page.includes('Import from Playnite (experimental)')) &&
       st.pcPage.includes('Other PC games') && /Custom games/.test(st.otherTo || '') &&
       (!st.hasPn || st.findPn.includes('Import from Playnite (experimental)')) && st.findDecomp.includes('Add programs'),
-      JSON.stringify({ page: st.page.slice(0, 8), other: st.otherTo, pn: st.findPn, decomp: st.findDecomp, hasPn: st.hasPn }).slice(0, 600));
+      JSON.stringify({ pcOtherRow: st.pcPage.includes('Other PC games'), other: st.otherTo, page: st.page.slice(0, 8), pn: st.findPn, decomp: st.findDecomp, hasPn: st.hasPn }).slice(0, 600));
     check('PC games (Windows): Add games → Add one program puts it on the Custom shelf named from its file; Remove (pressed twice) takes it off',
       (st.added || []).length === 1 && st.added[0].title === 'program' && /program\.exe$/.test(st.added[0].exe) && st.after.includes('program') && (st.removed || []).length === 0, JSON.stringify({ added: st.added, removed: st.removed }).slice(0, 400));
     // (beta.5) a PC game's cover picker: Details → Box art opens it with the options (SteamGridDB's, a picture of yours);
@@ -174,15 +174,17 @@ module.exports = async function pcGamesPass({ browser, base, check, newPage }) {
       const word = () => (document.getElementById('sysWord') || {}).textContent || '';
       for (let i = 0; i < 20 && !/^Custom/.test(word().trim()); i++) { key('ArrowDown'); await w(500); }
       const out = { game: Shelf._qs().g };
-      // (beta.9) a PC game's Box art is in the main row beside Play (consoles keep theirs in More): the More one stays hidden
+      // (beta.9) a PC game's Box art has its own button (the console one stays hidden); (beta.14, Windows) it's in More, as
+      // the button row is only Play, ♡ and ···
       key('i'); await w(900); const btn = document.getElementById('dBoxArtPc'), inMore = document.getElementById('dBoxArt');
-      out.button = !!btn && !btn.hidden && !btn.closest('#dMenu') && btn.getBoundingClientRect().width > 0 && !!inMore && inMore.hidden; if (btn) btn.click(); await w(900);
+      { const mb = document.getElementById('dMoreBtn'); if (btn && btn.closest('#dMenu') && mb) { mb.click(); await w(500); } }
+      out.button = !!btn && !btn.hidden && btn.getBoundingClientRect().width > 0 && !!inMore && inMore.hidden; if (btn) btn.click(); await w(900);
       const tiles = () => [...document.querySelectorAll('.coverpick .cp-tile')].map(t => t.textContent.trim());
       out.mode = Shelf.getMode(); out.tiles = tiles(); out.note = ((document.querySelector('.coverpick .cp-note') || {}).textContent || '');
       out.at = ((document.querySelector('.coverpick .cp-tile.on') || {}).textContent || '').trim();
       key('ArrowRight'); await w(200); out.moved = ((document.querySelector('.coverpick .cp-tile.on') || {}).textContent || '').trim();
       key('Enter'); await w(900); out.used = Object.assign({}, window.__pcCovers || {}); out.after = Shelf.getMode(); out.toast = ((document.getElementById('toast') || {}).textContent || '');
-      key('i'); await w(900); const b2 = document.getElementById('dBoxArtPc'); if (b2) b2.click(); await w(900); out.again = tiles();
+      key('i'); await w(900); const b2 = document.getElementById('dBoxArtPc'); if (b2) b2.click(); await w(900); out.again = tiles(); /* (a hidden More's button still clicks) */
       key('Escape'); await w(500); out.closed = Shelf.getMode();
       // Search by name: the picker's first tile → Settings' Search for page → Enter → the picker again, for that name
       key('i'); await w(900); const b3 = document.getElementById('dBoxArtPc'); if (b3) b3.click(); await w(900);
@@ -261,6 +263,36 @@ module.exports = async function pcGamesPass({ browser, base, check, newPage }) {
       out.undone = await Shelf.pcCoverUndo(); out.afterUndo = Object.keys(window.__pcCovers).length; return out; });
     check('PC games (Windows): covers for every custom game: one by one ("1 of N", A uses the best match), or the best for each at once, with Undo',
       bt.n >= 1 && bt.titles.length === bt.n && /1 of \d/.test(bt.titles[0]) && bt.chosen === bt.n && bt.modeAfter === 'browse' && bt.auto === bt.n && bt.undoN === bt.n && bt.afterAuto === bt.n && bt.undone === bt.n && bt.afterUndo === 0, JSON.stringify(bt));
+    // (beta.14) a custom game on any shelf: Settings → Custom games → the game → Shelf steps Custom → PC → the consoles,
+    // saved each time; the quick menu has + Add to… for it (the old Move to shelf… row is gone)
+    const mv = await page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms)), out = {};
+      const key = k => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+      const cfg = async () => (await window.boxshelf.getConfig()).config;
+      const shelfOf = async () => (((await cfg()).pc.custom || []).find(c => c.id === 'mv1') || {}).shelf || '';
+      for (let i = 0; i < 40 && Shelf.getMode() !== 'browse'; i++) await w(250);
+      // (3DS's games folder taken away for this check: a console with no shelf, listed under Other consoles)
+      const n3 = JSON.stringify((await cfg()).systems.n3ds || null);
+      { const c = await cfg(); c.pc.custom = (c.pc.custom || []).concat([{ id: 'mv1', title: 'Moon Kart', exe: 'C:\\Games\\Moon Kart\\kart.exe', args: '' }]); if (c.systems.n3ds) Object.assign(c.systems.n3ds, { romDirs: [], emulator: '' }); await window.boxshelf.saveConfig(c); await Shelf.refresh(true); await w(800); }
+      // Settings: the Shelf row
+      Setup.open({ page: 'custom' }); const row = n => [...document.querySelectorAll('#bss .bss-row')].find(r => ((r.querySelector('.nm') || {}).textContent || '') === n);
+      for (let i = 0; i < 40 && !row('Shelf'); i++) await w(150); await w(500);
+      const val = () => ((row('Shelf') || {}).textContent || '').replace(/\s+/g, ' ');
+      out.row = !!row('Shelf'); out.v0 = val(); if (row('Shelf')) row('Shelf').click(); await w(300);
+      key('ArrowRight'); await w(700); out.v1 = val(); out.s1 = await shelfOf();
+      key('ArrowRight'); await w(700); out.v2 = val(); out.s2 = await shelfOf(); out.toast = ((document.getElementById('bssToast') || document.querySelector('#bss .bss-toast') || {}).textContent || '');
+      key('ArrowLeft'); await w(300); key('ArrowLeft'); await w(700); out.s0 = await shelfOf();
+      if (window.Settings && Settings.isOpen && Settings.isOpen()) { await Settings.close(); await w(1500); }
+      for (let i = 0; i < 40 && Shelf.getMode() !== 'browse'; i++) await w(250);
+      // (the quick menu's Move to shelf… row is gone: + Add to… puts any game on more shelves, ci/addto-pass.js; moving a
+      // custom game stays in Settings → Custom games → Shelf, checked above)
+      Shelf._find.go('custom-mv1'); await w(900); Shelf._tour.qmOpen(); await w(700);
+      out.moveRow = [...document.querySelectorAll('.qm-row')].some(e => /Move to shelf/.test(e.textContent)); out.addBtn = !!document.querySelector('.qm-act[data-k="add"]'); Shelf._tour.qmClose(); await w(400);
+      { const c = await cfg(); c.pc.custom = (c.pc.custom || []).filter(x => x.id !== 'mv1'); if (n3 !== 'null') c.systems.n3ds = JSON.parse(n3); await window.boxshelf.saveConfig(c); await Shelf.refresh(true); await w(600); }
+      return out; });
+    check('Custom games (beta.14): Settings → the game → Shelf steps Custom → PC → a console, saved each time, and back to Custom',
+      mv.row && /Custom/.test(mv.v0) && /PC/.test(mv.v1) && mv.s1 === 'pc' && !!mv.s2 && mv.s2 !== 'pc' && mv.s2 !== 'custom' && mv.s0 === '', JSON.stringify(mv).slice(0, 600));
+    check('Custom games (beta.14): the quick menu has + Add to… for the game instead of the old Move to shelf… row',
+      mv.moveRow === false && mv.addBtn === true, JSON.stringify({ moveRow: mv.moveRow, addBtn: mv.addBtn }));
     check('PC games pass (Windows page): no script errors', !errors.length, errors.slice(0, 3).join(' | '));
   } catch (e) { check('PC games pass (Windows page) ran to the end', false, e && e.stack ? e.stack.split('\n').slice(0, 2).join(' ') : e); }
   await ctx.close();

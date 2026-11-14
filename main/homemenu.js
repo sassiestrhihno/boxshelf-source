@@ -4,6 +4,7 @@
 // hotkeys for the chosen action.
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
+const homeach = require('./homeach'); // (beta.14) the Achievements item: the running game's list, read-only
 
 // Default hotkeys of each emulator (a console's settings can override any of them: systems.<id>.hotkeys).
 // pause is a toggle in all of these. Leave an action out when the emulator has no such feature or no default key.
@@ -85,17 +86,24 @@ function ensureWindow() {
 // Over an app (Stremio, Nuvio), the menu takes the focus while it's open: the app stays in front behind it otherwise and
 // keeps reading the controller itself, so it went on moving around under the menu. Games don't need it (they're paused).
 const overApp = () => !!(session && session.meta && session.meta.systemId === 'media');
-function takeFocus() { if (!overApp() || !win || win.isDestroyed()) return; try { win.setFocusable(true); const b = win.getNativeWindowHandle(); padwatch.focusOnce(b.length >= 8 ? b.readBigUInt64LE(0).toString() : String(b.readUInt32LE(0))); } catch (e) { log('home menu focus', e.message); } }
-function giveBack() { if (!win || win.isDestroyed()) return; try { win.setFocusable(false); } catch {} if (session && overApp()) padwatch.front(true); } // (the pointer stays where it was)
+// (beta.14) Azahar draws its fullscreen game with OpenGL, which the graphics driver (NVIDIA at least) shows in exclusive
+// mode: no window can show over it, so the Home menu opened and paused the game but stayed invisible. The menu takes the
+// focus there too once the game is paused (the game drops out of exclusive mode) and gives it back on Resume.
+const FOCUS_KINDS = new Set(['azahar']);
+const grabsFocus = () => overApp() || !!(session && FOCUS_KINDS.has(session.kind));
+function takeFocus() { if (!grabsFocus() || !win || win.isDestroyed()) return; try { win.setFocusable(true); const b = win.getNativeWindowHandle(); padwatch.focusOnce(b.length >= 8 ? b.readBigUInt64LE(0).toString() : String(b.readUInt32LE(0))); } catch (e) { log('home menu focus', e.message); } }
+function giveBack() { if (!win || win.isDestroyed()) return; try { win.setFocusable(false); } catch {} if (session && grabsFocus()) padwatch.front(overApp()); } // (the pointer stays where it was)
 function showWin() { const w = ensureWindow(); clearTimeout(hideT); w.setAlwaysOnTop(true, 'screen-saver'); if (!w.isVisible()) w.showInactive(); w.moveTop(); }
+// (beta.14) while the menu is open it takes the mouse and touch too (it lets them through to the game when closed)
+function mouse(on) { try { if (win && !win.isDestroyed()) win.setIgnoreMouseEvents(!on); } catch {} }
 function hideWinSoon(ms) { clearTimeout(hideT); hideT = setTimeout(() => { if (win && !win.isDestroyed() && !(session && session.open) && !shelf) win.hide(); }, ms); }
 
 // a game started: remember what's running and load the overlay now so it opens instantly later
 function begin(meta) {
   if (process.platform === 'linux') return; // (Linux: no controller helper to open it during a game yet; no overlay window)
   // a shelf menu left open (or never closed because its page reloaded) must not capture the game's menu
-  if (shelf) { shelf = null; padwatch && padwatch.setMenu(false); }
-  session = { meta: meta || {}, keys: hotkeysFor(meta.systemId, meta.exe, meta.hotkeys), startedAt: Date.now(), open: false, paused: false, ready: false };
+  if (shelf) { shelf = null; padwatch && padwatch.setMenu(false); mouse(false); if (win && !win.isDestroyed()) win.hide(); } // (beta.14: the menu took the mouse while open; a game started from the phone with it open must get the mouse back)
+  session = { meta: meta || {}, kind: emulatorKind(meta.systemId, meta.exe), keys: hotkeysFor(meta.systemId, meta.exe, meta.hotkeys), startedAt: Date.now(), open: false, paused: false, ready: false };
   // until the game's window is up the emulator can't take a pause key (and the loading screen is still in front): a
   // Home press then opens the menu at once and pauses as soon as the game is ready (see ready()). Never later than 15 s.
   const s0 = session, rt = setTimeout(() => { if (session === s0 && !s0.ready) ready(); }, 15000); if (rt.unref) rt.unref();
@@ -113,12 +121,28 @@ async function open() {
   // already paused (e.g. left paused by Sleep): don't toggle it back on
   const s = session;
   // the menu comes up straight away; pausing happens alongside (it used to wait for the pause key first)
-  padwatch.setMenu(true); showWin(); s.shownAt = Date.now(); takeFocus();
+  padwatch.setMenu(true); showWin(); mouse(true); s.shownAt = Date.now(); if (overApp()) takeFocus();
   const send = () => win && !win.isDestroyed() && session === s && win.webContents.send('home:open', { inGame: true, title: m.title, system: m.systemName, cover: m.cover, accent: m.accent, glyphs: m.glyphs, layout: m.layout,
-    startedAt: s.startedAt, actions: actionsFor(k), power: ['sleep', 'restart', 'shutdown'], canSave: !!k.save, slot: k.slot || 0, paused: s.paused, sound: getSound() || undefined, ...uiExtras(), ...ninExtras() });
+    startedAt: s.startedAt, actions: actionsFor(k), power: ['sleep', 'restart', 'shutdown'], canSave: !!k.save, slot: k.slot || 0, paused: s.paused, sound: getSound() || undefined, ...achOf(s), ...uiExtras(), ...ninExtras() });
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send); else send();
+  achCheck(s);
   if (!s.ready) { s.pausePending = true; log('home menu: open', m.title || '', '(game still starting: pauses when its window is up)'); return; }
   await pauseNow(s);
+}
+// (beta.14) Achievements: whether the game has any is asked once per game, the first time the menu opens over it (no work
+// while it simply plays); the item joins the open menu when the answer comes (at once, usually: it's read from this PC)
+const achOf = s => s && s.ach && s.ach.on ? { ach: true, achLabel: s.ach.label, achSrc: s.ach.src } : {};
+function achCheck(s) {
+  if (!s || s.ach !== undefined) return; s.ach = null;
+  homeach.available(s.meta, s).then(a => {
+    if (session !== s) return; s.ach = a && a.on ? a : { on: false };
+    if (s.ach.on && s.open && win && !win.isDestroyed() && !win.webContents.isLoading()) win.webContents.send('home:ach', achOf(s));
+  }, e => { if (session === s) s.ach = undefined; log('home menu: achievements check failed', e && e.message); });
+}
+// the list, when the item is chosen (null: none for this game yet)
+async function achList(force) {
+  const s = session; if (!s || !s.open || !(s.ach && s.ach.on)) return null;
+  return homeach.list(s.meta, !!force, s);
 }
 async function pauseNow(s) {
   const k = s.keys, m = s.meta;
@@ -130,7 +154,8 @@ async function pauseNow(s) {
     s.paused = ok;
     if (win && !win.isDestroyed()) win.webContents.send('home:paused', ok);
   } finally { s.pausing = false; } }
-  log('home menu: open', m.title || '', s.paused ? '(paused)' : k.pause ? '(could not pause)' : '');
+  if (session === s && s.open && !overApp() && grabsFocus()) { showWin(); takeFocus(); }
+  log('home menu: open', m.title || '', s.paused ? '(paused)' : k.pause ? '(could not pause)' : '', s.open && grabsFocus() && !overApp() ? '(menu took the focus)' : '');
 }
 // The PC woke from a Sleep chosen in this menu: the game was left paused for the menu's Resume, so the menu comes back
 // over it. Boxshelf can't read the emulator's pause state: a user who unpaused in the emulator first got a Home that
@@ -160,7 +185,7 @@ const isOpen = () => !!((session && session.open) || shelf);
 // The shelf version: Boxshelf itself is in front, nothing is paused; the choice goes back to the shelf (or Power).
 function openShelf(info) {
   if (session || shelf) return false;
-  shelf = { open: true, shownAt: Date.now() }; padwatch.setMenu(true); showWin();
+  shelf = { open: true, shownAt: Date.now() }; padwatch.setMenu(true); showWin(); mouse(true);
   const send = () => win && win.webContents.send('home:open', Object.assign({ inGame: false, actions: ['shelfhome', 'museum', 'settings', 'power'], power: ['sleep', 'restart', 'shutdown', 'quitapp'] }, uiExtras(), info || {}));
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send); else send();
   log('home menu: open on the shelf'); return true;
@@ -168,6 +193,7 @@ function openShelf(info) {
 
 const TOAST = { save: 'State saved', load: 'State loaded', shot: 'Screenshot saved' };
 async function act(action) {
+  mouse(false);
   if (shelf && !(session && session.open)) { shelf = null; padwatch.setMenu(false); hideWinSoon(300); log('home menu (shelf):', action); onShelf(action); return; }
   if (!session || !session.open) return;
   session.open = false; padwatch.setMenu(false);
@@ -191,4 +217,4 @@ async function act(action) {
   log('home menu:', action);
 }
 
-module.exports = { init, begin, setMeta, end, open, ready, raise, openShelf, isOpen, button, act, woke, hotkeysFor, emulatorKind, HOTKEYS };
+module.exports = { init, begin, setMeta, end, open, ready, raise, openShelf, isOpen, button, act, woke, achList, hotkeysFor, emulatorKind, HOTKEYS };

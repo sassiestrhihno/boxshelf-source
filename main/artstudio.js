@@ -145,7 +145,9 @@ const sameStat = (r, st) => !!r && !!st && r[0] === st[0] && Math.abs(r[1] - st[
 function record(file, origin) { const st = statOf(file); if (!st) return; const p = provGet(), k = pk(file); p.files[k] = [origin, st[0], st[1]]; delete p.base[k]; provSave(); }
 // main.js hands over its back / spine makers: (sysId, title, frontFile) → JPEG Buffer | null
 let maker = {}; function setMaker(m) { maker = m || {}; }
-function recordPlaced(dest, origin) { record(dest, ['auto', 'studio', 'own', 'restored', 'adopted', 'copied', 'poster'].includes(origin) ? origin : 'auto'); }
+// (beta.14) and the picture gets a new address (env.placed: main.js artVer). A cover download or a sharper copy put in place
+// under the same name as the one before kept the old address, so the shelf saw no change and showed the old picture
+function recordPlaced(dest, origin) { record(dest, ['auto', 'studio', 'own', 'restored', 'adopted', 'copied', 'poster'].includes(origin) ? origin : 'auto'); if (env && env.placed) { try { env.placed(dest); } catch {} } }
 // a front the automatic art check took from SteamGridDB because no real box scan existed: the next check replaces it
 // with a real scan as soon as one turns up (any other front is left alone)
 function isPoster(file) { const st = statOf(file); if (!st) return false; const r = provGet().files[pk(file)]; return !!r && r[0] === 'poster' && sameStat([r[1], r[2]], st); }
@@ -225,10 +227,34 @@ const artView = game => Object.fromEntries(PARTS.map(p => [p, game.art && game.a
 const cachePath = c => path.join(candDir, sha(c.url + '|' + (c.cut || '')).slice(0, 24) + c.ext);
 function fileInfo(f) { try { const st = fs.statSync(f); if (!st.isFile()) return null; const z = covers.sizeOf(f); return { bytes: st.size, w: z ? z[0] : null, h: z ? z[1] : null }; } catch { return null; } }
 const touch = f => { const now = new Date(); fs.promises.utimes(f, now, now).catch(() => {}); }; // "last used" for the cache's clean-up (atime isn't kept on many Windows disks)
-let slotsFree = 3; const slotQ = [];
-async function slot(fn) { // at most three downloads at once, everything together (the picker, a restyle, a mix)
-  if (slotsFree > 0) slotsFree--; else await new Promise(r => slotQ.push(r));
-  try { return await fn(); } finally { const n = slotQ.shift(); if (n) n(); else slotsFree++; }
+// three downloads at once, everything together (the picker, a restyle, a mix), for what's wanted now.
+// (beta.14) w: { pri, gen } (wantOf). A free slot goes to the highest pri waiting (2 a picture being put in use, 1 the
+// picker's previews, 0 a background restyle), oldest first. The picker's previews used to queue first come, first served:
+// every part opened (front, back, spine…) left three downloads waiting, a restyle's too, and the part on screen got its
+// slots only after all of them, a minute or more on a slow site (or never, behind a site that stopped answering).
+// Now a preview whose part or game is no longer on screen (stale) gives its turn up without downloading, and one already
+// downloading no longer counts: it finishes in the background (cached for when that part is opened again) while the part
+// on screen gets three slots of its own. SLOTS_MAX caps everything under way together.
+const SLOTS = 3, SLOTS_MAX = 8; const slotQ = [], slotRun = new Set();
+const cancelledErr = () => Object.assign(new Error('cancelled'), { cancelled: true });
+const isStale = w => !!w && w.gen != null && w.gen !== thumbGen;
+function wantOf(o) { return { pri: (o && o.pri) || 0, gen: o && o.gen != null ? o.gen : null, dead: false }; }
+// a second caller for a download already queued or under way: the higher pri, and only stale when every caller is
+function joinWant(w, o) { w.pri = Math.max(w.pri, (o && o.pri) || 0); if (!o || o.gen == null) w.gen = null; else if (w.gen != null) w.gen = Math.max(w.gen, o.gen); }
+function slotPump() {
+  for (;;) {
+    if (!slotQ.length || slotRun.size >= SLOTS_MAX) return;
+    let k = 0; for (let i = 1; i < slotQ.length; i++) if (slotQ[i].w.pri > slotQ[k].w.pri) k = i;
+    // a picture being put in use (pri 2) starts at once, whatever the previews are doing
+    let live = 0; for (const w of slotRun) if (!isStale(w)) live++; if (live >= SLOTS && slotQ[k].w.pri < 2) return;
+    const q = slotQ.splice(k, 1)[0]; slotRun.add(q.w); q.r();
+  }
+}
+async function slot(fn, w = null) {
+  w = w || wantOf(null);
+  await new Promise(r => { slotQ.push({ r, w }); slotPump(); });
+  try { if (isStale(w)) { w.dead = true; throw cancelledErr(); } return await fn(); }
+  finally { slotRun.delete(w); slotPump(); }
 }
 // addresses that answered 404 (or not a picture): not offered again for a week (data\art-missing.json). A timeout or a
 // server error isn't remembered: those are tried again next time
@@ -238,27 +264,43 @@ const isMissing = url => { const t = missMap().get(url); return !!t && Date.now(
 function markMissing(url) { const m = missMap(); m.set(url, Date.now()); while (m.size > 20000) m.delete(m.keys().next().value);
   clearTimeout(missT); missT = setTimeout(() => { const f = path.join(env.dataDir, 'art-missing.json'); fs.promises.writeFile(f + '.tmp', JSON.stringify(Object.fromEntries(m))).then(() => fs.promises.rename(f + '.tmp', f)).catch(() => {}); }, 2000); if (missT.unref) missT.unref(); }
 // (ScreenScraper media: signed with the account only for the request, inside screenscraper.download)
-async function dl(url, dest) { const r = screenscraper.isMedia(url) ? await screenscraper.download(url, dest) : await covers.downloadEx(url, dest); if (r === 'missing') markMissing(url); return r === 'ok'; }
+// (beta.14) w: the download's want (slot above): a stale preview of ScreenScraper's gives its turn up without downloading
+async function dl(url, dest, w = null) {
+  const r = screenscraper.isMedia(url) ? await screenscraper.download(url, dest, { stale: () => isStale(w) }) : await covers.downloadEx(url, dest);
+  if (r === 'cancelled') { if (w) w.dead = true; throw cancelledErr(); }
+  if (r === 'missing') markMissing(url); return r === 'ok';
+}
+// (beta.14) ScreenScraper's media wait for the account's own turn (one at a time on a free account, spaced to its rate:
+// screenscraper.limited), never in the three slots: queued there they held the slots while they waited, and every other
+// site's previews waited behind them
+function runDl(url, work, w) {
+  if (!screenscraper.isMedia(url)) return slot(work, w);
+  if (isStale(w)) { w.dead = true; return Promise.reject(cancelledErr()); }
+  return work();
+}
+// the same picture already downloading (the picker's thumbnails and a set, say): wait for that one rather than racing it
+// into the same cache file. One that gave its turn up (stale) isn't joined: a newer request starts it again
+function track(key, run, w) { const e = { run, w }; inflight.set(key, e); run.finally(() => { if (inflight.get(key) === e) inflight.delete(key); }).catch(() => {}); return run; }
+function joined(key, o) { const e = inflight.get(key); if (!e || e.w.dead) return null; joinWant(e.w, o); return e.run; }
 // a candidate as a local file: the cached copy, else downloaded (a spine cut from its wrap). keep=false: a temp file the
 // caller removes (a restyle shouldn't push the picker's thumbnails out of the cache). null = not there; throws when offline.
-async function fetchCand(c, sysId, keep = true) {
+// o: { pri, gen } (wantOf); a stale preview throws an error with .cancelled
+async function fetchCand(c, sysId, keep = true, o = null) {
   if (c.file) return paths.isFile(c.file) ? c.file : null;
   const cached = cachePath(c); if (paths.isFile(cached)) { touch(cached); return cached; }
-  // the same picture already downloading (the picker's thumbnails and a set, say): wait for that one rather than racing it
-  // into the same cache file
-  if (keep && inflight.has(cached)) return inflight.get(cached);
-  const dest = keep ? cached : path.join(candDir, `.tmp-${process.pid}-${crypto.randomUUID()}${c.ext}`);
-  const run = fetchCand0(c, sysId, keep, dest); if (!keep) return run;
-  inflight.set(cached, run); run.finally(() => inflight.delete(cached)).catch(() => {}); return run;
+  const have = keep ? joined(cached, o) : null; if (have) return have;
+  const dest = keep ? cached : path.join(candDir, `.tmp-${process.pid}-${crypto.randomUUID()}${c.ext}`), w = wantOf(o);
+  const run = fetchCand0(c, sysId, keep, dest, w); if (!keep) return run;
+  return track(cached, run, w);
 }
-const inflight = new Map(); // cache file → its download
-function fetchCand0(c, sysId, keep, dest) {
-  return slot(async () => {
+const inflight = new Map(); // cache file → { run: its download, w: its want }
+function fetchCand0(c, sysId, keep, dest, w) {
+  const work = async () => {
     if (c.made) { const buf = c.madeKind ? (maker[c.madeKind] ? await maker[c.madeKind](sysId, c.madeTitle, c.made) : null) : await covers.makeCart(c.made, sysId); if (!buf) return null; await fs.promises.writeFile(dest + '.part', buf); await fs.promises.rename(dest + '.part', dest); }
-    else if (!c.cut) { if (!await dl(c.url, dest)) return null; }
+    else if (!c.cut) { if (!await dl(c.url, dest, w)) return null; }
     else {
       const raw = path.join(candDir, `.raw-${process.pid}-${crypto.randomUUID()}${c.src || '.jpg'}`);
-      try { if (!await dl(c.url, raw)) return null; const buf = c.cut === 'back' ? await covers.cutBack(raw, sysId) : await covers.cutSpine(raw, sysId); if (!buf) return null; // (cut 'back': GameTDB full covers, 1.71)
+      try { if (!await dl(c.url, raw, w)) return null; const buf = c.cut === 'back' ? await covers.cutBack(raw, sysId) : await covers.cutSpine(raw, sysId); if (!buf) return null; // (cut 'back': GameTDB full covers, 1.71)
         await fs.promises.writeFile(dest + '.part', buf); await fs.promises.rename(dest + '.part', dest); }
       finally { fs.promises.unlink(raw).catch(() => {}); fs.promises.unlink(dest + '.part').catch(() => {}); }
     }
@@ -266,7 +308,8 @@ function fetchCand0(c, sysId, keep, dest) {
     if (!inf || (!inf.w && c.ext !== '.webp')) { fs.promises.unlink(dest).catch(() => {}); return null; } // an error page, not a picture
     if (keep) { addedBytes += inf.bytes; if (addedBytes > 32 * 1024 * 1024) { addedBytes = 0; pruneCache().catch(() => {}); } }
     return dest;
-  });
+  };
+  return c.made ? slot(work, w) : runDl(c.url, work, w);
 }
 // oldest-used first beyond the cap, anything unused for CACHE_DAYS, and temp leftovers from a crash
 function pruneCache(cap = CACHE_CAP) {
@@ -390,10 +433,13 @@ function dedupe(list) {
 // a SteamGridDB poster's small preview (its API gives one): the picker shows that rather than downloading every full poster
 const thumbPath = c => c.thumbUrl ? cachePath({ url: c.thumbUrl, ext: /\.png(\?|$)/i.test(c.thumbUrl) ? '.png' : /\.webp(\?|$)/i.test(c.thumbUrl) ? '.webp' : '.jpg' }) : null;
 function thumbOf(c) { let f = c.file || (c.cached || c.w || c.bytes ? cachePath(c) : null); if ((!f || !paths.isFile(f)) && c.thumbUrl) f = thumbPath(c); if (!f || !paths.isFile(f)) return null; const u = env.fileUrl(f); return u + (u.includes('?') ? '&' : '?') + 't=360'; }
-// the preview into the cache (the same three download slots): the file, or null
-async function fetchThumb(c) {
+// the preview into the cache (the same three download slots; ScreenScraper's in its own turn): the file, or null.
+// o: { pri, gen } as fetchCand (beta.14: one download per preview, however many requests wait for it)
+async function fetchThumb(c, o = null) {
   const dest = thumbPath(c); if (paths.isFile(dest)) { touch(dest); return dest; }
-  return slot(async () => { if (!await dl(c.thumbUrl, dest)) return null; const inf = fileInfo(dest); if (!inf || (!inf.w && !dest.endsWith('.webp'))) { fs.promises.unlink(dest).catch(() => {}); return null; } if (inf) addedBytes += inf.bytes; return dest; });
+  const have = joined(dest, o); if (have) return have;
+  const w = wantOf(o);
+  return track(dest, runDl(c.thumbUrl, async () => { if (!await dl(c.thumbUrl, dest, w)) return null; const inf = fileInfo(dest); if (!inf || (!inf.w && !dest.endsWith('.webp'))) { fs.promises.unlink(dest).catch(() => {}); return null; } if (inf) addedBytes += inf.bytes; return dest; }, w), w);
 }
 function pub(c, g) {
   const ctx = { style: styleFor(cfg(), g.sysId), game: g.game };
@@ -403,23 +449,37 @@ function pub(c, g) {
 // each arrives; a newer request makes an older one stop after the downloads already under way
 // (beta.12) only: just these (a late source's), downloaded under the list's own turn: if another part or game has been asked
 // for since, they're stopped like the rest
+// (beta.14) best first for the look this part follows (the order the picker shows them in), and two lanes: ScreenScraper's
+// previews (one at a time on its account) in their own, so they never hold up the other sites'. A download waiting for a
+// slot is dropped once another part or game is asked for (gen), not only the ones not started yet. A cached copy that the
+// cache clean-up removed meanwhile is downloaded again (its card waited for ever)
+const ssLane = c => screenscraper.isMedia(c.thumbUrl || c.url);
+// one log line per download, however many requests waited for it (the same failure showed five times)
+const logOnce = (what, e) => { if (!e || e.cancelled || e.logged) return; try { e.logged = true; } catch {} log(what, e.message); };
 function warm(entry, part, only) {
-  const gen = only ? entry.gen : (entry.gen = ++thumbGen), g = entry.g, todo = (only || entry.list).filter(c => !c.file && !c.cached && !c.failed && !c.thumbFailed && !(c.thumbUrl && paths.isFile(thumbPath(c))));
+  const gen = only ? entry.gen : (entry.gen = ++thumbGen), g = entry.g;
+  if (!only) slotPump(); // the downloads of the part asked for before no longer hold the slots
+  for (const c of only || entry.list) if (c.cached && !c.file && !paths.isFile(cachePath(c)) && !(c.thumbUrl && paths.isFile(thumbPath(c)))) c.cached = false;
+  const style = styleFor(cfg(), g.sysId), lk = locksOf(g.sysId, g.game.file)[part], look = lk && lk.look && lk.look !== 'exact' ? lk.look : lookFor(style, part);
+  const todo = rankList((only || entry.list).filter(c => !c.file && !c.cached && !c.failed && !c.thumbFailed && !(c.thumbUrl && paths.isFile(thumbPath(c)))), look, { style, game: g.game });
   const send = (c, extra) => env.send('art:cand', { systemId: g.sysId, file: g.game.file, part, key: c.key, thumb: thumbOf(c), w: c.w || null, h: c.h || null, inUse: !!c.inUse, score: scores(c, { style: styleFor(cfg(), g.sysId), game: g.game }), ...extra });
-  return covers.pool(todo, 3, async c => {
+  const want = { pri: 1, gen };
+  const one = async c => {
     // a newer request took over the downloads: say this one isn't coming (the screen mustn't wait for it); it isn't marked
     // failed here, so the next request for this part tries it again
-    if (gen !== thumbGen) { send(c, { failed: true, cancelled: true }); return; } let f = null;
+    const stop = () => send(c, { failed: true, cancelled: true });
+    if (gen !== thumbGen) { stop(); return; } let f = null;
     if (c.thumbUrl) { // SteamGridDB: its preview only (the size is known); the full poster is fetched when it's used
-      try { f = await fetchThumb(c); } catch (e) { log('Art Studio: candidate', e.message); }
+      try { f = await fetchThumb(c, want); } catch (e) { if (e && e.cancelled) { stop(); return; } logOnce('Art Studio: candidate', e); }
       if (!f) { c.thumbFailed = true; send(c, { failed: true }); } else send(c, {}); return; } // (a missing preview doesn't stop the poster itself being used)
-    try { f = await fetchCand(c, g.sysId, true); } catch (e) { log('Art Studio: candidate', e.message); }
+    try { f = await fetchCand(c, g.sysId, true, want); } catch (e) { if (e && e.cancelled) { stop(); return; } logOnce('Art Studio: candidate', e); }
     if (!f) { c.failed = true; send(c, { failed: true }); return; }
     const inf = fileInfo(f) || {}; Object.assign(c, { w: inf.w || null, h: inf.h || null, bytes: inf.bytes || 0, cached: true });
     const before = entry.list.filter(x => x.dup).map(x => x.key); dedupe(entry.list);
     for (const x of entry.list) if (x !== c && x.dup && !before.includes(x.key)) send(x, { dup: x.dup }); // the current file turned out to be this one
     send(c, c.dup ? { dup: c.dup } : c.guess ? { cand: pub(c, g) } : {});
-  }).catch(e => log('Art Studio: thumbnails', e.message));
+  };
+  return Promise.all([covers.pool(todo.filter(c => !ssLane(c)), 3, one), covers.pool(todo.filter(ssLane), 2, one)]).catch(e => log('Art Studio: thumbnails', e.message));
 }
 
 // ---------- applying ----------
@@ -440,7 +500,7 @@ async function restore(g, part, file) {
 async function apply(g, part, c, keep = true, src = null) {
   if (c.source === 'current') return false;
   if (c.source === 'earlier') return restore(g, part, c.file);
-  if (!src) src = await fetchCand(c, g.sysId, keep); if (!src) throw new Error("That picture couldn't be downloaded.");
+  if (!src) src = await fetchCand(c, g.sysId, keep, keep ? { pri: 2 } : null); if (!src) throw new Error("That picture couldn't be downloaded."); // (beta.14: a pick goes ahead of the previews)
   const temp = path.basename(src).startsWith('.tmp-');
   try {
     const cur = g.game.art && g.game.art[part];
@@ -458,15 +518,15 @@ async function pickBest(g, part, look, opts = {}) {
   const ctx = { style, game: g.game, sharp: look === 'hd' || (!!style.sharper && look === 'authentic') };
   // only HD may choose a SteamGridDB poster (Authentic, a region or Special must be a real release's box)
   let order = rankList(entry.list.filter(c => c.source !== 'earlier' && !c.failed && !(c.dup && c.source === 'current') && (look === 'hd' || c.source !== 'steamgriddb')), look, ctx);
-  const stop = () => !!(opts.job && opts.job.c);
+  const stop = () => !!(opts.job && opts.job.c), want = opts.job ? null : { pri: 2 }; // (beta.14: a mix the user asked for goes ahead of the previews; a restyle after them)
   if (look === 'hd') { // sizes are guesses until downloaded: fetch the likeliest few, then rank on what they really are
-    for (const c of order.filter(c => !c.file && !c.cached && !c.apiSize).slice(0, 4)) { if (stop()) return null; try { const f = await fetchCand(c, g.sysId, true); if (f) Object.assign(c, fileInfo(f) || {}, { cached: true }); else c.failed = true; } catch (e) { if (opts.onNetErr) opts.onNetErr(e); } }
+    for (const c of order.filter(c => !c.file && !c.cached && !c.apiSize).slice(0, 4)) { if (stop()) return null; try { const f = await fetchCand(c, g.sysId, true, want); if (f) Object.assign(c, fileInfo(f) || {}, { cached: true }); else c.failed = true; } catch (e) { if (opts.onNetErr) opts.onNetErr(e); } }
     order = rankList(order.filter(c => !c.failed), look, ctx);
   }
   for (const c of order) {
     if (stop()) return null;
     if (c.source === 'current') return { c, src: c.file };
-    try { const f = await fetchCand(c, g.sysId, opts.keep !== false); if (f) { if (!path.basename(f).startsWith('.tmp-')) c.cached = true; return { c, src: f }; } c.failed = true; }
+    try { const f = await fetchCand(c, g.sysId, opts.keep !== false, want); if (f) { if (!path.basename(f).startsWith('.tmp-')) c.cached = true; return { c, src: f }; } c.failed = true; }
     catch (e) { if (opts.onNetErr) opts.onNetErr(e); }
   }
   return null;
@@ -515,7 +575,7 @@ async function setsOf(g, opts = {}) {
 async function sets(a) {
   const g = await gameArg(a), list = await setsOf(g, { fresh: true });
   const todo = [], seen = new Set(); for (const s of list) for (const p of PARTS) { const c = s.parts[p]; if (!c.cached && !c.file && !seen.has(c.key)) { seen.add(c.key); todo.push([p, c]); } }
-  setImmediate(() => covers.pool(todo, 3, async ([p, c]) => { let f = null; try { f = await fetchCand(c, g.sysId, true); } catch {} if (!f) { c.failed = true; env.send('art:cand', { systemId: g.sysId, file: g.game.file, part: p, key: c.key, failed: true, set: true }); return; }
+  setImmediate(() => covers.pool(todo, 3, async ([p, c]) => { let f = null; try { f = await fetchCand(c, g.sysId, true, { pri: 1 }); } catch {} if (!f) { c.failed = true; env.send('art:cand', { systemId: g.sysId, file: g.game.file, part: p, key: c.key, failed: true, set: true }); return; }
     const inf = fileInfo(f) || {}; Object.assign(c, { w: inf.w || null, h: inf.h || null, bytes: inf.bytes || 0, cached: true }); env.send('art:cand', { systemId: g.sysId, file: g.game.file, part: p, key: c.key, thumb: thumbOf(c), w: c.w, h: c.h, set: true }); }).catch(() => {}));
   return { sets: list.map(s => setView(s, g)) };
 }
@@ -537,7 +597,7 @@ async function revertParts(g, changed, had) {
 // puts a whole set in use: every picture downloaded first (nothing changes if one can't be had), then each part through the safe
 // write path (old pictures to replaced\), each part locked as the user's pick; one Undo set puts all four back
 async function applySet(g, set, lockIt) {
-  const srcs = await Promise.all(PARTS.map(p => fetchCand(set.parts[p], g.sysId, true).catch(() => null)));
+  const srcs = await Promise.all(PARTS.map(p => fetchCand(set.parts[p], g.sysId, true, lockIt ? { pri: 2 } : null).catch(() => null)));
   const miss = PARTS.filter((p, i) => !srcs[i]); if (miss.length) throw new Error(`The ${miss.join(' and ')} of that set couldn't be downloaded. Nothing was changed.`);
   const had = {}, changed = [], prev = { ...locksOf(g.sysId, g.game.file) };
   for (const p of PARTS) had[p] = !!(g.game.art && g.game.art[p] && paths.isFile(g.game.art[p]));

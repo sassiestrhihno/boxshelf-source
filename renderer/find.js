@@ -85,7 +85,7 @@
       else if (toks.length > 1 && toks.every(k => t.includes(k))) r = 5;
       if (r >= 0) out.push({ g, r });
     }
-    out.sort((a, b) => a.r - b.r || (a.g.n < b.g.n ? -1 : a.g.n > b.g.n ? 1 : 0) || (a.g.sys < b.g.sys ? -1 : 1));
+    out.sort((a, b) => a.r - b.r || (a.g.hidden ? 1 : 0) - (b.g.hidden ? 1 : 0) || (a.g.n < b.g.n ? -1 : a.g.n > b.g.n ? 1 : 0) || (a.g.sys < b.g.sys ? -1 : 1)); // (a hidden game after the ones on the shelf)
     S.total = out.length; return out.slice(0, MAX).map(x => x.g);
   }
   // every game, read once per open; never while the shelf is still sliding (it waits for it to rest, a second at most)
@@ -95,7 +95,8 @@
       if (window.BS_BUSY && BS_BUSY() && n < 20) { setTimeout(() => run(n + 1), 50); return; }
       let L = []; try { L = B().games() || []; } catch {}
       for (const g of L) { g.n = norm(g.title); g.c = g.n.replace(/ /g, ''); }
-      S.list = L; E.count.textContent = L.length ? L.length + (L.length === 1 ? ' game' : ' games') + ' on your shelves' : '';
+      const on = L.filter(g => !g.hidden).length, hid = L.length - on;
+      S.list = L; E.count.textContent = L.length ? on + (on === 1 ? ' game' : ' games') + ' on your shelves' + (hid ? ` · ${hid} hidden` : '') : '';
       update();
     };
     run(0);
@@ -109,7 +110,8 @@
       // (decoded off the main thread, and only once the row is near the part of the list in view)
       const im = new Image(); im.decoding = 'async'; im.loading = 'lazy'; im.alt = ''; im.draggable = false;
       im.onload = () => { th.classList.add('has'); }; im.onerror = () => { im.remove(); }; im.src = u; th.append(im); }
-    $('span', 'fg-t', b).textContent = g.title; $('span', 'fg-s', b).textContent = g.sys;
+    $('span', 'fg-t', b).textContent = g.title; $('span', 'fg-s', b).textContent = g.hidden ? g.sys + ' · Hidden: choose to unhide' : g.sys;
+    if (g.hidden) b.classList.add('hid'); // (beta.14) a hidden game: dimmed, and choosing it brings it back to its shelf
     return b;
   }
   function render() {
@@ -234,6 +236,7 @@
   function choose(i) {
     const g = S.res[i]; if (!g) return;
     close(true, true);
+    if (g.hidden && B().unhide) { Promise.resolve(B().unhide(g.id)).then(ok => { snd(ok ? 'open' : 'error'); try { Shelf.toast(ok ? `${g.title} is back on the shelf` : `Couldn’t unhide ${g.title}`); } catch {} }).catch(e => console.warn('find', e)); return; }
     let ok = false; try { ok = B().go(g.id); } catch (e) { console.warn('find', e); }
     if (ok) snd('open'); else { try { let busy = false; try { busy = !B().can(); } catch {} Shelf.toast(busy ? 'One moment: the shelf is still changing. Try again' : `${g.title} isn’t on the shelf right now`); } catch {} }
   }

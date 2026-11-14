@@ -63,7 +63,7 @@
     sys('gc', 'GameCube', ['dolphin'], [], ['rvz', 'iso', 'gcm', 'gcz', 'ciso', 'wia', 'dol', 'elf', 'm3u']),
     sys('wii', 'Wii', ['dolphin'], [], ['rvz', 'iso', 'wbfs', 'wia', 'gcz', 'ciso', 'wad', 'm3u']),
     sys('wiiu', 'Wii U', ['cemu'], [], ['wua', 'wud', 'wux', 'rpx', 'wuhb', 'elf']),
-    sys('sw', 'Switch', ['eden'], [], ['nsp', 'xci', 'nca', 'nro', 'nso']),
+    sys('sw', 'Switch', ['eden'], [], ['nsp', 'xci', 'nro']),
     sys('n3ds', '3DS', ['azahar'], ['citra'], ['3ds', 'cci', 'cxi', '3dsx', 'app', 'z3dsx', 'zcci', 'zcxi']),
     sys('nds', 'DS', ['melonds', 'drastic', 'retroarch'], ['melondsds', 'melonds', 'desmume'], ['nds', 'zip', '7z']),
     sys('ps2', 'PS2', ['nethersx2', 'armsx2', 'play'], [], ['iso', 'chd', 'bin', 'cso', 'zso', 'gz', 'm3u', 'elf']),

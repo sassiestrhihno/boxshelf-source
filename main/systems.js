@@ -45,7 +45,8 @@ const CONSOLES = [
     exeNames: ['eden.exe', 'Eden.exe', 'citron.exe', 'Citron.exe', 'Ryujinx.exe', 'ryujinx.exe'], // (beta.8: Citron and Ryujinx too; Ryujinx gets its own options at launch)
     emulatorFolders: ['{app}\\Eden', '%LOCALAPPDATA%\\Programs\\Eden', '%ProgramFiles%\\Eden', '%APPDATA%\\Eden', '{app}\\Citron', '%LOCALAPPDATA%\\Programs\\Citron', '{app}\\Ryujinx', '%LOCALAPPDATA%\\Programs\\Ryujinx'],
     romFolderNames: ['switch', 'nsw', 'ns'],
-    extensions: ['nsp', 'xci', 'nca', 'nro'],
+    // (beta.14, #29) no .nca: those are the pieces inside an installed or unpacked game (hundreds per game), never a game to start
+    extensions: ['nsp', 'xci', 'nro'],
     // Eden comes from the yuzu family: -f = fullscreen, -g = game file.
     gameArgs: '-f -g "{rom}"',
     emulatorArgs: '',
@@ -131,6 +132,18 @@ const CONSOLES = [
     extensions: ['iso', 'xex', 'zar'],
     gameArgs: '--fullscreen=true "{rom}"',
     emulatorArgs: '',
+    coverSeconds: 6
+  },
+  {
+    // (beta.14, issue #38) the original Xbox, in xemu: -dvd_path loads the disc, -full-screen starts full screen. xemu reads
+    // XISO images (its own BIOS, MCPX boot ROM and hard disk image are set in xemu once)
+    id: 'xbox', name: 'Xbox', emulatorName: 'xemu',
+    exeNames: ['xemu.exe'],
+    emulatorFolders: ['{app}\\xemu', '{app}\\Xemu', '{app}\\Emulators\\xemu', '%LOCALAPPDATA%\\Programs\\xemu', '%ProgramFiles%\\xemu', '%LOCALAPPDATA%\\xemu', '%APPDATA%\\xemu'],
+    romFolderNames: ['xbox', 'xbox original', 'original xbox', 'og xbox', 'xemu'],
+    extensions: ['iso', 'xiso'], hint: '.iso discs in XISO format (xemu can\'t start a plain Redump .iso: convert it with extract-xiso)',
+    gameArgs: '-full-screen -dvd_path "{rom}"',
+    emulatorArgs: '-full-screen',
     coverSeconds: 6
   },
   {
@@ -244,6 +257,7 @@ const LINUX_EMU = {
   ps3: ['rpcs3', 'net.rpcs3.RPCS3', 're:^rpcs3.*\\.appimage$'],
   ps4: ['shadps4', 'net.shadps4.shadPS4', 're:^shadps4.*\\.appimage$'],
   ps5: [], x360: [], // (Kyty and Xenia: Windows only)
+  xbox: ['xemu', 'app.xemu.xemu', 're:^xemu.*\\.appimage$'],
   n3ds: ['azahar', 'org.azahar_emu.Azahar', 're:^azahar.*\\.appimage$', 'lime3ds', 'citra-qt'],
   psx: ['duckstation-qt', 'org.duckstation.DuckStation', 're:^duckstation.*\\.appimage$'],
   n64: ['RMG', 'com.github.Rosalie241.RMG', 're:^rmg.*\\.appimage$'],

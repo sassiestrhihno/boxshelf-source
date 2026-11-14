@@ -1007,3 +1007,6 @@ body.pad-input #setup.wz-win .wz-key{display:none}
 #setup.wz-win .wz-g{display:inline-grid;place-items:center;flex:none}
 #setup.wz-win .wz-g svg{display:block;width:26px;height:26px}
 #setup.wz-win .wz-kc{display:inline-grid;place-items:center;flex:none;min-width:28px;height:26px;padding:0 8px;border-radius:7px;border:1.5px solid rgba(255,255,255,.55);font-size:12.5px;font-weight:600;line-height:1;color:#fff}
+
+/* (beta.14) a PS3 trophy's grade on the achievements card (RPCS3) */
+.ach-tag.grade-platinum{color:#d6e4ff}.ach-tag.grade-gold{color:#ffd970}.ach-tag.grade-silver{color:#cfd6e2}.ach-tag.grade-bronze{color:#e0a879}

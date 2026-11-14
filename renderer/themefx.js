@@ -172,12 +172,12 @@ window.ThemeFx = (() => {
   // changes), so on the Thor they never keep a frame loop going
   const XFX = {}; let xStill = false, xKey = '';
   for (const x of (window.BS_EXTRA_THEMES || [])) if (x && x.id && typeof x.fx === 'function' && !DRAW[x.id]) {
-    XFX[x.id] = x; DRAW[x.id] = () => x.fx({ g, W, H, t, dt: fdt, hue, scale, floorY, lite, still: xStill });
+    XFX[x.id] = x; DRAW[x.id] = () => x.fx({ g, W, H, t, dt: fdt, hue, ht: hueT, scale, floorY, lite, still: xStill });
   }
   const setupEl = document.getElementById('setup');
   const covered = () => app.classList.contains('launching') || app.classList.contains('inspecting') || app.classList.contains('museum-open') || app.classList.contains('attract')
     || app.classList.contains('details-open') || app.classList.contains('settings-open')
-    || document.body.classList.contains('idle-bg') || document.body.classList.contains('bs-still') || document.body.classList.contains('dimmed') || (document.body.classList.contains('bss-cover') && !document.body.classList.contains('bss-peek')) || app.classList.contains('bg-art') || document.hidden || !!(setupEl && setupEl.classList.contains('on'));
+    || document.body.classList.contains('idle-bg') || document.body.classList.contains('bs-still') || document.body.classList.contains('tp-open') || document.body.classList.contains('dimmed') || (document.body.classList.contains('bss-cover') && !document.body.classList.contains('bss-peek')) || app.classList.contains('bg-art') || document.hidden || !!(setupEl && setupEl.classList.contains('on'));
   // while covered the loop stops altogether (no polling); a class change or the window showing again starts it back up.
   // `still`: the picture changed (theme switch, resize) while covered, so draw it once, then hold
   let still = false, drawErr = 0;
@@ -198,13 +198,18 @@ window.ThemeFx = (() => {
     // (beta.12, Android and Linux) while the shelf slides the backdrop holds still: no frame is asked for and nothing is drawn
     // or sent to the graphics card until the cases have landed (a handheld's GPU is busiest then), then it carries on from
     // there. Windows unchanged
-    if ((ANDROID || LINUX()) && window.BS_SLIDING && BS_SLIDING()) { raf = -1; setTimeout(() => { if (raf === -1) { raf = 0; last = performance.now(); wake(); } }, 120); return; }
-    const fps = document.body.classList.contains('reduce-motion') ? 0 : Math.min(lite ? 30 : 60, window.Perf ? Perf.get().themeFps : 60); // Reduce motion: a still picture, like the Low level
+    // (beta.14: unless Keep themes moving while you scroll is on, app.js BS_FX_KEEP; off by default there)
+    if ((ANDROID || LINUX()) && window.BS_SLIDING && BS_SLIDING() && !(window.BS_FX_KEEP && window.BS_FX_KEEP())) { raf = -1; setTimeout(() => { if (raf === -1) { raf = 0; last = performance.now(); wake(); } }, 120); return; }
+    // (beta.14) the showpieces (Prism, Hologram: busy) hold on every platform until the shelf has settled (BS_BUSY)
+    // (Windows: unless Keep themes moving while you scroll is on, app.js BS_FX_KEEP)
+    if (XFX[id] && XFX[id].busy && window.BS_BUSY && BS_BUSY() && !(window.BS_FX_KEEP && window.BS_FX_KEEP())) { raf = -1; setTimeout(() => { if (raf === -1) { raf = 0; last = performance.now(); wake(); } }, 250); return; }
+    const xfps = XFX[id] && XFX[id].fps > 0 ? XFX[id].fps : 60; // (beta.14) a theme drawn at half rate (fps 30) asks only for the frames it draws, as Android does
+    const fps = document.body.classList.contains('reduce-motion') ? 0 : Math.min(lite ? 30 : 60, window.Perf ? Perf.get().themeFps : 60, xfps); // Reduce motion: a still picture, like the Low level
     if (!fps) { last = ms; hue = hueT; draw(0); return; } // Low performance level: a still picture, drawn again only when the theme, colour or size changes
     // Android at 30 fps: after a drawn frame the next one is asked for from a timer that waits out the frame in between, so
     // only the frames it draws in are requested. Asking for every frame and skipping every other one made the page restyle
     // and commit a frame 60 times a second (a whole frame of the page's work for nothing, every other vsync)
-    if (ANDROID && fps < 60 && ms - last >= 1000 / fps - 2) {
+    if ((ANDROID || xfps < 60) && fps < 60 && ms - last >= 1000 / fps - 2) {
       const dt = Math.min(.1, (ms - last) / 1000); last = ms; still = false; draw(dt);
       raf = -1; setTimeout(() => { if (raf === -1) raf = requestAnimationFrame(frame); }, Math.max(0, ms + 1000 / fps - 1000 / 60 + 4 - performance.now())); return; // (asked for just after the vsync in between has gone by, so it lands on the one after)
     }

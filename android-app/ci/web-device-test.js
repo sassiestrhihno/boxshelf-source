@@ -31,6 +31,7 @@
 //   Pass 21 "previews": video previews found, played in Details / over YouTube / behind the shelf, Settings, first run (ci/previews-test.js).
 //   Pass 22 "whatsnew": What's new once after updating, the update card with the release's highlights, Settings → What's new (ci/whatsnew-test.js).
 //   Pass 23 "addgames": Add games: several programs at once, a scanned folder, the Playnite import (experimental), the Add games tile (ci/addgames-pass.js).
+//   Pass 29 "keepsetup" (beta.14): Update now on the card and in Settings, the Undo row, backups with keys, the first run's "Use your setup" card (ci/keepsetup-pass.js).
 // Writes a table to the GitHub run's Summary and screenshots to out/device-test/. Exit code 1 = failed (APK not published).
 // Usage: node ci/web-device-test.js <www dir> <out dir> [--group=thor|screens|windows]
 //   (beta.7) --group runs one third of the passes, so GitHub runs the three at once (android.yml): thor = passes 1-9 (the
@@ -225,7 +226,7 @@ server.listen(0, async () => {
         // wait (up to 15 s) until every case handed a new cover shows it
         const fronts = () => [...document.querySelectorAll('.slot .f-front img')].filter(i => /\?swap$/.test(i.src)).length;
         const spinesNow = () => [...document.querySelectorAll('.slot .f-left .spine-img')].filter(i => /\?spine$/.test(i.src)).length; // (full box art: a spine that came later)
-        await wait(2500); for (let i = 0; i < 50 && (fronts() < out.swapped || spinesNow() < out.swapped); i++) await wait(250);
+        await wait(2500); for (let i = 0; i < 150 && (fronts() < out.swapped || spinesNow() < out.swapped); i++) await wait(250); /* (up to 40 s: one swap a frame, and GitHub's software drawing can be a frame a second) */
         Shelf.artUpdated = upd;
         const after = [...document.querySelectorAll('.slot')];
         out.same = before.length === after.length && before.every((e, i) => e === after[i]);
@@ -1564,6 +1565,8 @@ server.listen(0, async () => {
     await require('./bottom-companion-test')({ browser, base, check, newPage, OUT });
     // (beta.12) Thor touch: a double tap picks the case up, a swipe up opens Details, down closes it (ci/touch-gestures-test.js)
     await require('./touch-gestures-test')({ browser, base, check, newPage, OUT });
+    // (beta.14) Inspect and the museum peek: keep / jewel / card box from one builder, real-size booklet and media (ci/case3d-test.js)
+    await require('./case3d-test')({ browser, base, check, newPage, OUT });
     // (beta.13) Settings by touch on Android: a text setting opens Boxshelf's keyboard, its keys and Paste type (ci/settings-touch-test.js)
     await require('./settings-touch-test')({ browser, base, check, newPage, OUT });
     } // ===== end of group thor =====
@@ -1597,12 +1600,25 @@ server.listen(0, async () => {
     if (runs('windows')) { // ===== group windows: passes 18-24 =====
     // ---------- pass 18: the retro shelves (beta.6): PlayStation, NES … Dreamcast through RetroArch (ci/retro-test.js) ----------
     await require('./retro-test')({ browser, base, check, newPage, OUT });
+    // ---------- pass 18b (beta.14): each console's case shape and material on the shelf (ci/case-shelf-test.js) ----------
+    await require('./case-shelf-test')({ browser, base, check, newPage, OUT });
     // ---------- pass 19: the library (beta.7): Details redone, filters by decade / genre / players, collections (ci/library-test.js) ----------
     await require('./library-test')({ browser, base, check, newPage, OUT });
     // ---------- pass 20: beta.7 consoles, the arcade list, Set up for me, the tidy first run (ci/setup-test.js) ----------
     await require('./setup-test')({ browser, base, check, newPage, OUT });
     // ---------- pass 21: video previews (beta.7): finding them, Details, YouTube, behind the shelf, Settings, first run (ci/previews-test.js) ----------
     await require('./previews-test')({ browser, base, check, newPage, OUT });
+    // (beta.14) Details' trailer by d-pad and mouse, the quick menu's → (ci/details-trailer-test.js)
+    await require('./details-trailer-test')({ browser, base, check, newPage, OUT });
+    // (beta.14) Details rebuilt to the approved mockup: header, tabs, More, ♡, Status, the facts, Achievements, Media, Your copy (ci/details-tabs-test.js)
+    await require('./details-tabs-test')({ browser, base, check, newPage, OUT });
+    // (beta.14) Details' Media: a game with few screenshots is topped up to 6 from more sources (ci/moreshots-pass.js)
+    await require('./moreshots-pass')({ browser, base, check, newPage, OUT });
+    // (beta.14) Connect IGDB: the guided page, Needs attention's suggestion, Details' quiet line, IGDB's info filling a gap (ci/igdb-pass.js)
+    await require('./igdb-pass')({ browser, base, check, newPage, OUT });
+    // (beta.14) themes and sounds kept simple: every theme and sound in the quick menu, Settings › Sound as plain rows
+    // (a sound per console, custom sounds), the theme grid opened with A (ci/look-sound-test.js)
+    await require('./look-sound-test')({ browser, base, check, newPage, OUT });
     // ---------- pass 22: What's new after updating, the update card with its highlights, the notes in Settings (ci/whatsnew-test.js) ----------
     await require('./whatsnew-test')({ browser, base, check, newPage, OUT });
     // ---------- pass 23: Add games: several programs, a folder, Playnite (experimental), the Custom shelf's tile (ci/addgames-pass.js) ----------
@@ -1625,6 +1641,10 @@ server.listen(0, async () => {
     await require('./spinepage-test')({ browser, base, check, newPage, OUT });
     // (beta.12) the Art Studio shows what it has while a slow source is still answering; the late version joins (ci/artlate-test.js)
     await require('./artlate-test')({ browser, base, check, newPage, OUT });
+    // (beta.14 perf) the Art Studio doesn't re-ask for a part still downloading; Settings without a controller doesn't poll every frame (ci/menus-perf-test.js)
+    await require('./menus-perf-test')({ browser, base, check, newPage, OUT });
+    // (beta.14) box art arriving for games on the shelf swaps those pictures in place, no shelf rebuild (ci/artswap-test.js)
+    await require('./artswap-test')({ browser, base, check, newPage, OUT });
     // (beta.12) attract mode unfocused / pace / one shelf, and a controller's stale first press (ci/attract-test.js)
     await require('./attract-test')({ browser, base, check, newPage, OUT });
     // (beta.12) the quick menu's start-up warm-up is never seen sliding away (ci/qmwarm-test.js)
@@ -1656,6 +1676,12 @@ server.listen(0, async () => {
       check('Seamless play: Steam / store games are watched (started, ended, launcher hand-over, 90 s give-up), close() never touches a launcher, nothing polls when idle', r.status === 0, ((r.stdout || '') + (r.stderr || '')).split('\n').filter(l => /FAIL|Error/.test(l)).slice(0, 4).join(' | ')); }
     // ---------- pass 27 (beta.12): Seamless play on the Windows page: a watched Steam game, Settings rows, the Home menu's Go to desktop (ci/seamless-pass.js) ----------
     await require('./seamless-pass')({ browser, base, check, newPage, OUT });
+    // ---------- pass 28 (beta.14): the Home menu's Achievements over a game (ci/home-ach-pass.js) ----------
+    await require('./home-ach-pass')({ browser, base, check, newPage, OUT });
+    // ---------- pass 29 (beta.14): Updates keep your setup: Update now, the safety copy's Undo, backups with keys, Use your setup (ci/keepsetup-pass.js) ----------
+    await require('./keepsetup-pass')({ browser, base, check, newPage, OUT });
+    // ---------- pass 30 (beta.14): + Add to…: any game on any shelf, a My shelf or Favourites, from the quick menu or Details (ci/addto-pass.js) ----------
+    await require('./addto-pass')({ browser, base, check, newPage, OUT });
     } // ===== end of group windows =====
     check('Every file the page loads is in the APK', !missing.size, [...missing].join(', '));
   } catch (e) { check('Test ran to the end', false, e && e.stack ? e.stack.split('\n').slice(0, 2).join(' ') : e); }

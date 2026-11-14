@@ -41,6 +41,7 @@ module.exports = async function touchGesturesPass({ browser, base, check }) {
     // (where the manual is once the lid has finished opening: measured until it stops moving, the 3D lid eases open)
     const manAt = () => p.evaluate(() => { if (window.Inspect3D && Inspect3D.isActive()) { const m = Inspect3D._st().manual; return m ? { x: m.x, y: m.y, gl: true } : null; }
       const r = document.querySelector('#inspect .isp-manual').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), gl: false }; });
+    await p.waitForFunction(() => !(window.Inspect3D && Inspect3D.isActive()) || (() => { const s = Inspect3D._st(); return s.lid != null && s.lidT != null && Math.abs(s.lid - s.lidT) < .01; })(), null, { timeout: 15000, polling: 250 }).catch(() => {}); /* (the lid open first: GitHub can draw a frame a second) */
     let man = await manAt();
     for (let i = 0; i < 12; i++) { await p.waitForTimeout(400); const m2 = await manAt(); const still = man && m2 && Math.abs(m2.x - man.x) <= 2 && Math.abs(m2.y - man.y) <= 2; man = m2; if (still) break; }
     o.man = man;

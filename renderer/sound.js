@@ -20,9 +20,19 @@ window.Sound = (() => {
     // Music box: small steel tines plucked by a comb. A pure fundamental, a quiet octave and a faint inharmonic
     // shimmer (what makes it sound like metal, not a sine), a soft pluck and a warm room. Nothing buzzy.
     musicbox: { partials: [[1, 1, 1], [2, .16, .5], [3, .04, .3], [5.4, .05, .16], [8.93, .015, .1]], decay: .75, bright: 5200, noise: .04, thump: 1.0, verb: .55, scale: [0, 2, 4, 7, 9], root: 783.99 /* G5 */, wave: 'sine', attack: .002, breath: 0 },
+    // (beta.14) three more, made here in a style (nothing taken from any console):
+    // Disc-era: glassy FM bells over a soft pad and a big shiny room, the late-90s disc console feel
+    disc: { partials: [[1, 1, 1], [2.76, .16, .45], [5.4, .05, .25]], decay: .5, bright: 7200, noise: .02, thump: 1.0, verb: .8, scale: [0, 2, 4, 7, 9], root: 880 /* A5 */, wave: 'sine', attack: .005, breath: .2 },
+    // Handheld: small and chirpy, a pulse wave with quick blips and almost no room
+    handheld: { partials: [[1, 1, 1]], decay: .07, bright: 4200, noise: 0, thump: 1.0, verb: .06, scale: [0, 2, 4, 7, 9], root: 1318.51 /* E6 */, wave: 'square', attack: .002, breath: 0 },
+    // Living room: warm and round, a soft triangle with a little body under it
+    living: { partials: [[1, 1, 1], [2, .22, .6], [3, .06, .4]], decay: .32, bright: 2600, noise: .015, thump: 1.04, verb: .45, scale: [0, 2, 4, 7, 9], root: 587.33 /* D5 */, wave: 'triangle', attack: .008, breath: .15 },
+    // Instrument: the instrument plays the notes (instrument.js); this is only for the shared cues' pitches
+    instrument: { partials: [[1, 1, 1], [2, .3, .6], [3, .1, .4]], decay: .8, bright: 3400, noise: .03, thump: 1.0, verb: .5, scale: [0, 2, 4, 7, 9], root: 523.25 /* C5 */, wave: 'sine', attack: .003, breath: 0 },
   };
+  // (a pack's moments are its own recordings; anything it has no file for plays Aero's)
   const T = () => THEMES[theme] || THEMES.aero;
-  // older voices from before 1.28 map onto the three current ones
+  // older voices from before 1.28 map onto the three current ones (beta.14: Melody and Music box are the Instrument now)
   const ALIAS = { glass: 'aero', wood: 'aero', pulse: 'musicbox', arcade: 'musicbox', xylo: 'melody', jazz: 'melody' };
   // n-th step of the pentatonic scale (negative ok), as a frequency
   // Each shelf plays in its own key (a few semitones up or down from the voice's root) and some in a different
@@ -482,9 +492,56 @@ window.Sound = (() => {
   }
   // opts: { track: 'drift' | 'night' | 'glow' (1.75's calm / lounge / chime still work), level: 0-1 }. Called again on every shelf change: the same track just
   // takes the new level (and the shelf's key at its next loop); another track crossfades in.
+  // ---- (beta.14) music from files: Your music (the Music folder, shuffled) and a sound pack's own music on its consoles ----
+  // An <audio> element plays it (decoded as it streams, not all at once); its level follows Music volume and Sounds volume.
+  // MIDI files in Your music are played on the Instrument (their Auto instrument), a few seconds written ahead at a time.
+  let ext = null;
+  const EXT_GAIN = .55;
+  function extLevel() { if (ext && ext.el && !ext.fading) ext.el.volume = Math.max(0, Math.min(1, ext.level * volume * EXT_GAIN)); }
+  function extFade(el, from, to, ms, then) { const n = 8; let k = 0; const step = () => { k++; try { el.volume = Math.max(0, Math.min(1, from + (to - from) * k / n)); } catch {} if (k < n) setTimeout(step, ms / n); else if (then) then(); }; setTimeout(step, ms / n); }
+  function extStop(quick) {
+    if (!ext) return; const x = ext; ext = null; clearTimeout(x.midiT); x.stopped = true;
+    if (x.el) { const el = x.el, url = x.url; extFade(el, el.volume, 0, quick ? 120 : 900, () => { try { el.pause(); el.removeAttribute('src'); el.load(); } catch {} if (url) URL.revokeObjectURL(url); }); }
+  }
+  async function extFile(x, bytes, midiFile, name) {
+    if (x.stopped || ext !== x) return;
+    if (midiFile) { // a MIDI song: its tune on the Instrument
+      let sg; try { sg = Songs.parseMidi(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), name); } catch { x.next(); return; }
+      const c = ensure(), plan = Songs.settingsFor(sg, null, 'piano'), times = Songs.timesOf(sg), t0 = c.currentTime + .3; let i = 0;
+      const pump = () => { if (x.stopped || ext !== x) return; const until = c.currentTime + 2;
+        while (i < plan.notes.length && t0 + times[i] < until) { const nx = times[i + 1] != null ? times[i + 1] - times[i] : .8; instNote(plan.notes[i], { inst: plan.inst, at: Math.max(0, t0 + times[i] - c.currentTime), vol: .26 * x.level * 2, dur: Math.max(.15, Math.min(1.2, nx)), fx: false, duck: 0 }); i++; }
+        if (i < plan.notes.length) x.midiT = setTimeout(pump, 700); else x.midiT = setTimeout(() => x.next(), Math.max(800, (t0 + (times[times.length - 1] || 0) - c.currentTime) * 1000 + 1500)); };
+      pump(); return;
+    }
+    const el = x.el || (x.el = new Audio()); if (x.url) URL.revokeObjectURL(x.url);
+    x.url = URL.createObjectURL(new Blob([bytes])); el.src = x.url; el.loop = !!x.loop; el.volume = 0;
+    if (typeof el.setSinkId === 'function' && sinkId) el.setSinkId(sinkId).catch(() => {});
+    el.onended = () => { if (ext === x && !x.loop) x.next(); }; el.onerror = () => { if (ext === x && !x.loop) x.next(); };
+    try { await el.play(); } catch { if (!x.loop) { x.next(); return; } }
+    x.fading = true; extFade(el, 0, Math.max(0, Math.min(1, x.level * volume * EXT_GAIN)), 1500, () => { x.fading = false; extLevel(); });
+  }
+  function extStart(kind, id, level) {
+    if (ext && ext.kind === kind && ext.id === id) { ext.level = level; extLevel(); return; }
+    extStop(); const x = { kind, id, level, el: null, url: '', fails: 0, stopped: false, list: null, pos: -1 }; ext = x;
+    const later = fn => { if (typeof window.BS_BUSY === 'function' && window.BS_BUSY()) setTimeout(() => later(fn), 300); else fn(); };
+    if (kind === 'pack') {
+      const meta = packMeta.find(p => p.id === id), f = meta && meta.matches && meta.matches.music; x.loop = true;
+      if (!f || !loaders.packRead) return; later(() => loaders.packRead(id, f).then(b => extFile(x, b, false, f)).catch(() => {})); return;
+    }
+    x.next = () => { if (x.stopped || ext !== x || !x.list || !x.list.length) return; if (++x.fails > x.list.length + 2) return;
+      x.pos = (x.pos + 1) % x.list.length; if (x.pos === 0) for (let i = x.list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [x.list[i], x.list[j]] = [x.list[j], x.list[i]]; }
+      const s = x.list[x.pos]; later(() => loaders.musicRead(s.file).then(b => { x.fails = 0; extFile(x, b, s.midi, s.name); }).catch(() => x.next())); };
+    if (!loaders.musicList) return;
+    loaders.musicList().then(L => { if (ext !== x) return; x.list = (L || []).slice(0, 500); if (!x.list.length) { ext = null; ambientStart({ track: 'drift', level: x.level }); return; } x.next(); }).catch(() => {});
+  }
+  // the music file of the pack playing on this console, when it has one
+  const packMusic = () => { const meta = curPack && packMeta.find(p => p.id === curPack); return meta && meta.matches && meta.matches.music ? curPack : ''; };
   function ambientStart(opts) {
     const c = ensure(); if (!c || !enabled) return;
-    const tr = opts && (OLD_TRACK[opts.track] || opts.track), id = TRACKS[tr] ? tr : 'drift', level = Math.max(0, Math.min(1, opts && opts.level != null ? +opts.level : .4)) * MUS_GAIN;
+    const lv0 = Math.max(0, Math.min(1, opts && opts.level != null ? +opts.level : .4)), pm = opts && opts.track !== 'off' && !(opts && opts.preview) ? packMusic() : '';
+    if (pm || (opts && opts.track === 'mine' && loaders.musicList)) { if (amb) ambientStop(false, true); extStart(pm ? 'pack' : 'mine', pm || 'mine', lv0); return; }
+    if (ext) extStop();
+    const tr = opts && (OLD_TRACK[opts.track] || opts.track), id = TRACKS[tr] ? tr : 'drift', level = lv0 * MUS_GAIN;
     if (amb && amb.id === id && amb.c === c) { const t = c.currentTime; amb.level = level; ambBus.gain.cancelScheduledValues(t); ambBus.gain.setTargetAtTime(level, t, .4); return; }
     if (amb) ambientStop();
     const m = musMake(c, id, ambBus, (Date.now() ^ Math.floor(Math.random() * 1e9)) | 0); amb = m; m.level = level;
@@ -492,7 +549,8 @@ window.Sound = (() => {
     m.bus.gain.setValueAtTime(0, t0); m.bus.gain.linearRampToValueAtTime(1, t0 + 3);
     musPump();
   }
-  function ambientStop(quick) {
+  function ambientStop(quick, keepExt) {
+    if (ext && !keepExt) extStop(quick);
     if (!amb) return; const m = amb; amb = null; clearTimeout(m.timer); m.stopped = true;
     const t = m.c.currentTime; m.bus.gain.cancelScheduledValues(t); m.bus.gain.setValueAtTime(m.bus.gain.value, t); m.bus.gain.setTargetAtTime(0, t, quick ? .05 : .7);
     setTimeout(() => { m.pad.vs.forEach(os => os.forEach(o => { try { o.stop(); } catch {} })); m.nodes.forEach(n => { try { n.stop(); } catch {} }); try { m.bus.disconnect(); } catch {} }, quick ? 300 : 4000);
@@ -546,7 +604,18 @@ window.Sound = (() => {
   let song = null, songIdx = 0, songAt = 0, songLoops = 0, lastNote = 0, userSongs = [], useBuiltIn = true, songOrder = [], songPos = -1;
   const SONG_MINUTES = 3;
   const mf = m => 440 * Math.pow(2, (m - 69) / 12);
-  function pool() { const b = (window.Songs && Songs.builtIn) || []; const all = [...(useBuiltIn || !userSongs.length ? b : []), ...userSongs]; return all.length ? all : b; }
+  function pool() { const b = (window.Songs && Songs.builtIn) || []; const all = [...(useBuiltIn || !userSongs.length ? b : []), ...userSongs], L = all.length ? all : b;
+    // (beta.14) the Instrument's chosen song ('' = all of them, shuffled as before)
+    const want = theme === 'instrument' && iNow().song; if (want) { const one = [...b, ...userSongs].find(s => s.name === want); if (one) return [one]; }
+    return L; }
+  // (beta.14) a song's notes and instrument on the Instrument: Auto (from the file) or set by hand (Songs.settingsFor)
+  const songSet = new WeakMap();
+  function songPlan(sg) {
+    const ii = iNow(), per = (ii.songs && ii.songs[sg.name]) || null, sig = JSON.stringify(per) + '|' + ii.inst; let x = songSet.get(sg);
+    if (!x || x.sig !== sig) { x = { sig, plan: window.Songs && Songs.settingsFor ? Songs.settingsFor(sg, per, ii.inst) : { inst: ii.inst, notes: sg.notes, rate: 1 } }; songSet.set(sg, x); }
+    return x.plan;
+  }
+  const songNote = (sg, i) => theme === 'instrument' ? songPlan(sg).notes[i] : sg.notes[i];
   function shuffleOrder() { const p = pool(); songOrder = p.map((_, i) => i); for (let i = songOrder.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [songOrder[i], songOrder[j]] = [songOrder[j], songOrder[i]]; }
     if (song && songOrder.length > 1 && p[songOrder[0]] === song) songOrder.push(songOrder.shift()); songPos = -1; }
   // move on to another song (every few minutes, a new console shelf, coming back from a game); never the same one twice running
@@ -561,9 +630,11 @@ window.Sound = (() => {
   const chordAt = i => { const sg = curSong(); return sg.chords[Math.max(0, Math.min(sg.chords.length - 1, i))] || { root: 0, minor: false }; };
   // the chord under the tune right now, as piano notes around middle C (root position, close voicing)
   function triad(oct) { const c = chordAt(songIdx - 1 < 0 ? 0 : songIdx - 1), r = 48 + 12 * (oct || 0) + c.root; return [r, r + (c.minor ? 3 : 4), r + 7]; }
-  function piano(m, o = {}) { const v = (o.vol == null ? .26 : o.vol) * .45; hit(Object.assign({ freq: mf(m), dur: .95, attack: .003, verb: .5, pan: Math.max(-.5, Math.min(.5, (m - 72) / 30)), duck: .1 }, o, { vol: v })); }
+  function piano(m, o = {}) { const v = (o.vol == null ? .26 : o.vol) * .45;
+    if (theme === 'instrument') { instNote(m, Object.assign({}, o, { vol: v * 2.2, inst: songPlan(curSong()).inst, dur: Math.min(1.2, o.dur || .6) })); return; }
+    hit(Object.assign({ freq: mf(m), dur: .95, attack: .003, verb: .5, pan: Math.max(-.5, Math.min(.5, (m - 72) / 30)), duck: .1 }, o, { vol: v })); }
   // the bass when a bar changes: the chord root low and soft, with its octave, so the tune has harmony under it
-  function bassFor(i) { const c = chordAt(i), r = 36 + c.root + (c.root < 5 ? 12 : 0); piano(r, { dur: 1.9, vol: .15, bright: 1100, verb: .55, attack: .006, noise: 0, fx: false, pan: -.1 }); piano(r + 12, { dur: 1.6, vol: .08, bright: 1500, at: .01, attack: .008, noise: 0, fx: false }); }
+  function bassFor(i) { if (theme === 'instrument' && !['piano', 'harp', 'marimba'].includes(songPlan(curSong()).inst)) return; /* (a held instrument plays the tune alone) */ const c = chordAt(i), r = 36 + c.root + (c.root < 5 ? 12 : 0); piano(r, { dur: 1.9, vol: .15, bright: 1100, verb: .55, attack: .006, noise: 0, fx: false, pan: -.1 }); piano(r + 12, { dur: 1.6, vol: .08, bright: 1500, at: .01, attack: .008, noise: 0, fx: false }); }
   const M = {
     tick() {
       const t = clock(), sg = curSong();
@@ -575,16 +646,16 @@ window.Sound = (() => {
       const s3 = curSong(), i = songIdx++, bar = s3.bars.includes(i);
       // quick runs play lighter, a slow deliberate step a little fuller; the first note of a bar leans in
       const v = (gap < 200 ? .22 : .28) + (bar ? .04 : 0) + (Math.random() - .5) * .02;
-      piano(s3.notes[i], { vol: v, dur: gap < 200 ? .7 : 1.05 });
+      piano(songNote(s3, i), { vol: v, dur: gap < 200 ? .7 : 1.05 });
       if (bar || i === 0) bassFor(i);
     },
     shelf(o) {
       // a new shelf starts a new song: its opening chord rolls in under the first notes
       const t = clock(), quick = t - lastShelf < 600; lastShelf = t;
-      if (quick) { piano(curSong().notes[0] + 12, { vol: .3, dur: .5 }); return; }
+      if (quick) { piano(songNote(curSong(), 0) + 12, { vol: .3, dur: .5 }); return; }
       const sg = curSong(); lastNote = 0; songIdx = 0; const c = sg.chords[0], r = 48 + c.root;
       [r, r + (c.minor ? 3 : 4), r + 7, r + 12].forEach((m, k) => piano(m, { at: k * .045, vol: .22, dur: 1.4, bright: 2600 }));
-      piano(sg.notes[0], { at: .2, vol: .32, dur: 1.2 });
+      piano(songNote(sg, 0), { at: .2, vol: .32, dur: 1.2 });
     },
     open() { const [a, b, c] = triad(1); piano(a, { vol: .18, dur: .8 }); piano(b, { at: .05, vol: .17, dur: .8 }); piano(c, { at: .1, vol: .2, dur: 1 }); },
     back() { const [a, , c] = triad(1); piano(c, { vol: .2, dur: .6 }); piano(a, { at: .07, vol: .18, dur: .9, bright: 2400 }); },
@@ -596,7 +667,7 @@ window.Sound = (() => {
     boot() { bootSig(); },
     museum() { const [a, b, c] = triad(0); [a, b, c, a + 12, b + 12, c + 12, a + 24].forEach((m, k) => piano(m, { at: k * .09, vol: .15, dur: 1.8, verb: .75 })); },
     pedestal() { const [a, b, c] = triad(1); [a, b, c].forEach((m, k) => piano(m, { at: k * .1, vol: .12, dur: 1.2, verb: .7 })); },
-    hold() { piano(curSong().notes[0] + 12, { vol: .1, dur: .25, fx: false }); },
+    hold() { piano(songNote(curSong(), 0) + 12, { vol: .1, dur: .25, fx: false }); },
   };
   // ---------------- Music box ----------------
   const tine = (n, o = {}) => hit(Object.assign({ freq: deg(n), dur: .7, pan: Math.max(-.4, Math.min(.4, n * .05)), duck: .1 }, o, { vol: (o.vol == null ? .3 : o.vol) * .48 }));
@@ -614,7 +685,186 @@ window.Sound = (() => {
     museum() { [0, 2, 4, 7, 9, 11, 9, 7].forEach((n, i) => tine(n, { at: i * .1, dur: 1.2, vol: .18, verb: .7 })); tine(4, { at: .85, dur: 2, vol: .16, verb: .8 }); },
     hold() { tine(9, { dur: .2, vol: .14, fx: false }); },
   };
-  function voiceFor(name) { if (theme === 'melody') return M[name] || A[name] || S[name]; if (theme === 'musicbox') return B[name] || S[name]; return (theme === 'aero' && A[name]) ? A[name] : S[name]; }
+  // ---------------- (beta.14) Disc-era, Handheld, Living room ----------------
+  // Disc-era: glassy FM bells (a sine bent by a sine, bright at the strike), a breath of air and a big room
+  const bellNote = (n, o = {}) => fm(Object.assign({ freq: deg(n), dur: .5, vol: .2, ratio: 3.5, index: 1.4, floor: .1, verb: .6, attack: .003 }, o));
+  const D = {
+    tick(o) { const n = walk(o); bellNote(2 + n, { dur: .2, vol: .22, index: 1, pan: (Math.random() - .5) * .25, verb: .45 }); },
+    shelf(o) { if (shelfQuick(o)) return; air({ dur: .45, vol: .12, filter: 'bandpass', freq: 700, sweepTo: 5200, q: .5, verb: .8, attack: .1, soft: true }); bellNote(0, { at: .03, dur: .6, vol: .16, pan: -.25 }); bellNote(4, { at: .13, dur: .8, vol: .14, pan: .25 }); },
+    open() { bellNote(2, { dur: .4, vol: .2 }); bellNote(4, { at: .06, dur: .7, vol: .17, pan: .2, detune: 4 }); },
+    back() { bellNote(4, { dur: .3, vol: .18 }); bellNote(1, { at: .07, dur: .55, vol: .16, pan: -.2, index: .8 }); },
+    go() { [0, 2, 4, 7].forEach((n, i) => bellNote(n, { at: i * .08, dur: 1.1, vol: .17, pan: (i - 1.5) * .2, detune: 3 })); pad({ freqs: [deg(0, -2), deg(2, -2), deg(4, -2)], dur: 2, vol: .22, from: 250, to: 2600, open: .9, attack: .5, hold: 1 }); },
+    flip() { air({ dur: .26, vol: .2, filter: 'bandpass', freq: 2800, sweepTo: 600, q: .6, verb: .5, soft: true }); bellNote(-2, { at: .1, dur: .3, vol: .12 }); },
+    error() { fm({ freq: deg(-6), dur: .35, vol: .24, ratio: 1.41, index: 2.5, floor: .3, verb: .35 }); fm({ freq: deg(-7), at: .15, dur: .45, vol: .2, ratio: 1.41, index: 2.2, floor: .3, verb: .35 }); },
+    toast() { bellNote(7, { dur: .6, vol: .15, pan: .4, verb: .7 }); bellNote(9, { at: .07, dur: .8, vol: .12, pan: .4, verb: .75 }); },
+    unlock() { [0, 2, 4, 7, 9].forEach((n, i) => bellNote(n, { at: i * .07, dur: .9, vol: .15, pan: (i - 2) * .18, verb: .7 })); bellNote(12, { at: .4, dur: 1.6, vol: .13, verb: .85, detune: 4 }); },
+    hold() { bellNote(9, { dur: .12, vol: .08, verb: .3 }); },
+    boot() { bootSig(); },
+  };
+  // Handheld: a pulse wave, short blips that chirp upwards, next to no room
+  const chirp = (n, o = {}) => hit(Object.assign({ freq: deg(n), dur: .06, vol: .2, wave: 'square', partials: [[1, 1, 1]], bright: 3800, verb: .05, thump: .94, noise: 0, breath: 0, attack: .002, duck: .1 }, o));
+  const HH = {
+    tick(o) { const n = walk(o); chirp(2 + n, { dur: .035, vol: .3, pan: (Math.random() - .5) * .2 }); },
+    shelf(o) { if (shelfQuick(o)) return; chirp(0, { dur: .05 }); chirp(2, { at: .05, dur: .05 }); chirp(4, { at: .1, dur: .08 }); },
+    open() { chirp(2, { dur: .05 }); chirp(5, { at: .055, dur: .09 }); },
+    back() { chirp(5, { dur: .05 }); chirp(2, { at: .055, dur: .09, bright: 3000 }); },
+    go() { [0, 2, 4, 5, 7].forEach((n, i) => chirp(n, { at: i * .055, dur: .07, vol: .18 })); chirp(10, { at: .3, dur: .3, vol: .17 }); },
+    flip() { chirp(3, { dur: .04, glide: deg(0), glideTime: .04 }); },
+    error() { chirp(-5, { dur: .12, vol: .22, bright: 1800 }); chirp(-6, { at: .13, dur: .16, vol: .22, bright: 1600 }); },
+    toast() { chirp(7, { dur: .05 }); chirp(9, { at: .06, dur: .1 }); },
+    unlock() { [0, 2, 4, 7, 9, 12].forEach((n, i) => chirp(n, { at: i * .05, dur: .06, vol: .16 })); chirp(14, { at: .32, dur: .35, vol: .15 }); },
+    hold() { chirp(9, { dur: .025, vol: .1 }); },
+    boot() { bootSig(); },
+  };
+  // Living room: warm round triangles with a soft low octave under the bigger moments
+  const round = (n, o = {}) => hit(Object.assign({ freq: deg(n), dur: .3, vol: .3, attack: .008 }, o));
+  const LV = {
+    tick(o) { const n = walk(o); round(2 + n, { dur: .11, vol: .26, pan: (Math.random() - .5) * .2, verb: .3, duck: .12 }); },
+    shelf(o) { if (shelfQuick(o)) return; air({ dur: .3, vol: .1, filter: 'bandpass', freq: 500, sweepTo: 1800, q: .6, verb: .5, soft: true }); round(0, { at: .03, dur: .4, vol: .24, pan: -.2, sub: .3 }); round(4, { at: .12, dur: .5, vol: .22, pan: .2 }); },
+    open() { round(2, { dur: .28, vol: .28 }); round(4, { at: .07, dur: .45, vol: .24, pan: .15 }); },
+    back() { round(3, { dur: .22, vol: .26 }); round(0, { at: .07, dur: .4, vol: .22, pan: -.15, bright: 1800 }); },
+    go() { [0, 2, 4].forEach((n, i) => round(n, { at: i * .1, dur: .7 + i * .15, vol: .26, pan: (i - 1) * .2, sub: .3 })); swell({ notes: [0, 2, 4], octave: -1, dur: 1.4, vol: .16, at: .15, attack: .35 }); },
+    flip() { air({ dur: .2, vol: .14, filter: 'bandpass', freq: 1400, sweepTo: 450, q: .7, verb: .3, soft: true }); round(-2, { at: .1, dur: .16, vol: .2 }); },
+    error() { round(-6, { dur: .3, vol: .3, bright: 1200, sub: .4 }); round(-7, { at: .14, dur: .4, vol: .26, bright: 1000 }); },
+    toast() { round(5, { dur: .35, vol: .22, verb: .55, pan: .35 }); },
+    unlock() { [0, 2, 4, 7].forEach((n, i) => round(n, { at: i * .09, dur: .6, vol: .22, verb: .6, pan: (i - 1.5) * .2 })); round(9, { at: .4, dur: 1.2, vol: .18, verb: .7 }); },
+    hold() { round(7, { dur: .05, vol: .14 }); },
+    boot() { bootSig(); },
+  };
+
+  // ---------------- (beta.14) the Instrument ----------------
+  // ui.instrument: { inst, src: 'built' | 'real', key (-12..12), mood, mode: 'notes' | 'song', song ('' = all, shuffled), songs: { name: { mode, inst, speed, key } } }
+  let instCfg = { inst: 'harp', src: 'built', key: 0, mood: 'calm', mode: 'notes', song: '', songs: {} }, instOver = null;
+  const iNow = () => instOver ? Object.assign({}, instCfg, instOver) : instCfg;
+  const MOODS = { happy: [0, 2, 4, 5, 7, 9, 11], calm: [0, 2, 4, 7, 9], sad: [0, 2, 3, 5, 7, 8, 10], dreamy: [0, 2, 4, 7, 11] };
+  const iRoot = () => 72 + (+iNow().key || 0) + keyShift;
+  function iDeg(n, oct = 0) { const s = MOODS[iNow().mood] || MOODS.calm, o = Math.floor(n / s.length), i = ((n % s.length) + s.length) % s.length; return iRoot() + s[i] + 12 * (o + oct); }
+  const SONG_RANGE = () => (window.Songs && Songs.RANGE) || {};
+  // one note on the instrument (vol in the same units as hit()); notes outside the instrument's range move by octaves
+  function instNote(m, o = {}) {
+    const c = ensure(); if (!c || !enabled || !window.BS_INST) return;
+    const ii = iNow(), inst = o.inst || ii.inst, r = SONG_RANGE()[inst] || [36, 100];
+    let n = Math.round(m); while (n < r[0] - 5) n += 12; while (n > r[1] + 5) n -= 12;
+    if (!lite && o.duck !== 0) duck(.12, 400);
+    const at = o.at || 0, out = bus(o.verb != null ? o.verb : (BS_INST.ROOM[inst] || .4), o.pan != null ? o.pan : Math.max(-.4, Math.min(.4, (n - 72) / 30)));
+    if (o.fx !== false && !lite) noteFx(midi(n), o.vol == null ? .3 : o.vol, at);
+    BS_INST.play(c, out, inst, n, now() + at, { vol: (o.vol == null ? .3 : o.vol) * TRIM * 1.4, dur: o.dur || .5, real: ii.src === 'real' });
+  }
+  const songOn = () => theme === 'instrument' && iNow().mode === 'song';
+  const I = {
+    tick(o) { const n = walk(o); instNote(iDeg(2 + n), { vol: .26, dur: .45 }); },
+    shelf(o) { const t = clock(), quick = t - lastShelf < 600; lastShelf = t; if (quick) { instNote(iDeg(4), { vol: .26, dur: .3 }); return; } instNote(iDeg(0), { vol: .3, dur: .6 }); instNote(iDeg(4), { at: .09, vol: .26, dur: .7 }); },
+    open() { const r = iRoot(), th = iNow().mood === 'sad' ? 3 : 4; [0, th, 7].forEach((s, k) => instNote(r + s, { at: k * .028, vol: .24, dur: .6 })); },
+    back() { const r = iRoot(); instNote(r + 7, { vol: .26, dur: .3 }); instNote(r, { at: .15, vol: .24, dur: .6 }); },
+    go() { const r = iRoot(), th = iNow().mood === 'sad' ? 3 : 4; [0, th, 7, 12].forEach((s, k) => instNote(r + s, { at: k * .09, vol: .26, dur: .9 })); swell({ notes: [0, 4], octave: -1, dur: 1.4, vol: .1, at: .2, attack: .4 }); },
+    error() { const r = iRoot(); instNote(r - 11, { vol: .22, dur: .35 }); instNote(r - 12, { at: .13, vol: .2, dur: .6 }); },
+    flip() { air({ dur: .22, vol: .16, filter: 'bandpass', freq: 2000, sweepTo: 500, q: .6, verb: .4, soft: true }); instNote(iDeg(-1), { at: .1, vol: .18, dur: .4 }); },
+    toast() { const r = iRoot(); instNote(r + 19, { vol: .2, dur: .6, verb: .6 }); instNote(r + 24, { at: .07, vol: .16, dur: .7, verb: .6 }); },
+    unlock() { const r = iRoot(); [0, 4, 7, 12, 16, 19].forEach((s, k) => instNote(r + s, { at: k * .07, vol: .2, dur: .9 })); instNote(r + 24, { at: .5, vol: .16, dur: 1.4 }); },
+    museum() { [0, 1, 2, 3, 4, 5, 6].forEach((n, k) => instNote(iDeg(n, -1), { at: k * .09, vol: .17, dur: 1 })); },
+    pedestal() { const r = iRoot(); [0, 4, 7].forEach((s, k) => instNote(r + s, { at: k * .1, vol: .14, dur: .9 })); },
+    hold() { instNote(iRoot() + 24, { vol: .1, dur: .15, fx: false }); },
+    boot() { bootSig(); },
+    // (Settings' Instrument page: one step of the scale, n)
+    note(o) { instNote(iDeg(o && o.n || 0), { vol: .32, dur: .6 }); },
+  };
+
+  // ---------------- (beta.14) sound packs ----------------
+  // Each moment of the menu plays one of the pack's files; the cues a pack has no file for play Aero's.
+  const MOMENT = { tick: 'move', flip: 'move', shelf: 'move', open: 'open', panel: 'open', caseOpen: 'open', back: 'back', go: 'play', boot: 'play', error: 'problem' };
+  const PACK_MOMENTS = ['move', 'open', 'back', 'play', 'problem'];
+  let packMeta = [], loaders = {}, curPack = '', lastPackTick = 0;
+  const packs = new Map(); // id -> { sig, state: 'idle' | 'loading' | 'ready', bufs: {}, gain: {} }
+  const idleWait = () => new Promise(res => { const go = () => { if (typeof window.BS_BUSY === 'function' && window.BS_BUSY()) { setTimeout(() => idle(go, 1500), 200); return; } res(); }; idle(go, 1500); });
+  function packLoad(id) {
+    const meta = packMeta.find(x => x.id === id); if (!meta || !loaders.packRead) return null;
+    const sig = JSON.stringify(meta.matches); let P = packs.get(id);
+    if (P && P.sig === sig) return P;
+    P = { sig, state: 'loading', bufs: {}, gain: {} }; packs.set(id, P);
+    (async () => {
+      for (const mo of PACK_MOMENTS) { const f = meta.matches && meta.matches[mo]; if (!f) continue;
+        await idleWait(); if (packs.get(id) !== P) return;
+        try { const c = ensure(); if (!c) break; const b = await loaders.packRead(id, f), u8 = b instanceof Uint8Array ? b : new Uint8Array(b);
+          const buf = await c.decodeAudioData(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength));
+          const d = buf.getChannelData(0); let pk = 0; for (let i = 0; i < d.length; i += 2) { const a = Math.abs(d[i]); if (a > pk) pk = a; }
+          P.bufs[mo] = buf; P.gain[mo] = Math.min(4, .5 / Math.max(.02, pk)); } catch (e) { console.warn('sound pack', id, f, e && e.message); } }
+      P.state = 'ready';
+    })();
+    return P;
+  }
+  // play cue `name` from the current pack: false = it has no sound for that (or isn't ready yet), play the usual one
+  function packPlay(name, o) {
+    const mo = MOMENT[name]; if (!mo) return false;
+    const P = packs.get(curPack) || packLoad(curPack); if (!P || !P.bufs[mo]) return false;
+    if (name === 'tick') { const t = performance.now(); if (t - lastPackTick < 40) return true; lastPackTick = t; }
+    const c = ensure(); if (!c || !enabled) return true;
+    const buf = P.bufs[mo], src = c.createBufferSource(), g = c.createGain(), out = bus(.14, name === 'tick' ? (Math.random() - .5) * .15 : (o && o.dir < 0 ? -.1 : 0));
+    src.buffer = buf; g.gain.value = P.gain[mo] * TRIM * 1.6; src.connect(g); g.connect(out); src.start(now());
+    src.onended = () => { try { g.disconnect(); out.disconnect(); } catch {} };
+    if (!lite) duck(.3, Math.min(2, buf.duration) * 1000 + 150);
+    return true;
+  }
+  const packVoice = name => o => { if (packPlay(name, o)) return; const f = A[name] || S[name]; if (f) f(o); };
+
+  // ---------------- which sound plays where ----------------
+  // ui.soundTheme (everywhere), ui.soundByShelf (a console's own), and packs set to "only on some consoles"
+  let mainId = 'aero', byShelf = {}, shelfId = '';
+  const VOICES = ['aero', 'instrument', 'disc', 'handheld', 'living'];
+  const packIdOf = id => /^kenney-[a-z]+$/.test(id) ? id : /^pack:/.test(id) ? id.slice(5) : '';
+  // a sound id as the voice that plays it: { voice, pack, over (instrument settings it forces) }
+  function resolve(id) {
+    id = String(id || 'aero'); id = ALIAS[id] || id;
+    if (id === 'off') return { voice: 'off' };
+    if (id === 'melody') return { voice: 'instrument', over: instCfg.set ? { mode: 'song' } : { inst: 'piano', mode: 'song', song: '' } };
+    if (id === 'musicbox') return { voice: 'instrument', over: { inst: 'box', mode: 'notes', mood: 'calm' } };
+    const im = /^instrument:([a-z]+)$/.exec(id); if (im) return { voice: 'instrument', over: { inst: im[1] } };
+    if (VOICES.includes(id)) return { voice: id };
+    const p = packIdOf(id); if (p && packMeta.some(x => x.id === p)) return { voice: 'pack', pack: p };
+    return { voice: 'aero' };
+  }
+  const shelfSound = sid => { if (sid && byShelf[sid]) return byShelf[sid]; const p = sid && packMeta.find(x => Array.isArray(x.where) && x.where.includes(sid)); return p ? (p.kenney ? p.id : 'pack:' + p.id) : mainId; };
+  function applyActive() {
+    const r = resolve(shelfSound(shelfId)), was = theme;
+    theme = r.voice; curPack = r.pack || ''; instOver = r.over || null;
+    if (curPack) packLoad(curPack);
+    if (theme === 'instrument' && window.BS_INST && ctx) BS_INST.prime(ctx, iNow().inst, [0, 1, 2, 3, 4, 5, 6].map(n => iDeg(n)));
+    if (theme === 'instrument' && iNow().src === 'real') realLoad(iNow().inst);
+    return was !== theme;
+  }
+  // the packs any setting points at are made ready ahead, in idle time (a pack's few files decoded once)
+  function preloadPacks() { const ids = new Set([mainId, ...Object.values(byShelf)].map(packIdOf).filter(Boolean)); packMeta.forEach(p => { if (Array.isArray(p.where)) ids.add(p.id); }); ids.forEach(id => packLoad(id)); }
+  // ---- real instruments: each instrument's recorded notes, decoded the first time it plays ----
+  const realState = {}; let realHave = {};
+  function realLoad(inst) {
+    if (!loaders.instRead || !realHave[inst] || realState[inst]) return; realState[inst] = 'loading';
+    (async () => { const list = [];
+      for (const m of realHave[inst]) { await idleWait(); try { const c = ensure(); const b = await loaders.instRead(inst, m), u8 = b instanceof Uint8Array ? b : new Uint8Array(b); list.push({ midi: m, buf: await c.decodeAudioData(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)) }); } catch (e) { console.warn('instrument sample', inst, m, e && e.message); } }
+      if (window.BS_INST) BS_INST.setBank(inst, list); realState[inst] = list.length ? 'ready' : '';
+    })();
+  }
+  // ---- the lists Settings and the quick menu show ----
+  const BUILT = [['aero', 'Aero', 'Soft and airy'], ['instrument', 'Instrument', 'Notes as you move'], ['disc', 'Disc-era', 'Glassy, late-90s'], ['handheld', 'Handheld', 'Small and chirpy'], ['living', 'Living room', 'Warm and round']];
+  const KENNEY = [['kenney-clicky', 'Clicky', 'Crisp clicks', '0.4 MB'], ['kenney-soft', 'Soft UI', 'Gentle taps', '0.8 MB'], ['kenney-arcade', 'Arcade', 'Chunky retro', '1.0 MB']];
+  function choices() {
+    return [...BUILT.map(([id, name, sub]) => ({ id, name, sub, group: 'built', ready: true })),
+      ...KENNEY.map(([id, name, sub, size]) => ({ id, name, sub, size, group: 'kenney', ready: packMeta.some(p => p.id === id) })),
+      ...packMeta.filter(p => !p.kenney).map(p => ({ id: 'pack:' + p.id, name: p.name, sub: Array.isArray(p.where) ? 'Some consoles' : 'Everywhere', group: 'yours', ready: true }))];
+  }
+  function nameOf(id) {
+    id = ALIAS[id] || String(id || 'aero'); if (id === 'off') return 'Off'; if (id === 'melody' || id === 'musicbox') return 'Instrument';
+    const im = /^instrument:([a-z]+)$/.exec(id); if (im) { const x = window.BS_INST && BS_INST.LIST.find(l => l[0] === im[1]); return 'Instrument · ' + (x ? x[1] : im[1]); }
+    const c = choices().find(x => x.id === id); return c ? c.name : 'Aero';
+  }
+  const musicChoices = () => [['drift', 'Drift'], ['night', 'Night'], ['glow', 'Glow'], ...(loaders.musicList ? [['mine', 'Your music']] : []), ['off', 'Off']].map(([id, name]) => ({ id, name }));
+
+  function voiceFor(name) {
+    if (theme === 'off') return null;
+    if (theme === 'pack') return packVoice(name);
+    if (theme === 'instrument') return (songOn() && M[name]) || I[name] || A[name] || S[name];
+    if (theme === 'disc') return D[name] || A[name] || S[name];
+    if (theme === 'handheld') return HH[name] || S[name];
+    if (theme === 'living') return LV[name] || A[name] || S[name];
+    if (theme === 'melody') return M[name] || A[name] || S[name]; if (theme === 'musicbox') return B[name] || S[name]; return (theme === 'aero' && A[name]) ? A[name] : S[name]; }
   function play(name, o) {
     try {
       // Android: a held direction sends a tick every ~45 ms. Play at most one per ~70 ms, and while ticks come close
@@ -692,14 +942,67 @@ window.Sound = (() => {
     src.buffer = b.buf; src.playbackRate.value = h.freq / e.base.freq; src.connect(ch.g); src.start(t0, e.off, b.slot);
     return true;
   }
+  // o: { theme (the sound everywhere: any id choices() lists, or 'melody' / 'musicbox' from before), volume, enabled, boot,
+  // key / scale (the shelf's key), builtInSongs; beta.14: shelf (the console on screen), byShelf ({ console: sound id }),
+  // instrument (ui.instrument), packs (the sound packs' details, main/soundpacks.js), loaders ({ packRead, instRead,
+  // musicList, musicRead }), realInsts ({ inst: [MIDI notes] } downloaded) }
   function set(o) {
-    if (o.theme) { const th = ALIAS[o.theme] || o.theme; if (THEMES[th]) theme = th; }
-    if (o.volume != null) { volume = Math.max(0, Math.min(1, +o.volume)); if (master) master.gain.setTargetAtTime(volume, ctx.currentTime, .02); }
+    let re = false;
+    if (o.theme) { mainId = String(o.theme); re = true; }
+    if (o.volume != null) { volume = Math.max(0, Math.min(1, +o.volume)); if (master) master.gain.setTargetAtTime(volume, ctx.currentTime, .02); extLevel(); }
     if (o.enabled != null) { enabled = !!o.enabled; if (!enabled) { roomStop(true); ambientStop(true); } }
     if (o.boot) bootPick = o.boot;
     if (o.key !== undefined) { keyShift = +o.key || 0; keyScale = o.scale || null; }
     if (o.builtInSongs !== undefined) { useBuiltIn = o.builtInSongs !== false; songOrder = []; songPos = -1; }
-    if (BAKE && (o.theme || o.key !== undefined)) primeTicks();
+    if (o.loaders) { loaders = Object.assign({}, loaders, o.loaders); re = true; }
+    if (Array.isArray(o.packs)) { packMeta = o.packs.filter(p => p && /^[a-z0-9-]{1,48}$/.test(p.id)); for (const id of [...packs.keys()]) if (!packMeta.some(p => p.id === id)) packs.delete(id); re = true; }
+    if (o.byShelf && typeof o.byShelf === 'object') { byShelf = Object.assign({}, o.byShelf); re = true; }
+    if (o.realInsts && typeof o.realInsts === 'object') { realHave = o.realInsts; for (const k of Object.keys(realState)) if (!realHave[k]) { delete realState[k]; if (window.BS_INST) BS_INST.setBank(k, null); } re = true; }
+    if (o.instrument && typeof o.instrument === 'object') {
+      const was = instCfg.song + '|' + instCfg.mode;
+      instCfg = Object.assign({ inst: 'harp', src: 'built', key: 0, mood: 'calm', mode: 'notes', song: '', songs: {} }, o.instrument, { set: true });
+      if (was !== instCfg.song + '|' + instCfg.mode) { song = null; songOrder = []; songPos = -1; }
+      re = true;
+    }
+    if (o.shelf !== undefined && String(o.shelf || '') !== shelfId) {
+      shelfId = String(o.shelf || ''); re = true;
+      if (songOn() && !iNow().song) nextSong('shelf'); // (a new shelf, a new song: as Melody did)
+    }
+    if (re) { applyActive(); if (o.packs || o.byShelf || o.theme) preloadPacks(); }
+    if (BAKE && (re || o.key !== undefined)) primeTicks();
+  }
+  // a cue as another sound would play it (Settings' Try it pads), without changing the sound in use
+  // id: any sound id; inst: instrument settings to try (the Instrument page). Packs not loaded yet load first.
+  async function preview(id, cue, o, inst) {
+    const r = resolve(id || mainId); if (r.voice === 'off') return;
+    if (r.pack) { const P = packLoad(r.pack); for (let k = 0; P && P.state !== 'ready' && k < 40; k++) await new Promise(res => setTimeout(res, 50)); }
+    const sv = { theme, curPack, instOver, instCfg };
+    theme = r.voice; curPack = r.pack || ''; instOver = r.over || null; if (inst) { instCfg = Object.assign({}, instCfg, inst); instOver = null; }
+    if (theme === 'instrument' && iNow().src === 'real') realLoad(iNow().inst);
+    try { const fn = voiceFor(cue); if (fn) fn(o || {}); } catch (e) { console.warn('sound preview', e); } finally { ({ theme, curPack, instOver, instCfg } = sv); }
+  }
+  // ▶ on a song (the Instrument page): plays it on its instrument (Auto, or `per` set by hand) for up to 25 s; returns stop()
+  let songPrev = null;
+  function songPreview(name, per, inst) {
+    songPreviewStop();
+    const c = ensure(); if (!c || !window.Songs) return () => {};
+    const sg = [...(Songs.builtIn || []), ...userSongs].find(s => s.name === name); if (!sg) return () => {};
+    const plan = Songs.settingsFor(sg, per || null, inst || iNow().inst), times = Songs.timesOf(sg), t0 = c.currentTime + .15, me = { i: 0, timer: 0 };
+    const pump = () => { if (songPrev !== me) return; const until = c.currentTime + 1.2;
+      while (me.i < plan.notes.length) { const at = t0 + times[me.i] / plan.rate; if (at > until || at - t0 > 25) break;
+        const nx = times[me.i + 1] != null ? (times[me.i + 1] - times[me.i]) / plan.rate : .6;
+        instNote(plan.notes[me.i], { inst: plan.inst, at: Math.max(0, at - c.currentTime), vol: .3, dur: Math.max(.15, Math.min(1, nx * .95)), fx: false, duck: 0 }); me.i++; }
+      const more = me.i < plan.notes.length && t0 + times[me.i] / plan.rate - t0 <= 25;
+      me.timer = setTimeout(more ? pump : () => { if (songPrev === me) { songPrev = null; if (me.onEnd) me.onEnd(); } }, more ? 400 : 1500); };
+    songPrev = me; if (iNow().src === 'real') realLoad(plan.inst); pump();
+    const stop = () => { if (songPrev === me) songPrev = null; clearTimeout(me.timer); };
+    stop.onEnd = f => { me.onEnd = f; }; return stop;
+  }
+  function songPreviewStop() { if (songPrev) { clearTimeout(songPrev.timer); songPrev = null; } }
+  // the songs the Instrument can play: built-in ones and your MIDI files, each with its Auto line
+  function songList(per, inst) {
+    const L = [...((window.Songs && Songs.builtIn) || []), ...userSongs];
+    return L.map(s => { const pl = window.Songs && Songs.settingsFor ? Songs.settingsFor(s, per && per[s.name] || null, inst || iNow().inst) : null; return { name: s.name, builtIn: !!s.builtIn, label: pl ? pl.label : '', inst: pl ? pl.inst : '', program: s.program == null ? -1 : s.program }; });
   }
   // Offline render of one cue (for previews / tests): returns an AudioBuffer
   async function render(name, seconds = 1.6, th) {
@@ -748,8 +1051,12 @@ window.Sound = (() => {
   function fadeOut(ms = 900) { if (!ctx || ctx.state !== 'running' || !master) return suspend(); const t = ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0, t + ms / 1000); clearTimeout(fadeT); fadeT = setTimeout(() => { suspend(); }, ms + 60); }
   // made once while Boxshelf is idle after start-up: the audio engine and the 'air' noise buffers cost ~50 ms the first time
   function warm() { try { const c = ensure(); if (c) { airNoise(c); if (BAKE) primeTicks(); } } catch {} }
-  return { warm, setSink, play, set, render, renderDemo, renderMusic, ambientStart, ambientStop, music: () => amb ? { track: amb.id, level: amb.level / MUS_GAIN, step: amb.step } : null, tracks: Object.keys(TRACKS).map(id => [id, TRACKS[id].name]), roomStart, roomStop, suspend, fadeOut, nextSong, loadSongs, song: () => { const s = curSong(); return s ? { name: s.name, hue: s.hue, builtIn: s.builtIn } : null; },
+  return { warm, setSink, play, set, render, renderDemo, renderMusic, ambientStart, ambientStop, music: () => ext ? { track: ext.kind === 'pack' ? 'pack:' + ext.id : 'mine', level: ext.level, playing: !!(ext.el && !ext.el.paused) } : amb ? { track: amb.id, level: amb.level / MUS_GAIN, step: amb.step } : null,
+    // (beta.14) Settings > Sound and the quick menu
+    choices, musicChoices, nameOf, preview, songPreview, songPreviewStop, songList, instruments: () => (window.BS_INST ? BS_INST.LIST : []).map(([id, name, sub, hue]) => ({ id, name, sub, hue })),
+    active: () => ({ shelf: shelfId, sound: shelfSound(shelfId), voice: theme, pack: curPack, inst: theme === 'instrument' ? iNow().inst : '', mode: theme === 'instrument' ? iNow().mode : '', packReady: !!(curPack && packs.get(curPack) && packs.get(curPack).state === 'ready'), real: Object.keys(realState).filter(k => realState[k] === 'ready') }),
+    songMode: () => songOn(), tracks: Object.keys(TRACKS).map(id => [id, TRACKS[id].name]), roomStart, roomStop, suspend, fadeOut, nextSong, loadSongs, song: () => { const s = curSong(); return s ? { name: s.name, hue: s.hue, builtIn: s.builtIn } : null; },
     // tests: switch the Android pre-rendered ticks off/on and see the banks
     _bake: on => { if (on != null) bakeOn = BAKE && !!on; return { on: bakeOn, banks: banks.map(b => ({ id: b.id, ready: !!b.buf, takes: b.slots.size })) }; },
-    get theme() { return theme; } };
+    get theme() { return theme; }, get main() { return mainId; } };
 })();

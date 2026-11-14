@@ -13,7 +13,9 @@ module.exports = async function achWallPass({ browser, base, check }) {
     await page.goto(base + '?platform=windows&shelf=1&ra=1'); await page.waitForFunction(() => window.Shelf && Shelf._qs && Shelf._qs().g && Shelf.getMode() === 'browse', null, { timeout: 90000, polling: 250 });
     await page.waitForTimeout(1500);
     for (let i = 0; i < 12; i++) { if (await page.evaluate(() => { const g = Shelf._lib.cur(); return !!(g && g.kind === 'rom'); })) break; await page.keyboard.press('ArrowRight'); await page.waitForTimeout(350); }
-    await page.keyboard.press('i'); await page.waitForFunction(() => { const b = document.getElementById('dAchBtn'); return b && !b.hidden; }, null, { timeout: 20000, polling: 200 });
+    await page.keyboard.press('i'); await page.waitForFunction(() => Shelf.getMode() === 'details' && document.querySelector('#dvNav .dv-t[data-s="ach"]'), null, { timeout: 20000, polling: 200 });
+    /* (beta.14: the wall's See all button is on the Details Achievements tab) */
+    await page.click('#dvNav .dv-t[data-s="ach"]'); await page.waitForFunction(() => { const b = document.getElementById('dAchBtn'); return b && !b.hidden && b.getBoundingClientRect().width > 0; }, null, { timeout: 20000, polling: 200 });
     await page.click('#dAchBtn'); await page.waitForFunction(() => Shelf.getMode() === 'achv' && document.querySelectorAll('#achList .ach').length > 0, null, { timeout: 15000, polling: 200 });
     await page.waitForTimeout(700); return { ctx, page };
   };

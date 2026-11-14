@@ -50,6 +50,9 @@ if(WAVE2)[["nes","NES"],["n64","Nintendo 64"],["gb","Game Boy"],["gbc","Game Boy
 if(WAVE2){Object.assign(titles,{saturn:["Astral Knights","Panzer Skies"],arcade:["Street Brawlers II","Metal Squad"],atari2600:["Pit Runner"]});Object.assign(folder,{saturn:"Saturn",arcade:"Arcade",atari2600:"Atari 2600"})}
 // ?dos=1 (beta.11, with wave2): a DOS game, for its floppy disk (off by default: the first-run test wants DOS without games)
 if(WAVE2&&/[?&]dos=1/.test(location.search)){titles.dos=["Dungeon Quest"];folder.dos="DOS"}
+// ?cases=1 (beta.14, with retro and wave2): N64 and DS games too, so every case shape has a shelf of its own (case-shelf-test)
+const CASES=WAVE2&&/[?&]cases=1/.test(location.search);
+if(CASES){Object.assign(titles,{n64:["Canyon Courier 64","Mole Mountain"],nds:["Stylus Story","Pocket Atelier"]});Object.assign(folder,{n64:"N64",nds:"DS"})}
 function mockSw2Builds(){const s=config.systems.sw2||{},B=[["Switch 2 emu\\Selvet Forks\\performance-6\\eglantine.exe","Selvet · Performance 6",false],["Switch 2 emu\\Lichii\\pgo\\lichii.exe","Lichii pgo",true],["Switch 2 emu\\Orchid v0.7.0\\orchid.exe","Orchid v0.7.0",false]].map(([e,label,nup],i)=>({exe:root+"\\"+e,group:"",name:label,label,date:Date.UTC(2026,9,20+i),nup}));
   (Array.isArray(s.buildDirs)?s.buildDirs:[]).forEach((d,i)=>B.push({exe:d+"\\fork-"+i+"\\eglantine.exe",group:"",name:"Fork "+(i+1),label:"Fork "+(i+1),date:Date.UTC(2026,10,1),nup:false}));
   (Array.isArray(s.buildExes)?s.buildExes:[]).forEach(x=>B.push({exe:x,group:"",name:x.split("\\").pop(),label:"Added · "+x.split("\\").pop(),date:Date.UTC(2026,10,2),nup:false}));
@@ -57,12 +60,15 @@ function mockSw2Builds(){const s=config.systems.sw2||{},B=[["Switch 2 emu\\Selve
   return B.filter(b=>!hid.has(b.exe.toLowerCase()))}
 let config={version:1,setupDone:false,systems:{},steam:{enabled:true,path:""},apps:{stremio:{enabled:true,path:""},nuvio:{enabled:true,path:""}},ui:{sound:true,startFullscreen:true}};
 {const q=(location.search.match(/[?&]previews=(\w+)/)||[])[1];if(q)Object.assign(config.ui,{previews:q,previewDelay:1})} // (beta.7) ?previews=details|shelf: video previews on
+{const s=(location.search.match(/[?&]seen=([\w.-]+)/)||[])[1];if(s)config.ui.lastSeenVersion=s} /* (beta.14) ?seen=: the version last started, for What's new after an update */
+if(/[?&]igdb=1/.test(location.search))config.keys={igdbId:"pretend-id",igdbSecret:"pretend-secret"}; /* (beta.14) ?igdb=1: IGDB connected (pretend keys) */
 consoles.forEach(c=>config.systems[c.id]={enabled:true,emulator:"",gameArgs:c.gameArgs,emulatorArgs:"",romDirs:[],artDir:"",bootOnLaunch:true});
 // Inside the Android shell (or with ?shelf=1) skip the wizard and open on a filled demo shelf, for performance testing
 if(window.Capacitor||/[?&]shelf=1/.test(location.search)){config.setupDone=true;consoles.forEach(c=>{config.systems[c.id].emulator=root+"\\"+emu[c.id];config.systems[c.id].romDirs=[root+"\\ROMS\\"+folder[c.id]];});}
 const ext={gc:"rvz",wii:"rvz",wiiu:"wua",sw:"nsp",psp:"iso",ps3:"iso",n3ds:"3ds",sw2:"nsp"};
 if(RETRO)Object.assign(ext,{psx:"cue",snes:"sfc",gba:"gba",megadrive:"md",dreamcast:"chd"});
 if(WAVE2)Object.assign(ext,{saturn:"chd",arcade:"zip",atari2600:"a26"});
+if(CASES)Object.assign(ext,{n64:"z64",nds:"nds"});
 let onExit=()=>{};const apiHooks={};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));const mockDl={};
 window.boxshelf={
@@ -115,6 +121,13 @@ window.boxshelf={
       clipStatus:async()=>({supported:true,helper,getting:false,n:kept.size,bytes:kept.size*4e6}),
       clipHelper:async()=>{for(const p of [10,45,80,100]){await wait(120);progFns.forEach(f=>f({pct:p}))}helper=true;progFns.forEach(f=>f({done:true,ok:true}));return true},
       clipClear:async()=>{kept.clear();return true},
+      /* (beta.14) Details → Change trailer: pretend finds (a gameplay clip, an IGDB trailer, LaunchBox's link that looks wrong, a search
+         result) and the choice kept per game (window.__trailerSet: what was last saved) */
+      trailerChoices:async o=>{await wait(150);const k=(o&&o.systemId)+":"+(o&&o.file);window.__trailerAsked=(window.__trailerAsked||0)+1;
+        return {cur:(window.__trailerChoice||{})[k]||"",list:[{key:"ss",label:"Gameplay clip",from:"ScreenScraper"},{key:"yt:igdbTrail01",label:"Launch Trailer",from:"IGDB"},{key:"yt:lbDemoDisc1",label:"GameCube Interactive Multi-Game Demo Disc",from:"LaunchBox",note:"Looks like another video"},{key:"yt:searchRes01",label:"Official Trailer",from:"YouTube search"}]}},
+      trailerSet:async o=>{await wait(60);const k=o.systemId+":"+o.file,s=String(o.choice||"").trim();let v=s;
+        if(s&&!/^(ss|none|yt:[\w-]{6,20})$/.test(s)){const m=/(?:v=|youtu\.be\/)([\w-]{11})/.exec(s)||/^([\w-]{11})$/.exec(s);if(!m)throw new Error("That isn't a YouTube link.");v="yt:"+m[1]}
+        window.__trailerChoice=window.__trailerChoice||{};window.__trailerChoice[k]=v;window.__trailerSet={key:k,choice:v};return {ok:true,choice:v}},
       previewCount:async()=>{await wait(300);return {total:23,systems:[{id:"gc",name:"GameCube",n:9,of:13},{id:"wii",name:"Wii",n:5,of:7},{id:"psp",name:"PSP",n:4,of:5},{id:"ps3",name:"PS3",n:5,of:7}],steamBytes:18874368}}}})(),closeTrailer:async()=>true,onTrailerClosed:()=>{},
   getConfig:async()=>({...((location.search.match(/[?&]ver=([\w.-]+)/)||[])[1]?{version:(location.search.match(/[?&]ver=([\w.-]+)/)||[])[1]}:{}) /* (beta.7) ?ver=: the app version, for What's new */,config:JSON.parse(JSON.stringify(config)),consoles,apps:[{id:"stremio",name:"Stremio",exeNames:["stremio.exe"]},{id:"nuvio",name:"Nuvio",exeNames:["Nuvio.exe"]}],appRoot:root}),
   saveConfig:async c=>{config=JSON.parse(JSON.stringify(c));return config},
@@ -123,12 +136,15 @@ window.boxshelf={
     const out=[];
     consoles.forEach(c=>{const s=config.systems[c.id];if(!s.enabled||(!s.emulator&&!s.romDirs.length))return;
       out.push({id:c.id,kind:"console",name:c.name,emulatorName:c.emulatorName,hasEmulator:!!s.emulator,emulator:s.emulator,gameArgs:s.gameArgs,bootOnLaunch:s.bootOnLaunch,
-        games:s.romDirs.length?titles[c.id].map((t,i)=>({kind:"rom",id:c.id+i,...(()=>{const o=(config.games||{})[c.id+":"+`${s.romDirs[0]}\\${t} (USA).${ext[c.id]}`];return o&&o.title?{title:o.title,fileTitle:t}:{title:t}})(),region:"USA",ext:ext[c.id],sizeBytes:(400+i*97)*1048576,file:`${s.romDirs[0]}\\${t} (USA).${ext[c.id]}`,discs:[1],info:{release:String(1999+((i*7)%12))+"-06-01",dev:["Moonbeam Works","Hollow Pine","Studio Kite"][i%3],pub:["Northlight","Moonbeam Works"][i%2],genres:["Platform","Racing","Puzzle","Adventure"][i%4],rating:(2.8+((i*13)%22)/10).toFixed(1),...(window.__TRAILERS&&i%2===0?{video:"https://www.youtube.com/watch?v=aaaaaaaaaaa"}:{}),...(/[?&]shots=1/.test(location.search)?{shots:Array.from({length:8},(_,k)=>"data:image/svg+xml,"+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="hsl(${k*40},50%,40%)"/></svg>`))}:{})} /* __TRAILERS: some games with a trailer (the museum TV's trailers channel); ?shots=1: eight screenshots each */,art:i===0&&c.id==="gc"?{manual:window.__mockManual||[]}:{}})):[]})});
+        games:s.romDirs.length?titles[c.id].map((t,i)=>({kind:"rom",id:c.id+i,...(()=>{const o=(config.games||{})[c.id+":"+`${s.romDirs[0]}\\${t} (USA).${ext[c.id]}`];return o&&o.title?{title:o.title,fileTitle:t}:{title:t}})(),region:"USA",ext:ext[c.id],sizeBytes:(400+i*97)*1048576,file:`${s.romDirs[0]}\\${t} (USA).${ext[c.id]}`,discs:[1],info:{release:String(1999+((i*7)%12))+"-06-01",dev:["Moonbeam Works","Hollow Pine","Studio Kite"][i%3],pub:["Northlight","Moonbeam Works"][i%2],genres:["Platform","Racing","Puzzle","Adventure"][i%4],rating:(2.8+((i*13)%22)/10).toFixed(1),...(window.__TRAILERS&&i%2===0?{video:"https://www.youtube.com/watch?v=aaaaaaaaaaa"}:{}),...(/[?&]desc=1/.test(location.search)?{overview:"Race hovercraft through floating sky cities in this arcade racer. Drift through wind tunnels to charge your boost, take shortcuts through the clouds and battle up to three friends in split screen. Sixteen tracks across four sky islands, each with a mirror version once you win its cup.",players:String(1+i%4),coop:i%2?"true":"false",esrb:"E - Everyone"}:{}) /* (beta.14, ?desc=1: a description, players and an age rating, for Details' header and facts) */,...(/[?&]shots=[12]\b/.test(location.search)?{shots:Array.from({length:/[?&]shots=2\b/.test(location.search)?2:8},(_,k)=>"data:image/svg+xml,"+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="hsl(${k*40},50%,40%)"/></svg>`))}:{})} /* __TRAILERS: some games with a trailer (the museum TV's trailers channel); ?shots=1: eight screenshots each */,art:i===0&&c.id==="gc"?{manual:window.__mockManual||[]}:{}})):[]})});
     if(config.steam.enabled&&config.steam.path)out.push({id:"pc",kind:"steam",name:"PC",games:["Cobalt Drift","Glasshouse","Hollow Crown","Night Courier"].map((t,i)=>({kind:"steam",id:"s"+i,appid:String(400000+i),title:t,minutes:i*510,lastPlayed:Date.now()/1000-i*86400*3,sizeBytes:(8+i*11)*1073741824,art:{}}))});
     // ?pcx=1 (beta.4 device test): an Epic game on the PC shelf, and a Custom shelf (a Quiver recomp + the games added in Settings)
     if(PCX){const pc=out.find(s=>s.id==="pc")||(out.push({id:"pc",kind:"steam",name:"PC",games:[]}),out[out.length-1]);pc.games.push({kind:"steam",source:"epic",id:"epic-ember-trail",title:"Ember Trail",art:{}});/* (beta.7) one from each new store */for(const [src,id,title] of [["gog","gog-1207658924","Lantern Keep"],["ubisoft","ubisoft-4740","Harbor Run"],["ea","ea-origin-1234","Dust Rally"],["xbox","xbox-lumen-garden","Lumen Garden"]])pc.games.push({kind:"steam",source:src,id,title,art:{}});
       const own=(id,t)=>{const o=(config.games||{})[id];return o&&o.title?{title:o.title,fileTitle:t}:{title:t}};
-      const mine=[{kind:"steam",source:"quiver",id:"quiver-quarantine",...own("quiver-quarantine","Quarantine"),art:{}},...((config.pc&&config.pc.custom)||[]).map(c=>({kind:"steam",source:"custom",id:"custom-"+c.id,title:c.title||"Game",art:{}}))];
+      /* (beta.14) a game added by hand goes on its shelf: PC, or a console's (one is made for a console with no games), as main/pcgames.js placeCustom */
+      const stay=[];for(const c of (config.pc&&config.pc.custom)||[]){const g={kind:"steam",source:"custom",id:"custom-"+c.id,title:c.title||"Game",art:{}},s=c.shelf||"";let sh=s==="pc"?pc:s?out.find(x=>x.kind==="console"&&x.id===s):null;const def=!sh&&s&&consoles.find(x=>x.id===s);
+        if(def){sh={id:s,kind:"console",name:def.name,emulatorName:def.emulatorName,hasEmulator:false,games:[]};out.splice(out.indexOf(pc),0,sh)}if(sh)sh.games.push(g);else stay.push(g)}
+      const mine=[{kind:"steam",source:"quiver",id:"quiver-quarantine",...own("quiver-quarantine","Quarantine"),art:{}},...stay];
       out.push({id:"custom",kind:"steam",name:"Custom",games:mine})}
     const apps=["stremio","nuvio"].filter(a=>config.apps[a].enabled&&config.apps[a].path).map(a=>({kind:"app",id:"app-"+a,appId:a,title:a==="stremio"?"Stremio":"Nuvio",path:config.apps[a].path,art:{}}));
     if(apps.length)out.push({id:"media",kind:"apps",name:"Media",games:apps});
@@ -175,7 +191,7 @@ window.boxshelf={
   findIpl:async()=>({found:[],userDir:root+"\\Dolphin\\User",usaFolder:root+"\\Dolphin\\User\\GC\\USA"}),
   openIplFolder:async()=>"",
   checkPaths:async list=>list.map(p=>({path:p,file:/\.exe$/i.test(p),dir:!/\.exe$/i.test(p)})),
-  launchGame:async()=>{setTimeout(()=>onExit({code:0}),4000);return {}},
+  launchGame:async(sys,file)=>{window.__launched=(window.__launched||[]).concat({sys,file}) /* (beta.14) which console a game was started as (Add to… test) */;setTimeout(()=>onExit({code:0}),4000);return {}},
   launchEmulator:async()=>{setTimeout(()=>onExit({code:0}),3000);return {}},
   launchApp:async()=>{setTimeout(()=>onExit({code:0}),3000);return {}},
   // (beta.12) ?watch=1: Seamless play watches the Steam game (it "ends" 3 s later, or ?watch=giveup: it never shows up),
@@ -193,43 +209,84 @@ window.boxshelf={
     bg:"data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b2a5a"/><stop offset="1" stop-color="#5fb4f0"/></linearGradient></defs><rect width="160" height="90" fill="url(#g)"/><circle cx="120" cy="24" r="10" fill="#fff6c8"/><path d="M0 70 Q40 52 80 68 T160 64 V90 H0Z" fill="#1d4f2a"/></svg>')}])),
   customThemeCreate:async(file,name)=>{const l=window.__mockCustom||[];const id="custom-picked-"+(l.length+1);l.push({id,name:name||"Picked "+(l.length+1),accent:"#d66a3a",shade:.35,blur:true,glow:.35,sys:{},bg:l[0]?l[0].bg:""});window.__mockCustom=l;return id},
   customThemesOpen:async()=>true,
+  // (beta.14) Make a theme: save / remove / share / add a shared one, on the same pretend list (window.__mockShared counts shares)
+  customThemeSave:async o=>{const l=window.__mockCustom||(window.__mockCustom=[]),j=(o&&o.json)||{};let t=o&&o.id?l.find(x=>x.id===o.id):null;
+    if(!t){if(!(o&&o.files&&o.files.background))throw new Error("Choose a picture for your theme first.");t={id:"custom-made-"+(l.length+1),sys:{},bg:l[0]?l[0].bg:"",folder:"Made "+(l.length+1)};l.push(t)}
+    Object.assign(t,{name:String(j.name||"My theme").slice(0,40),accent:j.accent||"#d66a3a",shade:+j.shade||0,glow:j.glow!=null?+j.glow:.35,soften:+j.soften||0,blur:+j.soften>0,vignette:+j.vignette||0,focus:j.focus||"center",floor:j.floor||"glow",
+      motion:j.motion||"none",particles:j.particles||"none",scanlines:!!j.scanlines,sound:j.sound||"",music:j.music||"",when:j.when||"always",shelves:j.shelves||[]});window.__mockSaved=(window.__mockSaved||0)+1;return t.id},
+  customThemeRemove:async id=>{const l=window.__mockCustom||[];const i=l.findIndex(x=>x.id===id);if(i>=0)l.splice(i,1);return true},
+  customThemeExport:async id=>{window.__mockShared=(window.__mockShared||0)+1;return root+"\\Desktop\\"+id+" (Boxshelf theme).zip"},
+  customThemePreviewUrl:async file=>(window.__mockCustom&&window.__mockCustom[0]&&window.__mockCustom[0].bg)||null,
+  customThemeImport:async file=>{const l=window.__mockCustom||(window.__mockCustom=[]);const id="custom-shared-"+(l.length+1);l.push({id,name:"Shared "+(l.length+1),accent:"#3ad1a0",shade:.3,blur:false,glow:.35,sys:{},bg:l[0]?l[0].bg:""});return id},
   setTheme:async()=>{throw new Error("Preview mode: logos work in the desktop app")},
   removeTheme:async()=>{},
   // Find a logo: drawn stand-ins at the real files' sizes (960px renders: wide black wordmark, square symbol, tall stack, a broken one). window.__mockLogos = "offline" tries that state
-  findLogos:async id=>{await new Promise(r=>setTimeout(r,350));const e=window.__mockLogos;if(e==="offline")return{ok:true,list:[],offline:true};
+  findLogos:async(id,more)=>{await new Promise(r=>setTimeout(r,350));const e=window.__mockLogos;if(e==="offline")return more?{ok:false,error:"Couldn't reach Wikimedia Commons. Check the internet connection and try again.",offline:true}:{ok:true,list:[],offline:true};
+    if(more){const word=String(id||"").toUpperCase(),s=(t,f)=>"data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300"><text x="480" y="200" font-family="Arial Black,Arial" font-weight="900" font-size="150" text-anchor="middle" fill="${f}">${t}</text></svg>`);
+      return{ok:true,list:[{key:"cs-"+id+"-0",source:"commons",label:`${word} logo (search)`,licence:"Public domain",by:"",preview:s(word,"#3cf")},{key:"cs-"+id+"-1",source:"commons",label:`${word} wordmark`,licence:"CC BY 4.0",by:"A. Maker",preview:s(word.toLowerCase(),"#fc3")}],offline:false}}
     const word=String(id||"").toUpperCase(),svg=(w,h,fill,txt,bg)=>"data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${bg?`<rect width="${w}" height="${h}" rx="${h/6}" fill="${bg}"/>`:""}<text x="${w/2}" y="${h*0.68}" font-family="Arial Black,Arial" font-weight="900" font-size="${Math.min(h*0.7,w/(String(txt||word).length*0.7))}" text-anchor="middle" fill="${fill}">${txt||word}</text></svg>`);
     const list=[{key:"cm-"+id+"-0",source:"commons",label:`${word} logo`,licence:"Public domain",by:"",preview:svg(960,163,"#111")},{key:"cm-"+id+"-1",source:"commons",label:`${word} symbol`,licence:"CC0",by:"",preview:svg(960,960,"#7b6cff","◆")},
       {key:"cm-"+id+"-2",source:"commons",label:`${word} logo, stacked`,licence:"Public domain",by:"",preview:svg(600,960,"#fff","S","#e60012")},{key:"cm-"+id+"-3",source:"commons",label:"Broken file",licence:"Public domain",by:"",preview:"data:image/png;base64,AAAA"}];
     return{ok:true,list,offline:false}},
-  useLogo:async(id,key)=>{const L=await window.boxshelf.findLogos(id);const c=L.list.find(x=>x.key===key);if(!c)return{ok:false,error:"That logo is no longer offered."};const T=window.__mockThemes=window.__mockThemes||{};const t=T[id]=T[id]||{};t.logoPrev=true;t.logo=URL.createObjectURL(new Blob([decodeURIComponent(c.preview.split(",")[1])],{type:"image/svg+xml"}));return{ok:true}}, /* (a blob: address, as the CSP lets the logo be read; the app hands over bsfile: ones) */
+  findLogoWeb:async()=>({ok:true,dir:"Downloads"}),  /* (beta.14, #1) ?pspad=1: Windows has a PlayStation pad that the page never sees; window.__padFb({b,d}) presses its buttons */
+  ...(/[?&]pspad=1/.test(location.search)?{padsPresent:async()=>[{vendor:"054c",product:"0ce6",style:"ps"}],padFallback:async on=>{window.__padFbOn=!!on;return{ok:true,on:!!on}},onPadFallbackButton:fn=>{window.__padFb=fn}}:{}),onLogoInstalled:fn=>{window.__mockLogoInstalled=fn},
+  useLogo:async(id,key)=>{const L=await window.boxshelf.findLogos(id,/^cs-/.test(key));const c=L.list.find(x=>x.key===key);if(!c)return{ok:false,error:"That logo is no longer offered."};const T=window.__mockThemes=window.__mockThemes||{};const t=T[id]=T[id]||{};t.logoPrev=true;t.logo=URL.createObjectURL(new Blob([decodeURIComponent(c.preview.split(",")[1])],{type:"image/svg+xml"}));return{ok:true}}, /* (a blob: address, as the CSP lets the logo be read; the app hands over bsfile: ones) */
   restoreLogo:async id=>{const T=window.__mockThemes||{},t=T[id];if(!t||!t.logoPrev)throw new Error("No earlier logo to bring back.");t.logo=null;t.logoPrev=false;return true},
   saveConsoleFit:async(id,p)=>{(window.__fitSaves=window.__fitSaves||[]).push([id,p]);return p},
   openThemeFolder:async()=>{},
   pathForFile:()=>null,
   toggleFullscreen:async()=>{},
   quit:async()=>{},power:async k=>{console.log("power",k);return true},chooseArt:async id=>({ok:false,canceled:true}),gameEmulator:async id=>{config.games=config.games||{};if(config.games[id])delete config.games[id];else config.games[id]={emulator:"C:/Emus/shadPS4-perf/shadps4.exe"};return {ok:true,games:JSON.parse(JSON.stringify(config.games))}},
+  // (beta.14, ?moreshots=1) Details' extra screenshots: the list given, then four more, six in all (main/moreshots.js)
+  ...(/[?&]moreshots=1/.test(location.search)?{moreShots:async o=>{window.__moreShots=(window.__moreShots||[]).concat([o]);await new Promise(r=>setTimeout(r,300));const add=Array.from({length:4},(_,k)=>"data:image/svg+xml,"+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="hsl(${200+k*30},60%,35%)"/></svg>`));return (o.shots||[]).concat(add).slice(0,6)}}:{}),
   // (beta.12) Details → Status, kept per game as main does (cfg.games[id].status)
   gameStatus:async(id,status)=>{config.games=config.games||{};const k=String(id),o=Object.assign({},config.games[k]);if(["playing","finished","notstarted","abandoned"].includes(status))o.status=status;else delete o.status;if(Object.keys(o).length)config.games[k]=o;else delete config.games[k];window.__statusSaved=(window.__statusSaved||0)+1;return {ok:true,games:JSON.parse(JSON.stringify(config.games))}},
   onExited:fn=>{onExit=fn},
   // 1.55 Settings APIs (fakes): displays, backup / restore, problem report, play history, account status
   listDisplays:async()=>[{id:"1",label:"Display 1 — 1920×1080 (main)",primary:true,current:true,width:1920,height:1080},{id:"2",label:"Display 2 — 3840×2160",primary:false,current:false,width:3840,height:2160}],
   moveToDisplay:async id=>{(window.__moves=window.__moves||[]).push(id);return true},
-  backupSettings:async()=>({ok:true,file:"C:\\Users\\you\\Documents\\Boxshelf settings.json"}),
+  backupSettings:async o=>{window.__backupArg=o||null;return {ok:true,file:"C:\\Users\\you\\Documents\\Boxshelf settings.json"}},
   restoreSettings:async()=>{config=Object.assign(JSON.parse(JSON.stringify(config)),{ui:Object.assign({},config.ui,{theme:"aurora"})});(apiHooks.lib||[]).forEach(f=>f({restored:1}));(apiHooks.hist||[]).forEach(f=>f({restored:1}));return {ok:true}},
   reportProblem:async()=>({ok:true,file:"C:\\Users\\you\\Desktop\\Boxshelf problem report.zip"}),
   // (1.82) the beta page: a newer beta is out (tests check the Settings rows and the shelf's notice)
   updateCheck:async()=>({current:"1.82.0-beta.1",latest:"1.82.0-beta.2",newer:true,url:"https://example.com/releases/beta.2",notes:"## What's new\n- **Video previews** in Details\n- A new [Details](https://example.com) page\n- <b>Ten</b> more consoles",links:{page:"https://example.com/",releases:"https://example.com/releases",issues:"https://example.com/issues/new/choose"},checkedAt:Date.now()}),
   onUpdate:cb=>{if(/[?&]update=1/.test(location.search))setTimeout(()=>cb({current:"1.82.0-beta.1",latest:"1.82.0-beta.2",newer:true,url:"https://example.com/releases/beta.2",notes:"## What's new\n- **Video previews** in Details\n- A new [Details](https://example.com) page\n- <b>Ten</b> more consoles\n- Fourth item"}),4000)}, // only on a test page that asks for it
+  // (beta.14) Update now: ?updnow=1 makes this a Boxshelf that can update itself (else the download page, as before);
+  // ?updslow=1 keeps the download at 40%. window.__upd counts the presses. ?keepundo=1: a safety copy from the last update
+  ...(()=>{const q=location.search,can=/[?&]updnow=1/.test(q),L=[];let s={state:"idle"},t=0;const view=()=>Object.assign({},s,{support:can,why:can?"":"Update now works in the downloaded Boxshelf. Get the new one from its page instead.",selfRestart:true});
+    const set=x=>{s=x;L.forEach(f=>{try{f(view())}catch{}});return view()};const U=()=>window.__upd=window.__upd||{starts:0,cancels:0,installs:0};
+    return {updateInfo:async()=>view(),onUpdateState:fn=>{L.push(fn);return ()=>{const i=L.indexOf(fn);if(i>=0)L.splice(i,1)}},
+      updateStart:async()=>{U().starts++;if(!can)return set({state:"error",error:view().why});if(s.state==="downloading"||s.state==="ready")return view();set({state:"downloading",version:"1.82.0-beta.2",pct:0});
+        clearInterval(t);t=setInterval(()=>{if(s.state!=="downloading"){clearInterval(t);return}const p=Math.min(100,s.pct+20);if(/[?&]updslow=1/.test(q)&&p>40)return;if(p>=100){clearInterval(t);set({state:"ready",version:"1.82.0-beta.2"})}else set({state:"downloading",version:"1.82.0-beta.2",pct:p})},300);return view()},
+      updateCancel:async()=>{U().cancels++;clearInterval(t);return set({state:"idle"})},
+      updateInstall:async()=>{if(s.state!=="ready")throw new Error("The update isn't downloaded yet.");U().installs++;return set({state:"installing",version:s.version})},
+      keepInfo:async()=>({safety:/[?&]keepundo=1/.test(q)?{version:"1.82.0-beta.13",at:Date.now()-864e5,files:7}:null,problems:[],current:"1.82.0-beta.14"}),
+      keepUndo:async()=>{window.__keepUndo=(window.__keepUndo||0)+1;return {ok:true,version:"1.82.0-beta.13"}}}})(),
+  // (beta.14) first run: ?bring=1 has another Boxshelf's finished setup on this PC; Copy it over "restarts" into the shelf
+  ...(()=>{const L=[];return {
+    bringFind:async()=>(/[?&]bring=1/.test(location.search)&&!config.setupDone?{version:"1.82.0-beta.13",dataDir:"D:\\Games\\Boxshelf\\data",lastRun:Date.now()-3600e3}:null),
+    // ?bringpick=1: nothing found, and choosing the old folder finds a beta.12 setup (?bringpick=bad: a folder without one)
+    bringChoose:async()=>{if(config.setupDone)return null;window.__bringChose=(window.__bringChose||0)+1;if(/[?&]bringpick=bad/.test(location.search))throw new Error("That folder has no finished Boxshelf setup. Choose the folder your old Boxshelf ran from (it has a \"data\" folder in it).");
+      return /[?&]bringpick=1/.test(location.search)?{version:"1.82.0-beta.12",dataDir:"C:\\Games\\Boxshelf-1.82.0-beta.12-windows\\data",lastRun:Date.now()-86400e3}:null},
+    bringSize:async()=>734003200,bringSkip:async()=>{window.__bringSkip=(window.__bringSkip||0)+1;return true},
+    onBringProgress:fn=>{L.push(fn);return ()=>{}},
+    bringCopy:async extras=>{window.__bring={extras:!!extras};for(let i=1;i<=4;i++){await new Promise(r=>setTimeout(r,150));L.forEach(f=>f({done:i*25,total:100}))}
+      setTimeout(()=>location.replace(location.pathname+location.search.replace(/([?&])bring=1/,"$1shelf=1")),500);return {ok:true}}}})(),
   clearHistory:async()=>{(apiHooks.hist||[]).forEach(f=>f({cleared:1}));return {ok:true}},
   onHistoryChanged:fn=>{(apiHooks.hist=apiHooks.hist||[]).push(fn)},
   onLibraryChanged:fn=>{(apiHooks.lib=apiHooks.lib||[]).push(fn)},
   apiStatus:async()=>({ra:config.ra&&config.ra.user&&config.ra.key?{state:"ok",at:Date.now(),msg:"Connected",user:config.ra.user,points:1234}:{state:"none",at:0,msg:"Not set up"},fanart:config.keys&&config.keys.fanart?{state:"fail",at:Date.now(),msg:"not accepted"}:{state:"none",at:0,msg:"Not set up"},steamgriddb:config.keys&&config.keys.steamgriddb?{state:"ok",at:Date.now(),msg:"Key works"}:{state:"none",at:0,msg:"Not set up"},
     // ScreenScraper (1.71): an account with no developer login answers "developer login not accepted" (window.__ssNoDev)
-    screenscraper:config.keys&&config.keys.ssUser&&config.keys.ssPass?(window.__ssNoDev&&!config.keys.ssDevId?{state:"fail",at:Date.now(),msg:"developer login not accepted"}:{state:"ok",at:Date.now(),msg:"Working",left:19876}):{state:"none",at:0,msg:"Not set up"}}),
+    screenscraper:config.keys&&config.keys.ssUser&&config.keys.ssPass?(window.__ssNoDev&&!config.keys.ssDevId?{state:"fail",at:Date.now(),msg:"developer login not accepted"}:{state:"ok",at:Date.now(),msg:"Working",left:19876}):{state:"none",at:0,msg:"Not set up"},
+    igdb:config.keys&&config.keys.igdbId&&config.keys.igdbSecret?{state:"ok",at:Date.now(),msg:"Key works"}:{state:"none",at:0,msg:"Not set up"}}), /* (beta.14) */
+  qrCode:async t=>`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29" data-for="${String(t).replace(/[^a-z0-9:/.]/gi,"")}"><rect width="29" height="29" fill="#fff"/><rect x="2" y="2" width="7" height="7"/><rect x="20" y="2" width="7" height="7"/><rect x="2" y="20" width="7" height="7"/></svg>`, /* (beta.14) Settings › IGDB's QR: a pretend one */
+  // (beta.14, ?moreshots=1) IGDB's game info for Details: a description, genres and a developer (window.__moreInfo lists the asks)
+  ...(/[?&]moreshots=1/.test(location.search)?{moreInfo:async o=>{window.__moreInfo=(window.__moreInfo||[]).concat([o]);await new Promise(r=>setTimeout(r,200));return {overview:"IGDB's description of "+o.title+".",genres:"Platform; Adventure",dev:"IGDB Studio",release:"2001-09-14",year:2001,series:"IGDB Series"}}}:{}),
   clipboardText:async()=>String(window.__bsClip||"").split(/\r?\n/)[0].trim(), // (beta.9: tests set window.__bsClip)
   testApi:async s=>{await wait(300);const st=await window.boxshelf.apiStatus();(apiHooks.api||[]).forEach(f=>f(st));return st[s]},
   onApiStatus:fn=>{(apiHooks.api=apiHooks.api||[]).push(fn)},
-  raEmulators:async()=>[{system:"gc",emulator:"Dolphin",state:"ok",user:"paul"},{system:"wii",emulator:"Dolphin",state:"off",user:"paul",detail:"Achievements are turned off in Dolphin"},{system:"psp",emulator:"PPSSPP",state:"signed-out"},{system:"ps2",emulator:"PCSX2",state:"no-emulator"}],
+  raEmulators:async()=>[{system:"gc",emulator:"Dolphin",exeKey:"dolphin",state:"ok",user:"player",popups:true},{system:"wii",emulator:"Dolphin",exeKey:"dolphin",state:"ok",user:"player",popups:true},{system:"psp",emulator:"PPSSPP",exeKey:"ppsspp",state:"signed-out"},{system:"ps2",emulator:"PCSX2",state:"no-emulator"},
+    {system:"snes",emulator:"RetroArch",exeKey:"retroarch",state:"ok",user:"player",popups:false},{system:"n64",emulator:"RetroArch",exeKey:"retroarch",state:"ok",user:"player",popups:false},{system:"psx",emulator:"DuckStation",exeKey:"duck",state:"off",user:"player",detail:"Achievements are turned off in DuckStation"},{system:"nds",emulator:"melonDS",exeKey:"melon",state:"no-ra"},{system:"x360",emulator:"Xenia",exeKey:"xenia",xbox:true,state:"ok",user:"",popups:false},{system:"ps3",emulator:"RPCS3",exeKey:"rpcs3",state:"ok",user:"",popups:true}],emuPopups:async()=>({ok:true,changed:true}),
   // the rest of preload.js, as neutral fakes (empty lists, no account, nothing opened) so every screen runs here the way it
   // does with nothing set up: a call the renderer makes must never be a TypeError in the preview (test scenarios patch these)
   log:()=>{},uiBusy:()=>{},homeMeta:()=>{},shelfInfo:()=>{},openShelfMenu:()=>{},shelfMenuKey:()=>{},
@@ -248,18 +305,48 @@ window.boxshelf={
   openExternal:async()=>true,openSongsFolder:async()=>true,openLibraryFolder:async()=>true,openAppFolder:async()=>true,restoreEmuSettings:async()=>[],
   // (beta.7) Set up for me: a pretend state per emulator (RetroArch, Dolphin, DuckStation here)
   ...(()=>{const done={},coreGot={},kind=id=>{const sc=config.systems[id];if(!sc||!sc.emulator)return null;const n=sc.emulator.split("\\").pop();return /retroarch/i.test(n)?"RetroArch":/dolphin/i.test(n)?"Dolphin":/duckstation/i.test(n)?"DuckStation":"other"};
-    const G={RetroArch:["quit","hotkeys","controller","bios","resume"],Dolphin:["controller","graphics"],DuckStation:["quit","hotkeys","controller","bios","graphics"]};
-    return {emuSetupStatus:async id=>{const k=kind(id);if(!k)return {supported:false,none:true};if(k==="other")return {supported:false};return {supported:true,kind:k.toLowerCase(),name:k,ready:true,used:k==="Dolphin",done:done[k]||null,groups:G[k],skipped:k==="Dolphin"?[]:[{group:"bios",why:"its BIOS folder already has files"}].slice(0,k==="DuckStation"?1:0),preset:"balanced",
+    const G={RetroArch:["quit","hotkeys","controller","bios","resume","picture"],Dolphin:["controller","graphics","picture"],DuckStation:["quit","hotkeys","controller","bios","graphics","picture"]};
+    // (beta.14) Picture: which choices each one has, and the ones it hasn't (main/emusetup.js pictureOf)
+    const PIC={RetroArch:{shape:true,wide:false,sharp:true,crt:true},Dolphin:{shape:true,wide:false,sharp:false,crt:false},DuckStation:{shape:true,wide:true,sharp:true,crt:true}};
+    const PICNO={RetroArch:[{group:"picture",what:"Widescreen",why:"a wide picture would only stretch the games"}],Dolphin:[{group:"picture",what:"Widescreen",why:"Wii games are wide by themselves; GameCube ones need a code for each game"},{group:"picture",what:"Sharp pixels",why:"Dolphin has no setting for it"},{group:"picture",what:"Retro TV look",why:"not offered for Dolphin yet"}],DuckStation:[]};
+    return {emuSetupStatus:async id=>{const k=kind(id);if(!k)return {supported:false,none:true};if(k==="other")return {supported:false};return {supported:true,kind:k.toLowerCase(),name:k,ready:true,used:k==="Dolphin",done:done[k]||null,groups:G[k],skipped:[...(k==="Dolphin"?[]:[{group:"bios",why:"its BIOS folder already has files"}].slice(0,k==="DuckStation"?1:0)),...PICNO[k]],preset:"balanced",picture:PIC[k],
         core:k==="RetroArch"?{id:id+"_core",name:{snes:"Snes9x",gba:"mGBA",megadrive:"Genesis Plus GX",dreamcast:"Flycast"}[id]||"Core",installed:!!coreGot[id]}:null,
         bios:id==="gba"?{need:"opt",note:"games run without it",ok:true,files:[{name:"gba_bios.bin",region:"",state:"missing"}],dir:root+"\\RetroArch-Win64\\system"}:id==="psx"?{need:"any",ok:true,files:[],dir:root+"\\DuckStation\\bios"}:null}},
       getCore:async id=>{await wait(700);coreGot[id]=true;return {ok:true,name:"Core"}},openBiosFolder:async()=>root+"\\BIOS",
       emuSetupPlan:async id=>{const k=kind(id);return {ok:true,changes:(G[k]||[]).map(g=>({group:g,file:root+"\\"+k+"\\settings.ini",key:"["+g+"] Example",value:"on"})),skipped:[]}},
-      emuSetupApply:async(id,on)=>{const k=kind(id);await wait(300);const a=(G[k]||[]).filter(g=>on?on[g]:g!=="resume");done[k]={at:Date.now(),groups:a};return {ok:true,applied:a,skipped:[]}},
+      emuSetupApply:async(id,on)=>{const k=kind(id);await wait(300);const a=(G[k]||[]).filter(g=>on?on[g]:g!=="resume"&&g!=="picture");done[k]={at:Date.now(),groups:a};return {ok:true,applied:a,skipped:[]}},
       emuSetupUndo:async id=>{const k=kind(id),had=!!done[k];delete done[k];return {ok:true,restored:had?["settings.ini"]:[]}},
-      emuSetupAuto:async()=>{await wait(400);const names=[...new Set(Object.keys(config.systems).filter(id=>config.systems[id].enabled!==false).map(kind).filter(k=>k&&k!=="other"))];names.filter(k=>k!=="Dolphin").forEach(k=>{done[k]={at:Date.now(),groups:G[k].filter(g=>g!=="resume")}});
-        return {done:names.filter(k=>k!=="Dolphin"),later:[],left:names.filter(k=>k==="Dolphin"),emuSetup:{auto:true,graphics:"auto",resume:false,pending:[]}}}}})(),
+      emuSetupAuto:async()=>{await wait(400);const names=[...new Set(Object.keys(config.systems).filter(id=>config.systems[id].enabled!==false).map(kind).filter(k=>k&&k!=="other"))];names.filter(k=>k!=="Dolphin").forEach(k=>{done[k]={at:Date.now(),groups:G[k].filter(g=>g!=="resume"&&g!=="picture")}});
+        return {done:names.filter(k=>k!=="Dolphin"),later:[],left:names.filter(k=>k==="Dolphin"),emuSetup:{auto:true,graphics:"auto",resume:false,shape:"auto",sharp:false,crt:false,pending:[]}}}}})(),
   getAutostart:async()=>({enabled:false}),setAutostart:async v=>({enabled:!!v,how:"shortcut"}),
   songs:async()=>[],songRead:async()=>{throw new Error("Preview mode")},
+  // (beta.14) Settings > Sound: pretend sound packs, Kenney packs, real instruments and Your music (main/soundpacks.js).
+  // Every sound is a short made-up WAV (a soft tone), so the page can play and decode them like the real ones.
+  ...(()=>{const wav=(midi,secs)=>{const r=22050,n=Math.round(r*(secs||.3)),b=new ArrayBuffer(44+n*2),v=new DataView(b),s=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i))};
+      s(0,"RIFF");v.setUint32(4,36+n*2,true);s(8,"WAVEfmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,r,true);v.setUint32(28,r*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);s(36,"data");v.setUint32(40,n*2,true);
+      const f=440*Math.pow(2,((midi||69)-69)/12);for(let i=0;i<n;i++)v.setInt16(44+i*2,Math.round(Math.sin(2*Math.PI*f*i/r)*Math.exp(-4*i/n)*9000),true);return new Uint8Array(b)};
+    const packs=[{id:"wii-menu",name:"Wii menu",matches:{move:"cursor.wav",open:"select.wav",back:"cancel.wav",play:"start.wav",problem:"",music:""},where:["wii"],files:["cancel.wav","cursor.wav","select.wav","start.wav"],unsupported:[],kenney:"",bytes:52000}];
+    const MS={"cursor.wav":84,"select.wav":79,"cancel.wav":72,"start.wav":76,"decide.wav":81,"boot.wav":67,"error.wav":55};
+    const KN={"kenney-clicky":["Clicky",{move:"click3.ogg",open:"switch2.ogg",back:"switch3.ogg",play:"switch30.ogg",problem:"",music:""}],"kenney-soft":["Soft UI",{move:"click_003.ogg",open:"confirmation_001.ogg",back:"back_002.ogg",play:"maximize_006.ogg",problem:"error_004.ogg",music:""}],"kenney-arcade":["Arcade",{move:"pepSound1.ogg",open:"twoTone1.ogg",back:"lowDown.ogg",play:"powerUp2.ogg",problem:"lowThreeTone.ogg",music:""}]};
+    const L={packs:[],kenney:[],inst:[]},emit=(k,d)=>L[k].forEach(f=>{try{f(d)}catch{}});
+    let inst=/[?&]realinst=1/.test(location.search);const INST={piano:[48,60,72,84],harp:[48,65,72,86],violin:[55,67,79],flute:[60,72,84],clarinet:[50,62,74],marimba:[48,65,72,96],bells:[84,96,108]};
+    const ps2=()=>({id:"ps2-menu",name:"PS2 menu",matches:{move:"cursor.wav",open:"decide.wav",back:"cancel.wav",play:"boot.wav",problem:"error.wav",music:""},where:["psx","ps2"],files:["boot.wav","cancel.wav","cursor.wav","decide.wav","error.wav"],unsupported:["bgm.at3"],kenney:"",bytes:61000});
+    const add=p=>{const i=packs.findIndex(x=>x.id===p.id);if(i>=0)packs[i]=p;else packs.push(p);emit("packs",{id:p.id});return JSON.parse(JSON.stringify(p))};
+    return {soundPacks:async()=>JSON.parse(JSON.stringify(packs)),
+      soundPackRead:async(id,file)=>{const p=packs.find(x=>x.id===id);if(!p||!p.files.includes(file))throw new Error("No such sound in that pack.");return wav(MS[file]||((file.length*7)%24+60),.25)},
+      soundPackImport:async paths=>{await wait(200);return add(ps2())},soundPackPick:async kind=>{await wait(200);return add(ps2())},
+      soundPackUpdate:async(id,patch)=>{const p=packs.find(x=>x.id===id);if(!p)throw new Error("That pack is gone.");if(patch.name)p.name=String(patch.name).slice(0,60);if(patch.matches)Object.assign(p.matches,patch.matches);if(patch.where)p.where=patch.where;emit("packs",{id});return JSON.parse(JSON.stringify(p))},
+      soundPackRemove:async id=>{const i=packs.findIndex(x=>x.id===id);if(i>=0)packs.splice(i,1);emit("packs",{id,removed:true});return i>=0},
+      soundPackExport:async id=>"C:\\Users\\Player\\Documents\\"+id+".zip",soundPackFolder:async()=>true,
+      onSoundPacks:fn=>{L.packs.push(fn);return()=>{L.packs=L.packs.filter(f=>f!==fn)}},
+      kenneyGet:async id=>{if(!KN[id])return {ok:false};setTimeout(()=>{const k=KN[id];const files=Object.values(k[1]).filter(Boolean).sort();files.forEach(f=>MS[f]=MS[f]||70+files.indexOf(f)*3);emit("kenney",{id,done:true,pack:add({id,name:k[0],matches:k[1],where:"all",files,unsupported:[],kenney:id,bytes:400000})})},700);return {ok:true,waiting:true}},
+      kenneyStop:async()=>true,onKenney:fn=>{L.kenney.push(fn);return()=>{L.kenney=L.kenney.filter(f=>f!==fn)}},
+      instStatus:async()=>inst?{got:true,bytes:4600000,insts:INST,size:"10 MB"}:{got:false,bytes:0,insts:{},size:"10 MB"},
+      instDownload:async()=>{for(let i=1;i<=5;i++){await wait(120);emit("inst",{done:i*2e6,total:1e7})}inst=true;return {got:true,bytes:4600000,insts:INST,size:"10 MB"}},
+      instRemove:async()=>{inst=false;return {got:false,bytes:0,insts:{},size:"10 MB"}},instRead:async(k,m)=>wav(+m,1.2),
+      onInstProgress:fn=>{L.inst.push(fn);return()=>{L.inst=L.inst.filter(f=>f!==fn)}},
+      musicList:async()=>[{name:"Evening walk",file:"Evening walk.mp3",midi:false},{name:"Harbour lights",file:"Harbour lights.ogg",midi:false},{name:"Lullaby",file:"Lullaby.mid",midi:true}],
+      musicRead:async f=>wav(60,2),openMusicFolder:async()=>true,musicAdd:async()=>2,songsFromDownloads:async take=>3,findMidiOnline:async()=>true}})(),
   library:async()=>/[?&]mags=1/.test(location.search)?[1,2,3].map(n=>({id:"np"+n,kind:"magazine",type:"pdf",title:`Nintendo Power Issue ${n} (198${7+n})`,series:"Nintendo Power"})).concat([{id:"gi1",kind:"magazine",type:"pdf",title:"Game Informer Issue 1 (1991)",series:"Game Informer"}]):[] /* (beta.11 ?mags=1: a file box of three issues and one on its own) */,libraryCover:async()=>null,libraryPages:async()=>[],stremioLibrary:async()=>[],stremioPoster:async()=>null,stremioDetails:async()=>null,
   tvScan:async()=>true,tvList:async()=>[],tvAdFor:async()=>null,tvLocal:async()=>null,
   manualCoverage:async()=>consoles.filter(c=>config.systems[c.id]&&config.systems[c.id].romDirs.length).map(c=>({id:c.id,name:c.name,total:titles[c.id].length,have:0,low:0})),

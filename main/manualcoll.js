@@ -5,7 +5,7 @@
 // manual is never swapped for a noticeably blurrier one.
 const fs = require('fs');
 const path = require('path');
-const { scanSystem } = require('./scanner');
+const { scanSystemAsync } = require('./scanner');
 const { artBase, manualDirFor: artDirFor } = require('./paths'); // manuals: their own folder in an art library
 const M = require('./manuals');
 const spreads = require('./spreads');
@@ -314,7 +314,7 @@ async function run(systems, opts = {}) {
     const cols = COLLECTIONS[def.id]; if (!cols) continue;
     if (opts.skipSystem && opts.skipSystem(def)) continue; // Manual Studio: a console set to another language / region (the collections are English, North American)
     await new Promise(r => setImmediate(r)); // (beta.9: a breath between consoles)
-    let games = []; try { games = scanSystem(def, cfg).filter(g => !g.extra); } catch { continue; }
+    let games = []; try { games = (await scanSystemAsync(def, cfg)).filter(g => !g.extra); } catch { continue; } // (fs.promises: the sync scan held the app up)
     const idx = [];
     for (const col of cols) { try { idx.push({ col, ix: await index(col) }); } catch (e) { log('Manual collections:', col.id, 'unavailable', e.message); } }
     if (!idx.length) continue;
@@ -329,7 +329,7 @@ async function run(systems, opts = {}) {
       if (seen && !seen.src && seen.v === VERSION && (seen.err || seen.ix === INDEX_V) && Date.now() - seen.at < (seen.err ? 864e5 : INDEX_DAYS * 864e5)) continue; // (beta.9: a "none" from before the new collections looks again)
       let hit = null; for (const { col, ix } of idx) { const e = pick(ix.entries, g); if (e && !M.isRejected(key, 'coll:' + col.id + '/' + e.name)) { hit = { col, ix, e }; break; } } // never a copy the user marked as the wrong manual
       if (!hit) { m[key] = { v: VERSION, at: Date.now(), none: true, ix: INDEX_V }; continue; }
-      const has = manualFiles(artDirFor(cfg, g.file), artBase(g.file), ls).length > 0; // (ls: one listing per folder for this pass)
+      await ls.prime(artDirFor(cfg, g.file)); const has = manualFiles(artDirFor(cfg, g.file), artBase(g.file), ls).length > 0; // (ls: one listing per folder for this pass)
       jobs.push({ def, cfg, g, hit, key, prio: !has ? 0 : seen && seen.src ? 2 : 1 }); // missing first, then upgrades, then re-downloads
     }
   }

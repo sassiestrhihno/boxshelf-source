@@ -88,6 +88,7 @@ const VIDEO_FMT = ['136', '135', '134', '133', 'bv*[ext=mp4][vcodec^=avc1][heigh
 async function streamOf(id, audio) {
   const fmt = (audio ? AUDIO_FMT : VIDEO_FMT).map(f => f + '[protocol=https]').join('/');
   const j = JSON.parse(await run(['--no-warnings', '--no-playlist', '--quiet', '-f', fmt, '-j', '--', 'https://www.youtube.com/watch?v=' + id], 45000));
+  if (j && typeof j.title === 'string') titleSet(id, j.title); // (beta.14: the wrong-video guard reads it later, no second run)
   if (!j || !j.url || !/^https:\/\/[a-z0-9.-]+\.(googlevideo|youtube)\.com\//i.test(j.url)) throw new Error('no usable stream');
   const h = {}; for (const [k, v] of Object.entries(j.http_headers || {})) if (/^(user-agent|accept|accept-language|origin|referer)$/i.test(k)) h[k] = String(v);
   return { url: j.url, headers: h };
@@ -257,11 +258,72 @@ function rankResults(lines, title) {
   const want = twords(title); if (!want.length) return []; const got = [];
   for (const l of lines) { const [id, t = '', dur = ''] = l.split('\t'); if (!okId(id) || gone(id) || got.some(x => x.id === id)) continue; const d = +dur || 0;
     if (NOT_TRAILER.test(t) || (d && (d < 20 || d > 600))) continue;
-    const tw = new Set(twords(t)), hit = want.filter(w => tw.has(w)).length / want.length; if (hit < .6) continue;
+    if (!looksRight(t, title)) continue; /* (beta.14: the wrong-video guard: a demo disc or a top 10, or too few of the title's words) */
+    const tw = new Set(twords(t)), hit = want.filter(w => tw.has(w)).length / want.length;
     got.push({ id, s: hit + (/\btrailer\b/i.test(t) ? .5 : 0) + (/\b(official|launch|reveal|announce)/i.test(t) ? .2 : 0) }); }
   return got.sort((a, b) => b.s - a.s).slice(0, 5).map(x => x.id);
 }
 const pickResult = (lines, title) => rankResults(lines, title)[0] || null;
+// ---------- (beta.14) the wrong-video guard ----------
+// A video is taken for a game only when its title names the game: all of the title's words, or most of them (60%, as the
+// search always asked), or the whole of the title's main part ("Billy Hatcher" for "Billy Hatcher and the Giant Egg", the
+// part before ":", " - " or "and the") or of its subtitle ("Twilight Princess"). Regions, tags and punctuation don't count.
+// A compilation (a demo disc, "all games", a top 10, "every …") never is, unless the game's own title says so.
+// Words are compared without accents ("Pokémon" = "Pokemon", "Ōkami" = "Okami"), Roman numerals as numbers ("VIII" = "8"),
+// and numbers count: the game's numbers must be in the video's title ("Sonic Adventure" isn't "Sonic Adventure 2"). The part
+// after a possessive or a series name also counts ("Splinter Cell" for "Tom Clancy's Splinter Cell").
+const COMPILATION = /\b(demo dis[ck]s?|all (the )?games|top \d+|every|compilation|multi-?game|\d+ games in \d+)\b/i;
+const ROMAN = { ii: '2', iii: '3', iv: '4', v: '5', vi: '6', vii: '7', viii: '8', ix: '9', x: '10', xi: '11', xii: '12', xiii: '13', xiv: '14', xv: '15', xvi: '16', xvii: '17', xviii: '18', xix: '19', xx: '20' };
+const GSTOP = /^(the|of|and|a|an|for|edition|usa|europe|japan|en|fr|de|es|it|rev|disc)$/;
+const FRANCHISE = /^(tom clancy|sid meier|disney(?: pixar)?|marvel|lego|star wars|nickelodeon|dreamworks|pokemon|super mario|mario|kirby|yoshi|wario|donkey kong|sonic the hedgehog|final fantasy|dragon quest|kingdom hearts|metal gear(?: solid)?|resident evil|castlevania|mega ?man|the legend of zelda|zelda)(?:['’]s)?\b[\s:–—-]*/;
+const plain = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\s+/g, ' ').trim();
+const gwords = s => plain(s).replace(/['’]s\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').split(' ').map(w => ROMAN[w] || w).filter(w => w && (w.length > 1 || /^\d$/.test(w)) && !GSTOP.test(w));
+function looksRight(videoTitle, gameTitle) {
+  const want = gwords(gameTitle); if (!want.length) return true;
+  const vt = String(videoTitle || ''); if (COMPILATION.test(plain(vt)) && !COMPILATION.test(plain(gameTitle))) return false;
+  const tw = new Set(gwords(vt)), has = L => L.length > 0 && L.every(w => tw.has(w)), nums = want.filter(w => /^\d+$/.test(w));
+  const enough = L => L.length >= 2 || (L.length === 1 && /[a-z]/.test(L[0]) && L[0].length >= 5);
+  if (has(want) || (want.filter(w => tw.has(w)).length / want.length >= .6 && nums.every(w => tw.has(w)))) return true;
+  const g = plain(gameTitle);
+  // after a possessive ("Tom Clancy's …") or a series name ("Pokemon …"): the rest of the title, whole
+  const pos = (/^[^:]+?['’]s\s+(.+)$/.exec(g) || [])[1], fr = FRANCHISE.test(g) ? g.replace(FRANCHISE, '') : '';
+  if (pos) { const L = gwords(pos); if (L.length >= 2 && has(L)) return true; }
+  if (fr) { const L = gwords(fr); if (enough(L) && has(L)) return true; }
+  const parts = g.split(/\s*(?::|\s[-–—]\s|\band (?:the|his|her)\b)\s*/i).map(gwords).filter(L => L.length);
+  if (parts.length < 2) return false;
+  if (has(parts[0]) && enough(parts[0])) return true;
+  return parts.slice(1).some(L => L.length >= 2 && has(L));
+}
+// what each video is called, as YouTube says (from a clip, a search or titleOf): previews\youtube\titles.json
+let tMemo = null, tSaveT = null; const tFlights = new Map();
+const tFile = () => path.join(clipDir(), 'titles.json');
+function tLoad() { if (tMemo) return tMemo; try { tMemo = JSON.parse(fs.readFileSync(tFile(), 'utf8')) || {}; } catch { tMemo = {}; } if (typeof tMemo !== 'object' || Array.isArray(tMemo)) tMemo = {}; return tMemo; }
+function titleSet(id, t) {
+  if (!okId(id) || typeof t !== 'string' || !t.trim()) return; const m = tLoad(), v = t.replace(/\s+/g, ' ').trim().slice(0, 200); if (m[id] === v) return;
+  m[id] = v; const ks = Object.keys(m); if (ks.length > 3000) ks.slice(0, ks.length - 3000).forEach(k => delete m[k]);
+  clearTimeout(tSaveT); tSaveT = setTimeout(() => { tSaveT = null; try { fs.mkdirSync(clipDir(), { recursive: true }); const tmp = tFile() + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(tMemo)); fs.renameSync(tmp, tFile()); } catch {} }, 1000);
+  if (tSaveT.unref) tSaveT.unref();
+}
+const titleKnown = id => (okId(id) && typeof tLoad()[id] === 'string' ? tLoad()[id] : undefined);
+// a video's title: known, else asked of the helper (one run, waiting its turn with the searches). null: it can't be had now
+// (no helper, offline); a video that's gone is marked so (gone()); any other failure (a bot check) isn't asked again for
+// ten minutes
+const tFailAt = new Map();
+function titleOf(id) {
+  if (!okId(id)) return Promise.resolve(null); const k = titleKnown(id); if (k !== undefined) return Promise.resolve(k);
+  if (!supported() || !helperState().have || gone(id) || Date.now() < pausedTill || Date.now() - (tFailAt.get(id) || 0) < 10 * 60e3) return Promise.resolve(null);
+  if (tFlights.has(id)) return tFlights.get(id);
+  const p = sChain = sChain.then(async () => {
+    try { const out = await run(['--no-warnings', '--no-playlist', '--quiet', '--skip-download', '--print', '%(title)s', '--', 'https://www.youtube.com/watch?v=' + id], 30000);
+      const t = String(out || '').split(/\r?\n/).map(s => s.trim()).find(Boolean); if (!t) { tFailAt.set(id, Date.now()); return null; } titleSet(id, t); return tLoad()[id]; }
+    catch (e) { const m = String(e && e.message || e); log('Console trailers: title of', id, 'failed:', m.slice(0, 160));
+      if (GONE.test(m)) { try { fs.mkdirSync(clipDir(), { recursive: true }); fs.writeFileSync(path.join(clipDir(), id + '.none'), m.slice(0, 200)); } catch {} }
+      else if (OFFLINE.test(m)) pausedTill = Date.now() + 2 * 60e3;
+      else { tFailAt.set(id, Date.now()); if (tFailAt.size > 200) tFailAt.delete(tFailAt.keys().next().value); }
+      return null; }
+  });
+  tFlights.set(id, p); p.finally(() => tFlights.delete(id)); return p;
+}
 // the videos to try for a game, best first: what's remembered, else a search ([] for nothing)
 function searchList(title, sys, sysName) {
   if (!supported() || !helperState().have || !twords(title).length) return Promise.resolve([]);
@@ -272,7 +334,8 @@ function searchList(title, sys, sysName) {
     try {
       const q = `${String(title).replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\s+/g, ' ').trim()} ${sysName || ''} trailer`.slice(0, 150);
       const out = await run(['--no-warnings', '--flat-playlist', '--print', '%(id)s\t%(title)s\t%(duration)s', '--', 'ytsearch6:' + q], 30000);
-      const ids = rankResults(out.split(/\r?\n/).filter(Boolean), title);
+      const lines = out.split(/\r?\n/).filter(Boolean), ids = rankResults(lines, title);
+      for (const l of lines) { const [id, t] = l.split('\t'); if (ids.includes(id)) titleSet(id, t); } // (beta.14: the picker shows them by name)
       sLoad()[k] = { id: ids[0] || null, alts: ids.slice(1), at: Date.now() }; sSave(); log('Console trailers: searched', JSON.stringify(q), '→', ids.join(', ') || 'nothing that fits'); return ids;
     } catch (e) { log('Console trailers: search failed:', String(e && e.message || e).slice(0, 160)); return []; }
   });
@@ -297,4 +360,4 @@ function size() { try { return fs.readdirSync(clipDir()).filter(n => /\.(mp4|m4a
 function clear() { try { fs.rmSync(clipDir(), { recursive: true, force: true }); } catch {} }
 function status() { const h = helperState(); return { supported: supported(), helper: h.have, getting: !!helperFlight, ...size() }; }
 
-module.exports = { init, supported, status, helperState, getHelper, clip, cached, audio, idOfClip, clear, size, plan, boxes, sidx, gone, search, searchList, clipFromSearch, searchKnown, pickResult, rankResults, _setRun: f => { run = f; }, _fetch: f => { fetch = f; }, _force: v => { force = !!v; }, _reset: () => { failAt.clear(); asked.clear(); fails = 0; pausedTill = 0; updated = false; wantUpdate = false; sMemo = null; } };
+module.exports = { init, supported, status, helperState, getHelper, clip, cached, audio, idOfClip, clear, size, plan, boxes, sidx, gone, search, searchList, clipFromSearch, searchKnown, pickResult, rankResults, looksRight, titleOf, titleKnown, _setRun: f => { run = f; }, _fetch: f => { fetch = f; }, _force: v => { force = !!v; }, _reset: () => { failAt.clear(); asked.clear(); fails = 0; pausedTill = 0; updated = false; wantUpdate = false; sMemo = null; tMemo = null; tFailAt.clear(); } };

@@ -38,8 +38,15 @@
   }
   // the Art Studio's part tabs and its first row of versions
   const artTop = () => union([document.querySelector('#bss .bsa-parts'), ...[...document.querySelectorAll('#bss .bsa-card')].slice(0, 4)]);
-  // Settings' sidebar: Consoles, PC games and Custom games
-  const addRows = () => union([...document.querySelectorAll('#bss .bss-nav')].filter(e => /^(Consoles|PC games|Custom games)\b/.test(e.textContent.trim())));
+  // Settings' sidebar: Consoles, PC games and Custom games. (beta.14, Windows / Linux: Settings in eight tabs, so it's the
+  // Library tab and its PC games / Custom games / console rows; the Thor's Settings keeps the old sidebar entries)
+  const addRows = () => {
+    const old = [...document.querySelectorAll('#bss .bss-nav')].filter(e => /^(Consoles|PC games|Custom games)\b/.test(e.textContent.trim()));
+    if (old.length) return union(old);
+    const lib = [...document.querySelectorAll('#bss .bss-nav')].filter(e => shown(e) && /^Library\b/.test(e.textContent.trim()));
+    const rows = [...document.querySelectorAll('#bss .bss-row')].filter(e => { const n = e.querySelector('.nm'); return shown(e) && n && /^(Consoles|PC games|Custom games|Add games|Rescan)/i.test(n.textContent.trim()); });
+    return rows.length || lib.length ? union([...lib, ...rows.slice(0, 4)]) : null;
+  };
 
   // ---------- moving between the screens ----------
   async function toShelf() {
@@ -87,7 +94,7 @@
     { k: 'Leaving a game', t: 'Back to the shelf', p: 'Hold View and Menu together for a second and a half: the game closes and the shelf comes back. (In Steam’s Game Mode, the Steam button’s Exit game closes Boxshelf too.) If the controller acts oddly, set Boxshelf’s controller layout in Steam to Gamepad with mouse trackpad.',
       skip: () => !(window.bsPlatform && bsPlatform.os === 'linux'), enter: toShelf,
       keys: [[{ pad: ['⧉', '☰'], kbd: null, kbdText: 'In the game: its own quit key', padText: 'Hold' }, 'Close the game']] },
-    { k: 'Done', t: 'That’s the basics', p: 'The museum has a short tour of its own the first time you go in. Watch this one again from Settings · Shelf · Show the tour.', enter: toShelf, last: true,
+    { k: 'Done', t: 'That’s the basics', p: 'The museum has a short tour of its own the first time you go in. Watch this one again from Settings · ' + (window.bsPlatform && bsPlatform.os === 'android' ? 'Shelf' : 'Shelf & museum · More options') + ' · Show the tour.', enter: toShelf, last: true,
       keys: [[{ pad: ['⧉'], kbd: ['M'], padText: 'Hold' }, 'Museum']] },
   ];
 

@@ -793,7 +793,7 @@ body.pad-input .d-adv summary.pad-focus{border-radius:8px;width:max-content;padd
 .note-card{position:fixed;right:clamp(16px,2vw,36px);bottom:clamp(84px,11vh,120px);z-index:60;width:min(460px,calc(100% - 32px));box-sizing:border-box;padding:clamp(18px,2.2vh,24px) clamp(20px,1.8vw,26px);border-radius:20px;
   background:linear-gradient(180deg,rgba(18,21,36,.97),rgba(11,13,22,.985));border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 60px rgba(0,0,0,.55);color:#f3f5fb;opacity:0;transform:translateY(14px);transition:opacity .26s ease,transform .26s cubic-bezier(.22,.9,.25,1)}
 .note-card.on{opacity:1;transform:none}
-.note-card.wide{left:50%;right:auto;bottom:auto;top:50%;width:min(640px,calc(100% - 32px));transform:translate(-50%,calc(-50% + 14px));box-shadow:0 0 0 100vmax rgba(4,6,12,.55),0 30px 80px rgba(0,0,0,.6)}
+.note-card.wide{left:50%;right:auto;bottom:auto;top:50%;width:min(500px,calc(100% - 32px));transform:translate(-50%,calc(-50% + 14px));box-shadow:0 0 0 100vmax rgba(4,6,12,.55),0 30px 80px rgba(0,0,0,.6)}
 .note-card.wide.on{transform:translate(-50%,-50%)}
 .nc-kick{font-size:clamp(10px,.7vw,13px);font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#a9bfff}
 .nc-title{margin-top:6px;font-size:clamp(19px,1.5vw,28px);font-weight:700;line-height:1.15}
@@ -808,6 +808,33 @@ body.pad-input .d-adv summary.pad-focus{border-radius:8px;width:max-content;padd
 #app.note-open .hints{opacity:0;transition:opacity .2s}
 html.reduce-motion .note-card{transition:none}
 .note-card{z-index:400} /* (inside #app: over the shelf, its theme layers and the hint bar; Settings opens over it) */
+/* (beta.14) the patch notes: the same card, wider and as tall as the screen allows, the notes scrolling inside it */
+.note-card.pnotes{width:min(760px,calc(100% - 24px));max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);display:flex;flex-direction:column}
+.note-card.pnotes .nc-body{flex:1 1 auto;min-height:0;margin-top:12px;padding-right:8px;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:rgba(169,191,255,.4) transparent}
+.note-card.pnotes .nc-btns{flex:none}
+.pn-ver{margin:20px 0 4px;font-size:clamp(11px,.75vw,13px);font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#a9bfff}
+.pn-ver:first-child{margin-top:0}
+.pn-lead{margin:0 0 12px;font-size:clamp(14px,1vw,18px);line-height:1.4;color:rgba(233,236,245,.75)}
+.pn-h{margin:18px 0 8px;font-size:clamp(11px,.75vw,13px);font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#a9bfff}
+.pn-list{margin:0;padding:0;list-style:none;display:grid;gap:12px}
+.pn-list li{position:relative;padding-left:18px;font-size:clamp(13px,.9vw,16px);line-height:1.45;color:rgba(243,245,251,.78)}
+.pn-list li::before{content:"";position:absolute;left:2px;top:.6em;width:7px;height:7px;border-radius:50%;background:#6b8cff}
+.pn-list b{display:block;font-weight:700;color:#f6f7fb}
+/* (beta.14) the keys on a card's buttons (A / B for the controller you hold, Enter / Esc on the keyboard) and the notes' Scroll hint */
+.nc-btns{align-items:center}
+.note-card .btn .nc-k{display:inline-flex;margin-right:10px;vertical-align:-4px}
+.note-card .btn .nc-k:empty{display:none}
+.note-card .nc-k .g{min-width:clamp(24px,1.7vw,32px);height:clamp(22px,1.6vw,30px);font-size:clamp(11px,.8vw,14px);border-radius:7px}
+.note-card .nc-k .g.shape svg{width:clamp(22px,1.6vw,30px);height:clamp(22px,1.6vw,30px)}
+.note-card .btn.primary .nc-k .g:not(.shape){border-color:rgba(11,15,28,.5);color:#0b0f1c}
+.nc-btns .btn.nc-close{flex:0 0 auto;min-width:clamp(110px,9vw,150px)}
+.note-card.pnotes .nc-btns .btn.nc-close{flex:1 1 0;max-width:clamp(160px,14vw,240px);margin-left:auto}
+.nc-hint{flex:1 1 auto;display:flex;align-items:center;gap:10px;min-width:0;font-size:clamp(13px,.85vw,16px);color:rgba(233,236,245,.62)}
+.nc-hint .nc-k:empty{display:none}
+.nc-hint .g{min-width:clamp(24px,1.7vw,32px);height:clamp(22px,1.6vw,30px);font-size:clamp(11px,.8vw,14px);border-radius:7px}
+/* readable on a handheld or a phone: never smaller than this */
+.note-card.pnotes .pn-list li{font-size:clamp(14px,.95vw,17px)}
+.note-card.pnotes .pn-lead{font-size:clamp(15px,1vw,18px)}
 /* (beta.10) the background box art download (renderer/app.js artCardOn): a small card in the bottom-left corner, out of the
    shelf's way. Its buttons take the mouse and touch (a controller uses the quick menu's row); hidden over the museum, Inspect,
    Customize, a note card and a launch, under Settings */
@@ -839,3 +866,31 @@ html.reduce-motion .art-card,html.reduce-motion .ac-bar i{transition:none}
 /* (beta.12) Mona Sans: titles in its wide cut, as in the font mockup (the console's name, a game's title on the shelf,
    in Details and on the launch screen, page titles in Settings and setup, the tour's card) */
 .sys-word,.g-title,.l-title,.d-title,.bss-title,.su-title,#btT{font-stretch:125%}
+
+/* (beta.14) Kid mode: what needs a grown-up is gone from Details, and a small tag by the clock says why */
+body.kid-on #dHide,body.kid-on #dRename,body.kid-on #dBoxArt,body.kid-on #dBoxArtPc,body.kid-on #dEmu,body.kid-on #dGameEmu,body.kid-on #dChooseManual,body.kid-on #dvArt,body.kid-on #dvMan,body.kid-on #dvEmu{display:none!important}
+body.kid-on #clock::before{content:"Kid mode";display:inline-block;vertical-align:middle;margin-right:14px;padding:3px 10px;border-radius:99px;font-size:.62em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#1a1306;background:#f0b45a}
+
+/* ---- (beta.14) what each case is made of, on the shelf. app.js mount() puts pk-box, pk-jewel, pk-keep or pk-long on the
+   slot (systems-extra.js names the pack). Only static styles on the faces and pseudo-elements a case already has: no extra
+   element, layer, filter, shadow or animation per case, so nothing more to draw while the shelf slides. ---- */
+/* a printed card box (NES, SNES, N64, Game Boy…): the print runs to the edges, the card is matte (no clear plastic rim, no
+   glare band, no shine sweep), its folds a little lighter where they wear, its sides flat card */
+.slot.pk-box .f-front,.slot.pk-box .f-back{padding:0}
+.slot.pk-box .glare,.slot.pk-box .sheen::after{display:none}
+.slot.pk-box:not(.cloud) .f-front::after,.slot.pk-box .f-back::after{background:linear-gradient(90deg,rgba(255,255,255,.12),rgba(0,0,0,.1) .8%,transparent 3%,transparent 97%,rgba(0,0,0,.16) 99.2%,rgba(255,255,255,.1)),linear-gradient(180deg,rgba(255,255,255,.1),transparent 1.2%,transparent 98.8%,rgba(0,0,0,.18))}
+.slot.pk-box .face.f-left::after,.slot.pk-box .face.f-right::after{background:linear-gradient(90deg,rgba(255,255,255,.1),rgba(0,0,0,.14) 4%,rgba(0,0,0,.06) 12%,rgba(0,0,0,.06) 88%,rgba(0,0,0,.18) 96%,rgba(255,255,255,.08))}
+.slot.pk-box .f-right.spine2::before{background:linear-gradient(90deg,rgba(255,255,255,.1),rgba(0,0,0,.12) 4%,transparent 14%,transparent 86%,rgba(0,0,0,.2) 96%,rgba(255,255,255,.06)),var(--case-side)} /* the selected box's far side: flat card, no plastic seam */
+/* a CD jewel case (PlayStation, Dreamcast, TurboGrafx-16): the booklet sits in beside the hinge, a dark strip with its
+   knuckles down the spine side of the clear lid */
+.slot.pk-jewel .f-front{padding-left:calc(var(--bw)*.07)}
+.slot.pk-jewel:not(.cloud) .f-front::after{background:
+  repeating-linear-gradient(180deg,transparent 0 6.5%,rgba(255,255,255,.2) 6.5% 7%,rgba(34,36,44,.6) 7% 13%,rgba(0,0,0,.4) 13% 13.5%,transparent 13.5% 20%) 0 0/calc(var(--bw)*.07) 100% no-repeat,
+  linear-gradient(90deg,rgba(0,0,0,.5),rgba(40,42,50,.3) 35%,rgba(255,255,255,.2) 55%,rgba(0,0,0,.36) 88%,rgba(255,255,255,.22)) 0 0/calc(var(--bw)*.07) 100% no-repeat,
+  linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.04) 18%,transparent 34%),
+  linear-gradient(90deg,rgba(0,0,0,.14),transparent 10%,transparent 88%,rgba(0,0,0,.18))}
+/* a keep case (and Sega's long case): the clear outer sleeve's lip, a thin light line just inside the spine edge */
+.slot.pk-keep:not(.cloud) .f-front::after,.slot.pk-long:not(.cloud) .f-front::after{background:
+  linear-gradient(180deg,transparent,rgba(255,255,255,.26) 4%,rgba(255,255,255,.26) 96%,transparent) calc(var(--edge-in,var(--edge))*.35) 0/calc(1.5px*var(--os,1)) 100% no-repeat,
+  linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.04) 18%,transparent 34%),
+  linear-gradient(90deg,rgba(0,0,0,.14),transparent 10%,transparent 88%,rgba(0,0,0,.18))}

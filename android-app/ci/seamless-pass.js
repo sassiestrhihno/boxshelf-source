@@ -66,23 +66,39 @@ module.exports = async function seamlessPass({ browser, base, check, newPage, OU
         const row = n => [...document.querySelectorAll('#bss .bss-row')].find(r => ((r.querySelector('.nm') || {}).textContent || '') === n);
         const until = async f => { for (let i = 0; i < 50 && !f(); i++) await w(150); await w(400); };
         const close = async () => { if (window.Settings && Settings.isOpen && Settings.isOpen()) { await Settings.close(); await w(800); } };
-        const more = async () => { Setup.open({ page: 'display' }); await until(() => row('Screen & TV')); const d = names(); row('Screen & TV').click(); await until(() => row('Fit to TV')); return { d, m: names() }; };
+        // (beta.14, the Settings regroup) Screen & TV is on Look's "More options", Seamless play on Library's
+        const display = async (want, page) => { Setup.open({ page: page || 'display' }); await until(() => row(want) || row('More options')); if (!row(want) && row('More options')) { row('More options').click(); await until(() => row(want)); } };
+        await display('Seamless play', 'consoles'); out.seamRow = !!row('Seamless play'); await close();
+        const more = async () => { await display('Screen & TV'); const d = names(); row('Screen & TV').click(); await until(() => row('Fit to TV')); return { d, m: names() }; };
         let v = await more(); out.display = v.d; out.more = v.m;
         // (a click on the right half of a choice row picks the next choice, as with the mouse)
         if (row('Screen mode')) { const el = row('Screen mode'), b = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: b.right - 6, clientY: b.top + b.height / 2 })); await w(900); out.modes = (window.__screenModes || []).slice(); out.windowRows = names(); }
         await close(); await w(600);
+        // (beta.14) the quick menu's Screen row: shows the mode Settings just chose (Window), and Full screen reaches main at once
+        const qmLabels = () => [...document.querySelectorAll('.qm-list .qm-lbl')].map(e => e.textContent.trim());
+        const qmRow = n => [...document.querySelectorAll('.qm-list > *')].find(e => ((e.querySelector('.qm-lbl') || {}).textContent || '').trim() === n);
+        Shelf.quickMenu(); await w(700); out.qmLabels = qmLabels(); const sr = qmRow('Screen');
+        out.qmVal = sr ? sr.textContent : ''; if (sr) { sr.click(); await w(700); }
+        const full = document.querySelector('.qm-opt[data-k="scr"][data-v="full"]'), n0 = (window.__screenModes || []).length;
+        if (full) { full.click(); await w(500); } out.qmModes = (window.__screenModes || []).slice(n0); out.qmVal2 = (qmRow('Screen') || {}).textContent || '';
+        out.cfgMode = (await window.boxshelf.getConfig()).config.ui.screenMode;
+        if (Shelf._qs().open) { Shelf.quickMenu(); await w(500); }
         // Seamless play off
-        Setup.open({ page: 'display' }); await until(() => row('Seamless play')); if (row('Seamless play')) { row('Seamless play').click(); await w(900); }
+        await display('Seamless play', 'consoles'); if (row('Seamless play')) { row('Seamless play').click(); await w(900); }
         out.cfgOff = (await window.boxshelf.getConfig()).config.ui.seamless;
         await close(); await w(600);
-        v = await more(); out.offMore = v.m; await close();
+        v = await more(); out.offMore = v.m; await close(); await w(500);
+        Shelf.quickMenu(); await w(700); out.qmOffLabels = qmLabels(); if (Shelf._qs().open) { Shelf.quickMenu(); await w(500); }
         return out; });
-      check('Settings (Windows): Display has Seamless play; Screen & TV has Screen mode instead of Start in fullscreen',
-        (s.display || []).includes('Seamless play') && (s.more || []).includes('Screen mode') && !(s.more || []).includes('Start in fullscreen') && (s.more || []).includes('Hide the taskbar during games'), JSON.stringify({ d: s.display, m: s.more }));
+      check('Quick menu (Windows, beta.14): a Screen row shows the mode (Window) and choosing Full screen reaches main at once',
+        (s.qmLabels || []).includes('Screen') && /Window/.test(s.qmVal || '') && (s.qmModes || []).join() === 'full' && /Full screen/.test(s.qmVal2 || ''), JSON.stringify({ l: s.qmLabels, v: s.qmVal, m: s.qmModes, v2: s.qmVal2, c: s.cfgMode }));
+      check('Quick menu (Windows): Seamless play off: no Screen row', Array.isArray(s.qmOffLabels) && s.qmOffLabels.length > 0 && !s.qmOffLabels.includes('Screen'), JSON.stringify(s.qmOffLabels));
+      check('Settings (Windows): Library → More options has Seamless play; Screen & TV has Screen mode instead of Start in fullscreen',
+        s.seamRow === true &&(s.more || []).includes('Screen mode') && !(s.more || []).includes('Start in fullscreen') && (s.more || []).includes('Hide the taskbar while games start and close'), JSON.stringify({ d: s.display, m: s.more }));
       check('Settings (Windows): choosing Window in Screen mode reaches main at once, and the taskbar row goes (the taskbar is never hidden in a window)',
-        (s.modes || []).includes('window') && !(s.windowRows || []).includes('Hide the taskbar during games'), JSON.stringify({ modes: s.modes, rows: s.windowRows }));
+        (s.modes || []).includes('window') && !(s.windowRows || []).includes('Hide the taskbar while games start and close'), JSON.stringify({ modes: s.modes, rows: s.windowRows }));
       check('Settings (Windows): Seamless play off: no Screen mode row; Start in fullscreen and Hide the taskbar are back as before',
-        s.cfgOff === false && !(s.offMore || []).includes('Screen mode') && (s.offMore || []).includes('Start in fullscreen') && (s.offMore || []).includes('Hide the taskbar during games'), JSON.stringify({ off: s.cfgOff, m: s.offMore }));
+        s.cfgOff === false && !(s.offMore || []).includes('Screen mode') && (s.offMore || []).includes('Start in fullscreen') && (s.offMore || []).includes('Hide the taskbar while games start and close'), JSON.stringify({ off: s.cfgOff, m: s.offMore }));
       check('Settings (Windows): no page errors around Seamless play', !errors.length, errors.slice(0, 3).join(' | '));
     } catch (e) { check('Seamless play: the Settings rows ran', false, e && e.stack ? e.stack.split('\n').slice(0, 2).join(' ') : e); }
     await ctx.close().catch(() => {}); }

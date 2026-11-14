@@ -27,7 +27,9 @@ function* walkG(dir, exts, depth, out, gameFile) {
     out.push(path.join(dir, ents.find(e => e.isFile() && e.name.toLowerCase() === 'eboot.bin').name)); return out; }
   // (beta.10) an extracted Xbox 360 game's folder (default.xex): its subfolders are the game's data, never another game
   const xexHere = !gameFile && exts.includes('xex') && ents.some(e => e.isFile() && e.name.toLowerCase() === 'default.xex');
+  let seen = 0;
   for (const ent of ents) {
+    if (++seen % 1000 === 0) yield ['tick']; // (perf) a folder of tens of thousands of files: the async scan gets a breath now and then (answered with nothing)
     const full = path.join(dir, ent.name);
     // (beta.10) a link or junction to a folder or game elsewhere (another drive, a NAS) was skipped: followed now, by what it
     // points at (the depth limit stops a link that loops)

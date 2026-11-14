@@ -24,14 +24,19 @@ const isRetroArch = exe => /^(retroarch|org\.libretro\.retroarch|retroarch.*\.ap
 // packaged cores, and a cores folder beside the program (Steam's RetroArch)
 function retroCore(exe, core) {
   const home = os.homedir(), dir = path.dirname(String(exe || ''));
-  const cfgDirs = [path.join(home, '.config', 'retroarch'), path.join(home, '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch'), dir];
+  // (beta.14) an AppImage can keep its own portable home or config beside it (<name>.AppImage.home / .config): RetroArch's
+  // settings and downloaded cores are there then, not in ~/.config (a player had to symlink them for Boxshelf to see them)
+  const img = /\.appimage$/i.test(String(exe || '')) ? String(exe) : '';
+  // [config folder, the home "~" means in its retroarch.cfg]
+  const cfgs = [...(img ? [[path.join(img + '.config', 'retroarch'), home], [path.join(img + '.home', '.config', 'retroarch'), img + '.home']] : []),
+    [path.join(home, '.config', 'retroarch'), home], [path.join(home, '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch'), home]];
   const dirs = [];
-  for (const c of cfgDirs) {
+  for (const [c, h] of [...cfgs, [dir, home]]) {
     let t = ''; try { t = fs.readFileSync(path.join(c, 'retroarch.cfg'), 'utf8'); } catch { continue; }
     const m = /^\s*libretro_directory\s*=\s*"([^"]*)"/m.exec(t);
-    if (m && m[1] && m[1] !== 'default') dirs.push(m[1].replace(/^~(?=\/|$)/, home).replace(/^:\/?/, dir + '/'));
+    if (m && m[1] && m[1] !== 'default') dirs.push(m[1].replace(/^~(?=\/|$)/, h).replace(/^:\/?/, dir + '/'));
   }
-  dirs.push(...cfgDirs.slice(0, 2).map(c => path.join(c, 'cores')), path.join(dir, 'cores'), '/usr/lib/libretro', '/usr/lib/x86_64-linux-gnu/libretro', '/usr/lib64/libretro');
+  dirs.push(...cfgs.map(([c]) => path.join(c, 'cores')), path.join(dir, 'cores'), '/usr/lib/libretro', '/usr/lib/x86_64-linux-gnu/libretro', '/usr/lib64/libretro');
   for (const d of dirs) { const f = path.join(d, core + '_libretro.so'); try { if (fs.statSync(f).isFile()) return f; } catch {} }
   return null;
 }

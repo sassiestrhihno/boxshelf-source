@@ -6,6 +6,75 @@
 //   sections: [{ h, items: [[headline, more]] }] }; newest first.
 window.BS_WHATSNEW = [
   {
+    // (android: the Thor's APK for this round calls itself 1.82.0-beta.14 too; it gets Everywhere + Android)
+    version: '1.82.0-beta.14', android: '1.82.0-beta.14', date: '2026-11-11', title: 'New themes and sounds, a new Details page, and Xbox 360 and PS3 achievements',
+    highlights: [
+      "Seventeen new themes, all in the quick menu",
+      "More sounds, a sound per console, your own",
+      "A cleaner Details page with tabs",
+      "Xbox 360 and PS3 achievements",
+      "Settings in eight tabs, and Kid mode"
+    ],
+    platforms: [
+      "Windows is the main version: everything under Everywhere, Windows and Linux, and Windows.",
+      "Linux / Steam Deck: everything under Everywhere and Windows and Linux; it's still an early build.",
+      "Android (AYN Thor, phones and tablets): the themes, sounds, quick menu and cases under Everywhere."
+    ],
+    sections: [
+      { h: "Everywhere", items: [
+        ["New themes", "Nebula, Abyss, Ember, Dusk, Prism, Hologram, Starfield, Rainy Night, Cherry Blossom, Snowfall, Neon City, Deep Sea, Thunderstorm, Fireflies and Desert Night, plus two showpieces: Event Horizon and Glass Lake. Pocket, Walnut, CRT and VHS are gone."],
+        ["Every theme in the quick menu", "Look & sound shows all of them, the same as Settings, and LB / RB change the theme from anywhere in the menu."],
+        ["More sounds", "New built-in sounds: Disc-era, Handheld and Living room, all in the quick menu too."],
+        ["Keep themes moving", "Settings → Look → Keep themes moving while you scroll: a moving theme keeps going as the shelf slides (on by default on Windows; off on Android and Linux, where you can turn it on). Also in the quick menu."],
+        ["Quick menu", "Right only opens a section; rows that leave the menu open with A."],
+        ["Cases like the real ones", "Inspect and the museum show each console's real case: full-size booklets, discs and cartridges at their real size, jewel cases, cardboard boxes with their trays."],
+        ["Patch notes", "After an update, one small card: Read the patch notes, or close it."],
+        ["Fixed", "DS cases are the right shape, so covers are no longer cropped and washed out, and a cartridge's contacts are only on its back. Switch .nca files no longer show as games."]
+      ] },
+      { h: "Windows and Linux", items: [
+        ["Updates keep your setup", "Windows and Linux: when a new version is out, Update now downloads it and Boxshelf restarts into it, with your settings, games and data folder as they were. A safety copy of your settings is made first (Settings → System → Undo the update's settings changes puts it back). A new Boxshelf folder offers to bring your setup over from the one you used before. Back up settings now covers your picks and sounds too, and your keys if you tick Include keys and passwords."],
+        ["Achievements in the Home menu", "While you play, the Home menu has Achievements (Trophies on PS3) when the game has them, laid out like the shelf's achievements screen, big enough to read from the couch."],
+        ["More screenshots", "Details' Media tops a game up to ten screenshots from more places (libretro, and ScreenScraper or IGDB if you've connected them), downloaded once and kept."],
+        ["Connect IGDB", "Settings › Accounts › IGDB walks you through a free key: more screenshots, missing game info filled in, and official trailers."],
+        ["Trailer sound", "A trailer's sound is ready the moment you turn it on."],
+        ["Better trailers", "Real gameplay clips from ScreenScraper, official trailers from IGDB, wrong videos skipped, and Change trailer in Details."],
+        ["Video previews in Look", "The video preview settings moved to Settings → Look."],
+        ["Games come first", "While you play, Boxshelf downloads no box art and doesn't rescan or refresh the shelf; a background download carries on once the game has ended."],
+        ["Theme grid", "Settings' theme grid opens with A, so up and down go straight past it."],
+        ["A sound per console", "Settings → Sound → Sound per console: give any console its own sound; the rest use the main one."],
+        ["Your own sounds", "Settings → Sound → Custom sounds: add sound files from a game (a folder, files or a ZIP) and they join the sound list."],
+        ["Details, redesigned", "A compact header, and only Play, ♡ and ··· in the buttons. Tabs (LB / RB) for Overview, Achievements, Media and Your copy, and a Status chip: Not started, Playing, Finished or Abandoned."],
+        ["Xbox 360 achievements", "Read from Xenia Canary's profile: every achievement, your gamerscore and when you unlocked each one, in Boxshelf's achievements screen."],
+        ["PS3 trophies", "Read from RPCS3, with their real pictures and grades. A game you haven't played yet shows its whole list, all locked."],
+        ["Your emulators and achievements", "Settings → Accounts → RetroAchievements now starts with each emulator you have: whether it's signed in, whether its pop-ups are on, and the steps when it isn't ready. The emulators show their own pop-ups in game."],
+        ["Settings in eight tabs", "Library, Look, Sound, Box art & media, Controls, Shelf & museum, Accounts and System, with the set-once options under More options. Needs attention lists anything to fix, and Emulator setup sets up every emulator at once."],
+        ["My shelves", "Collections are now My shelves: make one in Settings, search for games to add, rename it or delete it. Automatic shelves fill themselves."],
+        ["Kid mode", "Choose the shelves kids can see and lock the rest behind a PIN."],
+        ["Set up for me: Picture", "Screen shape, sharp pixels and a retro TV look for the emulators Boxshelf sets up."],
+        ["Missing BIOS files", "Boxshelf tells you before Play when a console needs a BIOS file it can't find, and Needs attention lists them."],
+        ["Find a logo", "Every console's Customize tab can search Wikimedia Commons for free logos, or the web: a logo you save to Downloads becomes the shelf's logo."],
+        ["Hidden games in Find", "A hidden game still turns up in Find, dimmed. Choose it to unhide it."],
+        ["Original Xbox", "A new Xbox shelf, for xemu."],
+        ["+ Add to…", "Put any game on any shelf (it stays on its own too), on one of My shelves or in Favourites, from the quick menu or Details. It starts just as it does from its own shelf. A game you added by hand can still move to another shelf in Settings → Custom games."],
+        ["Fixed", "Your theme, sound and music stay chosen after a restart. Automatic shelves keep their rule. PCSX2's sign-in is found in a moved or translated Documents folder. A Steam library on a sleeping drive no longer freezes start-up. Video previews wait 5 seconds."]
+      ] },
+      { h: "Windows", items: [
+        ["The taskbar", "Hidden only while a game starts and closes. While you play, a fullscreen game keeps it out of sight, and the Windows key or alt-tab bring it up."],
+        ["Full screen or Window", "Switch from the quick menu's Screen row, as well as F11 and Settings."],
+        ["DualSense over Bluetooth", "Works on the shelf even when Steam isn't running."],
+        ["Home menu over 3DS games", "The Home menu now shows over Azahar's full-screen games (it opened and paused the game, but stayed hidden behind it)."],
+        ["No more flicker in Details", "Opening Details no longer makes the case's spine or side flicker (filmed on NVIDIA cards): the case turns a little further and settles to its front or back."],
+        ["Details' trailer", "The d-pad reaches the trailer, left / right set its volume, and the volume bar is bigger, with a knob and the level."]
+      ] },
+      { h: "Linux", items: [
+        ["RetroArch AppImage", "Its cores are found in the AppImage's own portable folder too."]
+      ] },
+      { h: "Android", items: [
+        ["Thor: the test meter", "The smoothness meter only opens when you run the smoothness test."]
+      ] }
+    ]
+  },
+  {
     // (android: the APK published with beta.12 was built a day later and calls itself 1.82.0-beta.13)
     version: '1.82.0-beta.12', android: '1.82.0-beta.13', date: '2026-11-11', title: 'Find any game, manuals you can read, and a new Thor bottom screen',
     highlights: [

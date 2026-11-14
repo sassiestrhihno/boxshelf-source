@@ -18,7 +18,7 @@ function init(o) { dir = o.dir; log = o.log || log; download = o.download; norm 
 const has = sysId => !!DB[sysId];
 
 // the one .xml inside the zip (stored or deflated), or null
-function xmlOf(buf) {
+function xmlOf(buf, inflate) {
   let eocd = -1; for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
   if (eocd < 0) return null;
   let o = buf.readUInt32LE(eocd + 16);
@@ -28,10 +28,14 @@ function xmlOf(buf) {
     const name = buf.toString('utf8', o + 46, o + 46 + nlen); o += 46 + nlen + xlen + clen;
     if (!/\.xml$/i.test(name) || loc + 30 > buf.length) continue;
     const start = loc + 30 + buf.readUInt16LE(loc + 26) + buf.readUInt16LE(loc + 28), raw = buf.subarray(start, start + csize);
+    if (inflate && method === 8) return inflate(raw).then(b => b.toString('utf8'));
     return (method === 0 ? raw : method === 8 ? zlib.inflateRawSync(raw, { maxOutputLength: 256 << 20 }) : Buffer.alloc(0)).toString('utf8');
   }
   return null;
 }
+// (perf) the same, read and unpacked off the main thread (the weekly refresh unpacked tens of MB of XML on it)
+const inflateRawAsync = raw => new Promise((ok, no) => zlib.inflateRaw(raw, { maxOutputLength: 256 << 20 }, (e, b) => e ? no(e) : ok(b)));
+async function xmlOfFile(file) { return xmlOf(await fs.promises.readFile(file), inflateRawAsync); }
 // { "<normalised English title>": [[id, region], …] } for the boxed games
 function parse(xml, types) {
   const map = Object.create(null); let n = 0;
@@ -61,7 +65,7 @@ async function index0(sysId) {
   try {
     fs.mkdirSync(dir, { recursive: true });
     if (!await download(db.zip, tmp)) throw new Error('download failed');
-    const xml = xmlOf(fs.readFileSync(tmp)); if (!xml) throw new Error('no database in the zip');
+    const xml = await xmlOfFile(tmp); if (!xml) throw new Error('no database in the zip');
     const { map, n } = parse(xml, db.types); if (n < 100) throw new Error('only ' + n + ' games read');
     cur = { v: V, at: Date.now(), map }; mem.set(sysId, cur);
     fs.promises.writeFile(file(sysId), JSON.stringify(cur)).catch(() => {});
@@ -88,4 +92,4 @@ async function fullCovers(sysId, names, prefer = []) {
   }
   return out.slice(0, 8);
 }
-module.exports = { init, has, index, fullCovers, _t: { parse, xmlOf } };
+module.exports = { init, has, index, fullCovers, _t: { parse, xmlOf, xmlOfFile } };

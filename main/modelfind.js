@@ -11,7 +11,7 @@ const themes = require('./themes');
 let log = () => {}, watch = null;
 function init(logger) { if (logger) log = logger; }
 
-const QUERY = { gc: 'gamecube console', wii: 'nintendo wii console', wiiu: 'nintendo wii u console', sw: 'nintendo switch dock', sw2: 'nintendo switch 2 console', psp: 'psp handheld', ps2: 'playstation 2 console', ps3: 'playstation 3 console', ps4: 'playstation 4 console', ps5: 'playstation 5 console', x360: 'xbox 360 console', n3ds: 'nintendo 3ds handheld', psx: 'playstation 1 console', nes: 'nes console', snes: 'super nintendo console', n64: 'nintendo 64 console', gb: 'game boy handheld', gbc: 'game boy color handheld', gba: 'game boy advance handheld', nds: 'nintendo ds handheld', megadrive: 'sega genesis console', mastersystem: 'sega master system console', gamegear: 'sega game gear handheld', dreamcast: 'sega dreamcast console', saturn: 'sega saturn console', pcengine: 'turbografx 16 console', neogeo: 'neo geo aes console', arcade: 'arcade cabinet', segacd: 'sega cd console', sega32x: 'sega 32x', atari2600: 'atari 2600 console', atarilynx: 'atari lynx handheld', wonderswan: 'wonderswan handheld', dos: 'retro pc computer' };
+const QUERY = { gc: 'gamecube console', wii: 'nintendo wii console', wiiu: 'nintendo wii u console', sw: 'nintendo switch dock', sw2: 'nintendo switch 2 console', psp: 'psp handheld', ps2: 'playstation 2 console', ps3: 'playstation 3 console', ps4: 'playstation 4 console', ps5: 'playstation 5 console', x360: 'xbox 360 console', xbox: 'original xbox console',n3ds: 'nintendo 3ds handheld', psx: 'playstation 1 console', nes: 'nes console', snes: 'super nintendo console', n64: 'nintendo 64 console', gb: 'game boy handheld', gbc: 'game boy color handheld', gba: 'game boy advance handheld', nds: 'nintendo ds handheld', megadrive: 'sega genesis console', mastersystem: 'sega master system console', gamegear: 'sega game gear handheld', dreamcast: 'sega dreamcast console', saturn: 'sega saturn console', pcengine: 'turbografx 16 console', neogeo: 'neo geo aes console', arcade: 'arcade cabinet', segacd: 'sega cd console', sega32x: 'sega 32x', atari2600: 'atari 2600 console', atarilynx: 'atari lynx handheld', wonderswan: 'wonderswan handheld', dos: 'retro pc computer' };
 function searchUrl(sysId, name, site) {
   const q = encodeURIComponent(QUERY[sysId] || `${name} console`);
   return site === 'polypizza' ? `https://poly.pizza/search/${q}` : `https://sketchfab.com/search?features=downloadable&q=${q}&sort_by=-likeCount&type=models`;
@@ -22,6 +22,27 @@ function stop() { if (watch) { try { watch.watcher && watch.watcher.close(); } c
 
 // Start watching Downloads for a model for `sysId`; onFound(info) when one is installed. Stops after 15 minutes.
 function start(sysId, name, site, onFound) {
+  return watchDownloads(/\.(glb|zip)$/i, 1024, f => install(f, sysId, name), searchUrl(sysId, name, site), onFound); // a loose .gltf needs its .bin and textures beside it: ask for .glb or a .zip
+}
+// (beta.14) Customize → Logo → Search the web: the same, for a logo picture (PNG, SVG, WebP or JPG). One watch at a time, models or logos.
+function logoUrl(sysId, name) {
+  let term = name; try { const T = require('./logofind')._t.TERMS[sysId]; if (T) term = [].concat(T[0])[0]; } catch {}
+  return `https://www.google.com/search?tbm=isch&tbs=ic:trans&q=${encodeURIComponent(`${term} logo png`)}`;
+}
+function startLogo(sysId, name, onFound) {
+  return watchDownloads(/\.(png|svg|webp|jpg)$/i, 64, f => installLogo(f, sysId, name), logoUrl(sysId, name), onFound);
+}
+async function installLogo(file, sysId, name) {
+  const st = fs.statSync(file); if (st.size > 6 * 1048576) { log('logo too big, ignored:', path.basename(file)); return null; }
+  const b = fs.readFileSync(file), ext = path.extname(file).toLowerCase();
+  const ok = ext === '.svg' ? /<svg[\s>]/i.test(b.toString('utf8', 0, Math.min(b.length, 4096)))
+    : (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e) || (b[0] === 0xff && b[1] === 0xd8) || (b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP');
+  if (!ok) { log('logo download is not a picture, ignored:', path.basename(file)); return null; }
+  themes.setLogoKeepingOld(sysId, file);
+  log('Installed logo for', sysId, 'from', path.basename(file));
+  return { sysId, name, file: path.basename(file) };
+}
+function watchDownloads(re, minSize, installFn, url, onFound) {
   stop();
   const dir = downloadsDir(); if (!fs.existsSync(dir)) return { ok: false, error: `No Downloads folder at ${dir}` };
   const before = new Set(fs.readdirSync(dir));
@@ -29,20 +50,20 @@ function start(sysId, name, site, onFound) {
   const consider = () => {
     let names; try { names = fs.readdirSync(dir); } catch { return; }
     for (const n of names) {
-      if (before.has(n) || !/\.(glb|zip)$/i.test(n)) continue; // a loose .gltf needs its .bin and textures beside it: ask for .glb or a .zip
+      if (before.has(n) || !re.test(n)) continue;
       const f = path.join(dir, n); let st; try { st = fs.statSync(f); } catch { continue; }
       // wait until the file stops growing (browser finished writing it)
       const prev = seen.get(n); seen.set(n, st.size);
-      if (prev == null || prev !== st.size || st.size < 1024) continue;
-      install(f, sysId, name).then(r => { if (r && watch === me) { stop(); onFound(r); } }).catch(e => log('model install', e.message));
+      if (prev == null || prev !== st.size || st.size < minSize) continue;
+      installFn(f).then(r => { if (r && watch === me) { stop(); onFound(r); } }).catch(e => log('download install', e.message));
       seen.delete(n); before.add(n);
     }
   };
-  me = { sysId, watcher: null, poll: 0, timer: 0, debounce: 0 };
+  me = { watcher: null, poll: 0, timer: 0, debounce: 0 };
   const tick = () => { if (watch !== me) return; consider(); };
-  try { me.watcher = fs.watch(dir, () => { if (watch !== me) return; clearTimeout(me.debounce); me.debounce = setTimeout(tick, 900); }); } catch (e) { log('model watch', e.message); }
+  try { me.watcher = fs.watch(dir, () => { if (watch !== me) return; clearTimeout(me.debounce); me.debounce = setTimeout(tick, 900); }); } catch (e) { log('downloads watch', e.message); }
   me.poll = setInterval(tick, 2500); me.timer = setTimeout(stop, 15 * 60e3); watch = me;
-  shell.openExternal(searchUrl(sysId, name, site)).catch(e => log('model search open', e.message));
+  shell.openExternal(url).catch(e => log('search open', e.message));
   return { ok: true, dir };
 }
 
@@ -82,4 +103,4 @@ function rmInside(root, p) {
   try { fs.rmSync(p, { recursive: true, force: true }); } catch (e) { log('model unzip cleanup', e.message); }
 }
 
-module.exports = { init, start, stop, searchUrl };
+module.exports = { init, start, startLogo, stop, searchUrl, logoUrl, _t: { installLogo } };

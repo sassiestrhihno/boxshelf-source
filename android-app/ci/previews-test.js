@@ -4,7 +4,7 @@
 //   Page: previews are off until chosen; in Details (beta.9, Windows) the preview plays at the top of Overview, and is
 //   gone the moment Details closes; a console trailer clip still being made gets a waiting box, never YouTube's player;
 //   nothing starts while the shelf is busy; "Details and shelf" plays softly behind the cases and stops when you move;
-//   Settings has the Video previews rows; the first run offers previews with box art. Screenshots: previews-*.png.
+//   Settings has the Video previews rows (beta.14: in Look, with a Previews by console page); the first run offers previews with box art. Screenshots: previews-*.png.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -120,8 +120,8 @@ module.exports = async function previewsPass({ browser, base, check, OUT }) {
       for (let w = 0; w < 25; w++) { const m = await media(); if (/\bready\b/.test(m.cls) || m.yt) break; await pause(400); } // (the page records its pretend clip the first time: slow on a build machine)
       let m = await media(); seen.push([m.tab, m.bg, m.src, m.cls, (await page.evaluate(() => { const g = Shelf._lib.cur(); return g && g.title; }))].join('/'));
       if (!file && m.tab === 'overview' && /\bready\b/.test(m.cls) && m.src && !m.bg && !/\byt\b/.test(m.cls)) { file = m; await page.screenshot({ path: path.join(OUT, 'previews-details.png') }); await pause(600); file.t2 = (await media()).t;
-        file.above = await page.evaluate(() => { const b = document.getElementById('dMedia'), a = [...document.querySelectorAll('#details .dv-sec:not([data-s="overview"])')].find(e => !e.hidden && e.getBoundingClientRect().height > 0); // (the first section after Overview)
-          return !!a && b.closest('.dv-sec[data-s="overview"]') !== null && b.getBoundingClientRect().bottom <= a.getBoundingClientRect().top + 1 && b.getBoundingClientRect().bottom <= innerHeight; });
+        file.above = await page.evaluate(() => { const b = document.getElementById('dMedia'), r = b.getBoundingClientRect(); // (beta.14: in Overview's tab, the only one showing, on the first screen)
+          return b.closest('.dv-sec.on[data-s="overview"]') !== null && [...document.querySelectorAll('#details .dv-sec')].filter(e => e.getBoundingClientRect().height > 0).length === 1 && r.top >= 0 && r.bottom <= innerHeight; });
         for (let k = 0; k < 8 && (await media()).sec !== 'copy'; k++) { await page.keyboard.press('e'); await pause(700); }
         await pause(900); const mm = await media(); file.behind = mm.sec === 'copy' && !mm.bg && !mm.bgSrc && /\bon\b/.test(mm.cls) && mm.paused;
         for (let k = 0; k < 8 && (await media()).sec !== 'overview'; k++) { await page.keyboard.press('q'); await pause(700); }
@@ -130,7 +130,7 @@ module.exports = async function previewsPass({ browser, base, check, OUT }) {
       const after = await media(); if (file && !file.closed) file.closed = !after.src && !after.bgSrc && !after.bg;
       await page.keyboard.press('ArrowRight'); await pause(700);
     }
-    check('Previews in Details (Windows): a video plays framed in its box on the first screen, never behind the case; it pauses while Your copy is in view (RB) and plays on back at the top (LB); it stops the moment Details closes',
+    check('Previews in Details (Windows): a video plays framed in its box in Overview, never behind the case; it pauses while Your copy shows (RB) and plays on back in Overview (LB); it stops the moment Details closes',
       !!file && file.t2 !== file.t && file.above && file.behind && file.backInBox && file.closed, JSON.stringify(file ? { t: file.t, t2: file.t2, above: file.above, behind: file.behind, back: file.backInBox, closed: file.closed } : seen));
     // a console game whose trailer clip is still being made (main answers "youtube, pending"): Overview's box opens at once
     // with the game's art and waits for the clip; YouTube's own player is never loaded by itself (it lagged and took the
@@ -144,19 +144,20 @@ module.exports = async function previewsPass({ browser, base, check, OUT }) {
     await page.keyboard.press('Escape'); await pause(600);
     check('Previews in Details (Windows): while a console trailer clip is made, Overview\'s box opens at once and waits for it without loading YouTube\'s player (it lagged and took the controller), then plays the clip',
       !!yt.waiting && !/\byt\b/.test(yt.waiting) && yt.ytWhileWaiting === false && yt.roundTrip && !!yt.played && yt.src && yt.ytAfter === false, JSON.stringify(yt));
-    // Details' layout: Play, Read booklet, Inspect, Favourite and More in one row, the rest in More (opened and closed with the
-    // keyboard and B / Esc); one page in sections, Your play's summary beside the trailer
+    // Details' layout (beta.14, the approved mockup): Play, ♡ and ··· in one row, the rest in More (opened and closed with the
+    // keyboard and B / Esc); tabs Overview, Achievements, Media, Your copy in Settings' pills (the old tab bar stays hidden)
     await page.keyboard.press('i'); await pause(1200);
     const lay = await page.evaluate(() => { const bar = [...document.querySelectorAll('#details .d-actions > button')].filter(b => !b.hidden).map(b => b.id), menu = [...document.querySelectorAll('#dMenu button')].filter(b => !b.hidden).map(b => b.id);
-      return { bar, menu, secs: [...document.querySelectorAll('#dvNav .dv-t')].filter(b => !b.hidden).map(b => b.dataset.s), tabsShown: getComputedStyle(document.getElementById('dTabs')).display !== 'none', stats: document.querySelectorAll('#dStats .d-stat').length }; });
+      return { bar, menu, secs: [...document.querySelectorAll('#dvNav .dv-t')].filter(b => !b.hidden).map(b => b.dataset.s), tabsShown: getComputedStyle(document.getElementById('dTabs')).display !== 'none', facts: (document.getElementById('dvFacts') || {}).textContent || '' }; });
     await page.click('#dMoreBtn'); await pause(400); const open = await page.evaluate(() => !document.getElementById('dMenu').hidden && document.querySelector('#dMenu .pad-focus') !== null);
     await page.keyboard.press('Escape'); await pause(400); const shut = await page.evaluate(() => document.getElementById('dMenu').hidden && Shelf.getMode() === 'details');
     await page.keyboard.press('Escape'); await pause(500);
-    check('Details (Windows): Play, Read booklet, Inspect, Favourite and More in one row; the rest in More (Esc closes More first, then Details); sections in place of tabs, and Your play beside the trailer',
-      JSON.stringify(lay.bar) === JSON.stringify(['dPlay', 'dManual', 'dInspect', 'dFav', 'dMoreBtn']) && ['dEmu', 'dGameEmu', 'dBoxArt', 'dRename', 'dChooseManual', 'dHide', 'dCols'].every(id => lay.menu.includes(id)) &&
-      ['overview', 'play', 'copy', 'info'].every(s => lay.secs.includes(s)) && !lay.tabsShown && lay.stats === 3 && open && shut, JSON.stringify({ ...lay, open, shut }));
+    check('Details (Windows): Play, ♡ and ··· in one row; the rest in More (Esc closes More first, then Details); the tabs Overview, Achievements, Media, Your copy; a line of facts under the title',
+      JSON.stringify(lay.bar) === JSON.stringify(['dPlay', 'dFav', 'dMoreBtn']) && ['dManual', 'dInspect', 'dEmu', 'dGameEmu', 'dBoxArt', 'dRename', 'dChooseManual', 'dHide'].every(id => lay.menu.includes(id)) &&
+      (lay.menu.includes('dCols') || lay.menu.includes('dAddTo')) /* (beta.14: Add to… covers My shelves; the older My shelves button steps aside when it shows) */ &&
+      ['overview', 'media', 'copy'].every(s => lay.secs.includes(s)) && !lay.tabsShown && /\d{4}/.test(lay.facts) && open && shut, JSON.stringify({ ...lay, open, shut }));
     // (beta.9) Details buttons in Settings' style (Windows): Play lit, Settings' highlight gliding under the one you're on, and
-    // the row never wider than the page (beta.12: on a TV-sized window every button says its name)
+    // the row never wider than the page (beta.14: Play white, ♡ and ··· round, named for screen readers)
     await page.mouse.move(5, 5); // (the More click above left the pointer on More: hovering it rightly opens its name)
     await page.keyboard.press('i'); await pause(1200);
     const sl = await page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms)), out = {};
@@ -165,26 +166,26 @@ module.exports = async function previewsPass({ browser, base, check, OUT }) {
       // (beta.11) held 250 ms: a software-drawn runner reads the pad once a frame, and a 150 ms press could fall between two reads
       const press = async b => { if (window.__padHold) { await __padHold(pad, b, 250); await w(450); return; } pad.buttons[b] = { pressed: true, touched: true, value: 1 }; pad.timestamp++; await w(250); pad.buttons[b] = { pressed: false, touched: false, value: 0 }; pad.timestamp++; await w(450); };
       const bar = document.querySelector('#details .d-actions'), $ = id => document.getElementById(id);
-      out.fits = bar.scrollWidth <= bar.clientWidth + 1; out.labelled = ['dManual', 'dInspect', 'dFav', 'dMoreBtn'].every(id => { const s = $(id).querySelector('span'); return $(id).offsetWidth > 64 && !!s && getComputedStyle(s).opacity === '1'; });
-      out.lit = getComputedStyle($('dPlay')).backgroundImage.includes('gradient');
+      out.fits = bar.scrollWidth <= bar.clientWidth + 1; out.labelled = ['dFav', 'dMoreBtn'].every(id => !!$(id).getAttribute('aria-label') && Math.abs($(id).offsetWidth - $(id).offsetHeight) < 2 && $(id).offsetWidth >= 38);
+      out.lit = getComputedStyle($('dPlay')).backgroundColor === 'rgb(255, 255, 255)';
       // (where things end up is what's judged, not the animation: a software-drawn runner was still mid-glide after 3 s)
       const still = document.createElement('style'); still.textContent = '#details .d-actions, #details .d-actions *, #details .d-actions::before { transition: none !important; animation: none !important }'; document.head.appendChild(still);
-      // Play → Manual → Inspect: right until Inspect has the focus (a slow runner can miss a press: at most six, then judged)
+      // Play → ♡ → ···: right until More has the focus (a slow runner can miss a press: at most ten, then judged)
       const onId = () => (document.querySelector('#details .pad-focus') || {}).id;
-      for (let i = 0; i < 10 && onId() !== 'dInspect'; i++) await press(15); // (beta.11: up to ten presses)
+      for (let i = 0; i < 10 && onId() !== 'dMoreBtn'; i++) await press(15); // (beta.11: up to ten presses)
       // (the highlight's glide and the name opening are transitions: a software-drawn runner finishes them late, so they are
       // judged once settled, up to 3 s)
       const f = document.querySelector('#details .pad-focus'), hl = bar.querySelector('.d-hl'), sp = f && f.querySelector('span'); out.on = f && f.id;
       const judge = () => { if (!f || !hl) return; const a = f.getBoundingClientRect(), b = hl.getBoundingClientRect(); out.glide = hl.classList.contains('on') && Math.abs(a.left - b.left) < 2 && Math.abs(a.width - b.width) < 2;
-        out.named = !!sp && getComputedStyle(sp).opacity === '1' && f.offsetWidth > 64; };
+        out.named = !!f.getAttribute('aria-label') && Math.abs(f.offsetWidth - f.offsetHeight) < 2; }; /* (beta.14: a round button, named for screen readers) */
       for (let i = 0; i < 15; i++) { await w(200); judge(); if (out.glide && out.named) break; }
       if (!(out.glide && out.named) && f && hl) { const a = f.getBoundingClientRect(), b = hl.getBoundingClientRect(); out.dbg = { f: [Math.round(a.left), Math.round(a.width)], hl: [Math.round(b.left), Math.round(b.width)], hlOn: hl.classList.contains('on'), op: sp && getComputedStyle(sp).opacity, iw: innerWidth, pad: document.body.classList.contains('pad-input') }; }
       out.fits2 = bar.scrollWidth <= bar.clientWidth + 1; still.remove();
       try { delete navigator.getGamepads; } catch (e) {} // (the test's own "no controllers" on the prototype comes back)
       return out; });
     await page.keyboard.press('Escape'); await pause(500);
-    check('Details (Windows): Play lit, Read booklet / Inspect / Favourite / More labelled; on the controller Settings\' highlight glides under the one you\'re on, and the row fits the page',
-      sl.fits && sl.labelled && sl.lit && sl.on === 'dInspect' && sl.glide && sl.named && sl.fits2, JSON.stringify(sl));
+    check('Details (Windows): Play lit (white), ♡ and ··· round and named; on the controller Settings\' highlight glides under the one you\'re on, and the row fits the page',
+      sl.fits && sl.labelled && sl.lit && sl.on === 'dMoreBtn' && sl.glide && sl.named && sl.fits2, JSON.stringify(sl));
     // a narrow window (under 761 px: Details is the phone-style sheet): moving along the buttons with the controller never
     // shifts them (the highlight layer is never a flex item of the row)
     await page.setViewportSize({ width: 700, height: 900 }); await pause(700); await page.keyboard.press('i'); await pause(1200);
@@ -201,36 +202,29 @@ module.exports = async function previewsPass({ browser, base, check, OUT }) {
     await page.keyboard.press('Escape'); await pause(500); await page.setViewportSize({ width: 1920, height: 1080 }); await pause(700);
     check('Details (Windows, narrow window): moving along the buttons with the controller never shifts them',
       nw.x0 === nw.x1 && !!nw.on && nw.on !== 'dPlay' && !nw.hlFlex, JSON.stringify(nw));
-    // (beta.9) the screenshot strip in Overview: with the controller the picture you're on is centred by a smooth scroll and
-    // never cut off at the strip's edge
+    // (beta.14) the screenshots in Media: a grid; with the controller (down from the buttons, then right along it) the picture
+    // you're on is always in view, above the hint bar
     await ready('?platform=windows&shelf=1&previews=details&shots=1'); await toGame(); // (the demo games with eight screenshots each; previews on, as the checks after this expect)
     const ss = await page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms)), out = {};
       const key = k => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })); key('i'); await w(1500);
       const pad = { id: 'Test pad', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
       Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: () => [pad, null, null, null] }); window.dispatchEvent(Object.assign(new Event('gamepadconnected'), { gamepad: pad }));
       const press = async b => { if (window.__padHold) { await __padHold(pad, b, 150); await w(500); return; } pad.buttons[b] = { pressed: true, touched: true, value: 1 }; pad.timestamp++; await w(150); pad.buttons[b] = { pressed: false, touched: false, value: 0 }; pad.timestamp++; await w(500); };
-      const foc = () => document.querySelector('#details .pad-focus');
+      const foc = () => document.querySelector('#details .pad-focus'), cur = () => (document.querySelector('#dvNav .dv-t.cur') || { dataset: {} }).dataset.s;
+      await w(1600); for (let i = 0; i < 4 && cur() !== 'media'; i++) await press(5); out.tab = cur();
       out.path = []; out.shots = document.querySelectorAll('#dShots .d-shot').length; out.shotsHidden = document.getElementById('dShots').hidden;
       for (let i = 0; i < 10 && !(foc() && foc().classList.contains('d-shot')); i++) { await press(13); const f = foc(); out.path.push(f ? (f.id || f.className || f.tagName) : '-'); }
-      out.inStrip = !!(foc() && foc().classList.contains('d-shot'));
-      const strip = document.getElementById('dShots'), lefts = [];
-      // (beta.11) each step waits until the highlight has moved, pressing again if the slow runner missed the press, and the
-      // strip is sampled while it moves; a glide = a step that passed through a place between where it was and where it ended
-      const idx = () => [...strip.children].indexOf(foc()); let glides = 0;
-      for (let i = 0; i < 4; i++) { const i0 = idx(), s0 = Math.round(strip.scrollLeft), seen = new Set([s0]);
-        for (let tries = 0; tries < 3 && idx() === i0; tries++) { pad.buttons[15] = { pressed: true, touched: true, value: 1 }; pad.timestamp++; await w(150); pad.buttons[15] = { pressed: false, touched: false, value: 0 }; pad.timestamp++;
-          for (let t = 0; t < 12; t++) { await w(30); const v = Math.round(strip.scrollLeft); seen.add(v); lefts.push(v); } }
-        await w(500); const s1 = Math.round(strip.scrollLeft); if ([...seen].some(v => v !== s0 && v !== s1)) glides++; }
-      out.moved = idx(); out.glides = glides;
-      const f = foc(), r = f.getBoundingClientRect(), q = strip.getBoundingClientRect();
-      out.steps = new Set(lefts).size; out.scrolled = strip.scrollLeft > 0; out.centre = Math.round(Math.abs((r.left + r.right) / 2 - (q.left + q.right) / 2));
-      out.inside = r.left >= q.left - 1 && r.right <= q.right + 1; out.index = [...strip.children].indexOf(f);
+      out.inGrid = !!(foc() && foc().classList.contains('d-shot'));
+      const grid = document.getElementById('dShots'), idx = () => [...grid.children].indexOf(foc());
+      for (let i = 0; i < 5 && idx() < 4; i++) await press(15); await w(700);
+      const f = foc(), r = f.getBoundingClientRect(), hb = document.getElementById('hints').getBoundingClientRect(), d = document.getElementById('details').getBoundingClientRect();
+      out.index = idx(); out.inside = r.top >= d.top - 1 && r.left >= d.left - 1 && r.right <= d.right + 1 && (r.bottom <= hb.top + 1 || r.left > hb.right || r.right < hb.left);
       try { delete navigator.getGamepads; } catch (e) {} key('Escape'); await w(600); return out; });
-    check('Details (Windows): with the controller the screenshot strip glides to centre the picture you\'re on, which is never cut off',
-      ss.inStrip && ss.scrolled && ss.glides >= 1 && ss.index >= 3 && ss.centre <= 40 && ss.inside, JSON.stringify(ss));
+    check('Details (Windows): RB to Media; the controller walks the screenshot grid (down from the buttons, then right) and the picture you\'re on stays in view',
+      ss.tab === 'media' && ss.inGrid && ss.index >= 4 && ss.inside, JSON.stringify(ss));
 
-    // (beta.12) Details redesigned around the case (Windows): Play has the focus when it opens; LB / RB (and Q / E) jump a
-    // section and the bar shows where you are; the trailer's box is on the first screen; Your play from a seeded history;
+    // (beta.12, beta.14) Details redesigned around the case (Windows): Play has the focus when it opens; LB / RB (and Q / E)
+    // switch tabs and the bar shows where you are; the trailer's box is on the first screen; your play from a seeded history;
     // Status is saved per game; Favourite toggles; every older action is still there
     const rd = await page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms)), out = {}, $ = id => document.getElementById(id);
       const key = k => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
@@ -241,35 +235,34 @@ module.exports = async function previewsPass({ browser, base, check, OUT }) {
       key('i'); for (let i = 0; i < 20 && Shelf.getMode() !== 'details'; i++) await w(150); await w(1200);
       const cur = () => (document.querySelector('#dvNav .dv-t.cur') || { dataset: {} }).dataset.s || '', foc = () => document.querySelector('#details .pad-focus');
       out.playFocused = !!foc() && foc().id === 'dPlay' && document.activeElement === $('dPlay') && cur() === 'overview';
-      // the trailer's box: on the first screen, beside Your play, right of the case
-      { const v = $('dvVid').getBoundingClientRect(), p = $('dStats').getBoundingClientRect(), c = document.querySelector('.slot.sel .f-front').getBoundingClientRect();
-        out.box = !$('dvDuo').hidden && v.width > 200 && v.bottom <= innerHeight && v.top >= 0 && Math.abs(p.top - v.top) < v.height && p.left > v.right && v.left > c.right; out.trailerBtn = !$('dTrailer').hidden; }
+      // the trailer's box: on the first screen, in Overview, right of the case; the facts list beside it
+      { const v = $('dvVid').getBoundingClientRect(), p = $('dGrid').getBoundingClientRect(), c = document.querySelector('.slot.sel .f-front').getBoundingClientRect();
+        out.box = !$('dvVid').hidden && v.width > 200 && v.bottom <= innerHeight && v.top >= 0 && Math.abs(p.top - v.top) < v.height && p.left > v.right && v.left > c.right; out.trailerBtn = !$('dTrailer').hidden; }
       /* (beta.12 test.8: the other cases fade by their faces, so they stay 3D; waited for: on a slow machine the fade is still under way at first) */
       const othersOut = () => [...document.querySelectorAll('.slot:not(.sel)')].every(s => s.classList.contains('far') || getComputedStyle(s).opacity === '0' || [...s.querySelectorAll(':scope > .box > .face')].every(f => getComputedStyle(f).opacity === '0'));
       for (let i = 0; i < 30 && !othersOut(); i++) await w(200); out.others = othersOut();
-      // Your play
-      const tile = k => { const t = document.querySelector(`#dvTiles .dv-tile[data-k="${k}"] b`); return t ? t.textContent : ''; };
-      out.stats = { time: tile('Play time'), launches: tile('Launches'), avg: tile('Average'), longest: tile('Longest'), first: tile('First played'), share: document.querySelector('#dvTiles .dv-tile:last-child b').textContent, week: $('dvWk').textContent, bars: $('dvBars').children.length,
-        tallest: [...$('dvBars').children].map(b => parseFloat(b.style.height)).indexOf(100) };
-      out.statsOk = out.stats.time === '3 h 30 min' && out.stats.launches === '3' && out.stats.avg === '1 h 10 min' && out.stats.longest === '2 h' && /\d{4}/.test(out.stats.first) && out.stats.share === '100%' && out.stats.week === '1 h 30 min' && out.stats.bars === 8 && out.stats.tallest === 5;
+      // (beta.14) your play, in the facts line and Overview's list (the Your play section went with the mockup)
+      const row = k => { const r = [...document.querySelectorAll('#dGrid > div')].find(x => x.querySelector('dt').textContent === k); return r ? r.querySelector('dd').textContent : ''; };
+      out.stats = { time: row('Time played'), launches: row('Launches'), last: row('Last played'), facts: $('dvFacts').textContent };
+      out.statsOk = out.stats.time === '3 h 30 min' && out.stats.launches === '3' && out.stats.last === 'Today' && /3 h 30 min played/.test(out.stats.facts);
       // LB / RB: a pretend controller's bumpers, then Q / E on the keyboard
       const pad = { id: 'Test pad', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
       Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: () => [pad, null, null, null] }); window.dispatchEvent(Object.assign(new Event('gamepadconnected'), { gamepad: pad }));
       const press = async b => { if (window.__padHold) { await __padHold(pad, b, 250); await w(650); return; } pad.buttons[b] = { pressed: true, touched: true, value: 1 }; pad.timestamp++; await w(250); pad.buttons[b] = { pressed: false, touched: false, value: 0 }; pad.timestamp++; await w(650); };
       const order = [...document.querySelectorAll('#dvNav .dv-t')].filter(t => !t.hidden).map(t => t.dataset.s); out.order = order;
       const s0 = cur(); for (let i = 0; i < 3 && cur() === s0; i++) await press(5);
-      const s1 = cur(), f1 = foc(), d = $('details'); out.rb = { from: s0, to: s1, focusIn: !!f1 && !!f1.closest(`.dv-sec[data-s="${s1}"]`) || !!f1 && order.indexOf((f1.closest('.dv-sec') || { dataset: {} }).dataset.s) > order.indexOf(s1), scrolled: d.scrollTop > 0 };
+      const s1 = cur(), shown = [...document.querySelectorAll('#details .dv-sec')].filter(e => e.getBoundingClientRect().height > 0).map(e => e.dataset.s); out.rb = { from: s0, to: s1, shown, only: shown.length === 1 && shown[0] === s1, focus: (foc() || {}).id || '' };
       for (let i = 0; i < 3 && cur() !== s0; i++) await press(4);
       out.lb = cur() === s0 && foc() && foc().id === 'dPlay';
       try { delete navigator.getGamepads; } catch (e) {}
       key('e'); await w(900); const k1 = cur(); key('e'); await w(900); const k2 = cur(); key('q'); await w(900); out.keys = [k1, k2, cur()];
       out.keysOk = order.indexOf(k1) === 1 && order.indexOf(k2) === 2 && order.indexOf(out.keys[2]) === 1;
       out.hint = [...document.querySelectorAll('#hints .lab')].map(x => x.textContent).includes('Sections');
-      // Status: Playing saved for this game, pressed again it's cleared
-      const opt = v => document.querySelector(`#dvStatus .dv-opt[data-v="${v}"]`), saved = async () => ((((await window.boxshelf.getConfig()).config.games || {})[g.id]) || {}).status || '';
-      const n0 = window.__statusSaved || 0; opt('playing').click(); await w(400);
-      out.status = { on: opt('playing').classList.contains('on') && opt('playing').getAttribute('aria-checked') === 'true', saved: await saved(), calls: (window.__statusSaved || 0) - n0 };
-      opt('finished').click(); await w(400); out.status.changed = await saved(); opt('finished').click(); await w(400); out.status.cleared = await saved();
+      // Status (beta.14: a chip that steps on): Playing saved for this game, then Finished, Abandoned, and back to Not started (cleared)
+      const chipSt = $('dvStatus'), saved = async () => ((((await window.boxshelf.getConfig()).config.games || {})[g.id]) || {}).status || '';
+      const n0 = window.__statusSaved || 0; out.status = { first: chipSt.textContent }; chipSt.click(); await w(400);
+      Object.assign(out.status, { on: chipSt.dataset.v === 'playing' && /Playing/.test(chipSt.textContent), saved: await saved(), calls: (window.__statusSaved || 0) - n0 });
+      chipSt.click(); await w(400); out.status.changed = await saved(); chipSt.click(); await w(400); out.status.third = await saved(); chipSt.click(); await w(400); out.status.cleared = await saved(); out.status.last = chipSt.textContent;
       // Favourite: on, then off again (the shelf's own favourite list)
       const favs = async () => (((await window.boxshelf.getConfig()).config.ui || {}).favorites || []).includes(g.id);
       const f0 = await favs(); $('dFav').click(); await w(700); const f1b = await favs(), p1 = $('dFav').getAttribute('aria-pressed'); $('dFav').click(); await w(700);
@@ -278,22 +271,23 @@ module.exports = async function previewsPass({ browser, base, check, OUT }) {
       const ids = ['dPlay', 'dManual', 'dInspect', 'dMoreBtn', 'dEmu', 'dGameEmu', 'dBoxArt', 'dRename', 'dChooseManual', 'dHide', 'dCols', 'dClose', 'dTrailer', 'dCmd', 'dGrid', 'dDesc', 'dAch'];
       out.missing = ids.filter(id => !$(id) || !$('details').contains($(id)));
       $('dMoreBtn').click(); await w(400); out.menu = [...document.querySelectorAll('#dMenu button')].filter(b => !b.hidden && b.offsetParent).map(b => b.id); key('Escape'); await w(400);
-      out.rows = ['dvArt', 'dvMan', 'dvEmu'].filter(id => $(id) && !$(id).hidden);
-      const emu0 = ((((await window.boxshelf.getConfig()).config.games || {})[g.id]) || {}).emulator || ''; $('dvEmu').click(); await w(700); const emu1 = ((((await window.boxshelf.getConfig()).config.games || {})[g.id]) || {}).emulator || '';
-      out.emuRow = emu0 !== emu1; if (emu0 !== emu1) { $('dvEmu').click(); await w(700); }
+      document.querySelector('#dvNav .dv-t[data-s="copy"]').click(); await w(500);
+      out.rows = ['dvC-emu', 'dvC-man', 'dvC-art'].filter(id => $(id) && !$(id).hidden && $(id).getBoundingClientRect().width > 0);
+      const emu0 = ((((await window.boxshelf.getConfig()).config.games || {})[g.id]) || {}).emulator || ''; $('dvC-emu').click(); await w(700); const emu1 = ((((await window.boxshelf.getConfig()).config.games || {})[g.id]) || {}).emulator || '';
+      out.emuRow = emu0 !== emu1; if (emu0 !== emu1) { $('dvC-emu').click(); await w(700); }
       out.mode = Shelf.getMode(); key('Escape'); await w(700); return out; });
-    check('Details redesign (Windows): Play has the focus when Details opens; the other cases fade away; the trailer\'s box is on the first screen beside Your play, right of the case',
+    check('Details redesign (Windows): Play has the focus when Details opens; the other cases fade away; the trailer\'s box is on the first screen in Overview, right of the case, the facts beside it',
       rd.playFocused && rd.box && rd.others, JSON.stringify({ playFocused: rd.playFocused, box: rd.box, others: rd.others }));
-    check('Details redesign (Windows): LB / RB (and Q / E) jump a section, the bar shows where you are, the controller lands in it; LB back to the top is Play; the hint bar says Sections',
-      rd.rb.from === 'overview' && rd.rb.to === rd.order[1] && rd.rb.focusIn && rd.rb.scrolled && rd.lb && rd.keysOk && rd.hint, JSON.stringify({ order: rd.order, rb: rd.rb, lb: rd.lb, keys: rd.keys, hint: rd.hint }));
-    check('Details redesign (Windows): Your play from the history (time, launches, average, longest, first played, share of the console, hours by week)',
+    check('Details redesign (Windows): LB / RB (and Q / E) switch tabs, only that tab shows and the bar marks it; LB back to Overview, Play still has the focus; the hint bar says Sections',
+      rd.rb.from === 'overview' && rd.rb.to === rd.order[1] && rd.rb.only && rd.lb && rd.keysOk && rd.hint, JSON.stringify({ order: rd.order, rb: rd.rb, lb: rd.lb, keys: rd.keys, hint: rd.hint }));
+    check('Details redesign (Windows): your play from the history (time played and when, in the facts line and Overview\'s list)',
       rd.statsOk, JSON.stringify(rd.stats));
-    check('Details redesign (Windows): Status is saved per game (Playing, then Finished; pressed again it clears)',
-      rd.status.on && rd.status.saved === 'playing' && rd.status.calls === 1 && rd.status.changed === 'finished' && rd.status.cleared === '', JSON.stringify(rd.status));
+    check('Details redesign (Windows): Status is saved per game (the chip steps Not started → Playing → Finished → Abandoned → Not started, which clears it)',
+      /Not started/.test(rd.status.first) && rd.status.on && rd.status.saved === 'playing' && rd.status.calls === 1 && rd.status.changed === 'finished' && rd.status.third === 'abandoned' && rd.status.cleared === '' && /Not started/.test(rd.status.last), JSON.stringify(rd.status));
     check('Details redesign (Windows): Favourite in Details adds the game to the shelf\'s favourites and takes it off again',
       rd.fav.on !== rd.fav.before && rd.fav.pressed === String(!rd.fav.before) && rd.fav.after === rd.fav.before && rd.fav.pressedAfter === String(rd.fav.before), JSON.stringify(rd.fav));
-    check('Details redesign (Windows): every older action is still there (More: emulator, its own emulator, box art, rename, manual, hide, collections; Your copy\'s rows press the same buttons)',
-      !rd.missing.length && ['dEmu', 'dGameEmu', 'dBoxArt', 'dRename', 'dChooseManual', 'dHide', 'dCols'].every(id => rd.menu.includes(id)) && rd.rows.length === 3 && rd.emuRow && rd.mode === 'details',
+    check('Details redesign (Windows): every older action is still there (More: the manual, the case, emulator, its own emulator, box art, rename, find a manual, hide, collections; Your copy\'s buttons press the same ones)',
+      !rd.missing.length && ['dManual', 'dInspect', 'dEmu', 'dGameEmu', 'dBoxArt', 'dRename', 'dChooseManual', 'dHide'].every(id => rd.menu.includes(id)) && (rd.menu.includes('dCols') || rd.menu.includes('dAddTo')) && rd.rows.length === 3 && rd.emuRow && rd.mode === 'details',
       JSON.stringify({ missing: rd.missing, menu: rd.menu, rows: rd.rows, emuRow: rd.emuRow, mode: rd.mode }));
 
     // nothing starts while the shelf is busy
@@ -348,20 +342,24 @@ module.exports = async function previewsPass({ browser, base, check, OUT }) {
     check('Console trailers: with no helper yet, a card on the shelf says so once and its button gets it',
       /Console games can play their trailers too/.test(card) && /Get the helper/.test(card) && !!hs && hs.helper, JSON.stringify({ card: card.split('\n').slice(0, 3), helper: hs && hs.helper }));
 
-    // Settings → Video previews: a section of its own in the side list (no longer inside Box art & manuals)
+    // Settings → Look → Video previews (beta.14: a part of Look, with "Previews by console" a page of its own; no longer
+    // inside Box art & media, and no tab of its own)
     await ready('?platform=windows&shelf=1&previews=shelf&clips=1');
     await page.evaluate(() => Setup.open({ page: 'art' })); await pause(1500);
-    const artRows = await page.evaluate(() => ((document.querySelector('.bss-scroll') || {}).innerText || '').split('\n').filter(l => /^Video previews$/.test(l.trim())).length);
+    const artRows = await page.evaluate(() => ((document.querySelector('.bss-scroll') || {}).innerText || '').split('\n').filter(l => /^Video previews$/i.test(l.trim())).length);
     const side = await page.evaluate(() => [...document.querySelectorAll('.bss-side .bss-nav')].map(e => e.textContent.trim()));
-    await page.locator('.bss-side .bss-nav', { hasText: 'Video previews' }).first().click(); // (as a person would: the side list)
+    await page.locator('.bss-side .bss-nav', { hasText: /^Look/ }).first().click(); // (as a person would: the side list)
     const list =() => page.evaluate(() => ((document.querySelector('.bss-scroll') || {}).innerText || ''));
+    let look = ''; for (let w = 0; w < 30 && !/Previews by console/.test(look); w++) { await pause(300); look = await list(); }
+    await page.locator('.bss-scroll .bss-row', { hasText: /^Previews by console/ }).first().click();
     let st = ''; for (let w = 0; w < 60 && !(/Console trailers/.test(st) && /Found|23 games/.test(st)); w++) { await pause(300); st = await list(); } // (slow build machines)
     const getBtn = page.getByText(/^Get the trailer helper/).first(); let got = '';
     if (await getBtn.count()) { await getBtn.click(); for (let w = 0; w < 60 && !/Console trailer clips/.test(got); w++) { await pause(300); got = await list(); } }
-    check('Settings: Video previews is its own section under Library (after Box art & manuals): where they play, Console trailers with its helper, sound, start after, YouTube, the videos found',
-      artRows === 0 && side.includes('Video previews') && side.indexOf('Video previews') > side.indexOf('Box art & manuals') && side.indexOf('Video previews') < side.indexOf('Magazines & guides') &&
-      /Play previews/.test(st) && /Console trailers/.test(st) && /Get the trailer helper/.test(st) && /Play previews with sound/.test(st) && /Start a preview after/.test(st) && !/YouTube.s player/.test(st) /* (beta.9: the Thor only) */ && /23 games|Found/i.test(st) && /Console trailer clips/.test(got),
-      JSON.stringify({ artRows, side: side.filter(s => /Box art|Video|Magazines/.test(s)), rows: st.split('\n').filter(l => /video|preview|trailer|helper/i.test(l)).slice(0, 9), helperAfter: /Console trailer clips/.test(got) }));
+    check('Settings: Video previews are in Look (where they play, sound, start after) with Previews by console (Console trailers with its helper, YouTube, the videos found); not in Box art & media',
+      artRows === 0 && side.some(s => /^Look/.test(s)) && !side.some(s => /^Video previews/.test(s)) &&
+      /^Video previews$/im.test(look) && /Play previews/.test(look) && /Play previews with sound/.test(look) && /Start a preview after/.test(look) &&
+      /Console trailers/.test(st) && /Get the trailer helper/.test(st) && !/YouTube.s player/.test(look + st) /* (beta.9: the Thor only) */ && /23 games|Found/i.test(st) && /Console trailer clips/.test(got),
+      JSON.stringify({ artRows, side: side.filter(s => /Look|Box art|Video/.test(s)), look: look.split('\n').filter(l => /video|preview/i.test(l)).slice(0, 6), rows: st.split('\n').filter(l => /video|preview|trailer|helper/i.test(l)).slice(0, 9), helperAfter: /Console trailer clips/.test(got) }));
 
     // first run: box art yes → previews offered, on, with what was found
     await page.goto(base + '?platform=windows&retro=1'); await page.waitForSelector('#setup.on', { timeout: 90000 }); await pause(800);

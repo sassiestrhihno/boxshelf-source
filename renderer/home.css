@@ -66,3 +66,94 @@ body.shelf .paused{display:none}
 body.shelf .now{margin-bottom:22px}
 .foot b.guide{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:0 8px}
 .item.sel .hold{background:linear-gradient(90deg,rgba(229,72,77,.45),rgba(229,72,77,.7));border-right:3px solid #e5484d}
+/* (beta.14) mouse and touch: the pointer shows once the mouse moves; prompts along the bottom can be tapped */
+body.pointer,body.pointer *{cursor:default}
+body.pointer .item,body.pointer .ach,body.pointer .foot [data-b]{cursor:pointer}
+/* (beta.14) Achievements: the running game's, in place of the items, laid out like the shelf's Achievements screen */
+body.in-ach .items{animation:subIn .22s cubic-bezier(.2,.9,.2,1);min-height:0;gap:0}
+.ach-sum{display:flex;flex-direction:column;gap:8px;margin:0 6px 12px}
+.ach-sum .st{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:21px;font-weight:600}
+.ach-sum .st small{font-size:15px;font-weight:500;color:var(--dim);font-variant-numeric:tabular-nums}
+.ach-sum .bar{height:8px;border-radius:4px;background:rgba(255,255,255,.1);overflow:hidden}
+.ach-sum .bar i{display:block;height:100%;border-radius:4px;background:var(--accent)}
+.ach-sum .ln{font-size:14px;color:var(--dim)}
+/* (test.11: "still hard to read, the whole thing is a bit small") the side panel widens while it shows achievements,
+   and everything in it is about a third bigger */
+body.layout-side.in-ach .panel{width:min(780px,54vw)}
+/* the tabs beside the heading */
+.ach-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 6px 10px}
+.ach-top .subhead{margin:0}
+.ach-tabs{display:flex;gap:2px}
+.ach-tab{font:inherit;font-size:15px;font-weight:500;color:var(--dim);background:none;border:0;border-radius:999px;padding:5px 14px;display:flex;gap:6px;align-items:baseline;cursor:inherit}
+.ach-tab em{font-style:normal;opacity:.6;font-variant-numeric:tabular-nums}
+.ach-tab.on{background:rgba(255,255,255,.94);color:#0e1018}
+/* the wall, as on the shelf (setup.css .achv): a trophy shelf of what's unlocked, then the rest in sections; a badge's rim
+   says how rare it is */
+.ach-body{flex:1;min-height:0;display:flex;flex-direction:column;gap:12px;--tile:70px}
+.ach-wall{position:relative;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;display:grid;grid-template-columns:repeat(auto-fill,var(--tile));gap:10px;align-content:start;padding:2px 10px 10px 8px}
+.ach-wall::-webkit-scrollbar{width:6px}
+.ach-wall::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:3px}
+.ach-sec{grid-column:1/-1;display:flex;align-items:center;gap:10px;margin:12px 0 0;font-size:13px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+.ach-sec.top{margin-top:2px}
+.ach-sec em{font-style:normal;font-weight:500;letter-spacing:.04em;opacity:.6}
+.ach-sec::after{content:"";flex:1;height:1px;background:var(--line)}
+.ach{--rim:rgba(255,255,255,.22);position:relative;width:var(--tile);aspect-ratio:1;border-radius:10px;padding:4px;background:rgba(255,255,255,.035);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);flex:none;transition:transform .16s cubic-bezier(.2,.9,.25,1)}
+.ach img{display:block;width:100%;height:100%;border-radius:7px;object-fit:cover;background:#0b0d14}
+.ach-card{--rim:rgba(255,255,255,.22)}
+.ach-card[data-tier=common]{--rim:rgba(190,192,200,.75)}.ach-card[data-tier=uncommon]{--rim:#4fc6a0}
+.ach[data-tier=rare],.ach-card[data-tier=rare]{--rim:#a99cff}
+.ach[data-tier=ultra],.ach-card[data-tier=ultra]{--rim:#f2b84b}
+.ach[data-tier=rare],.ach[data-tier=ultra]{box-shadow:inset 0 0 0 2px var(--rim)}
+.ach:not(.locked){background:rgba(255,255,255,.07)}
+.ach.locked img{filter:grayscale(.9) brightness(.6) contrast(1.05)}
+.ach.locked::before{content:"";position:absolute;right:3px;bottom:3px;width:19px;height:19px;border-radius:50%;background:rgba(8,9,14,.88) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c9ccd6' stroke-width='2.4' stroke-linecap='round'%3E%3Crect x='6' y='11' width='12' height='9' rx='2'/%3E%3Cpath d='M9 11V8a3 3 0 0 1 6 0v3'/%3E%3C/svg%3E") center/10px no-repeat;z-index:1}
+.ach.miss::after{content:"";position:absolute;top:3px;right:3px;width:8px;height:8px;border-radius:50%;background:#f0997b;box-shadow:0 0 0 2px rgba(5,6,12,.9);z-index:1}
+.ach.sel{transform:translateY(-2px) scale(1.08);z-index:2;outline:2px solid #ffd98a;outline-offset:3px}
+.ach.sel.locked img{filter:grayscale(.5) brightness(.85)}
+.ach-shelf{grid-column:1/-1;position:relative;padding:0 0 10px;background:radial-gradient(70% 90% at 30% 100%,rgba(255,217,138,.10),transparent 70%)}
+.ach-shelf::after{content:"";position:absolute;left:0;right:0;bottom:4px;height:7px;border-radius:3px;background:linear-gradient(#4a4336,#2a2620);box-shadow:0 6px 14px rgba(0,0,0,.45)}
+.ach-shelf-row{position:relative;display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:10px 8px 8px;scrollbar-width:none;touch-action:pan-x}
+.ach-shelf-row::-webkit-scrollbar{display:none}
+.ach-shelf .ach:not(.locked){box-shadow:inset 0 0 0 1px rgba(255,217,138,.35),0 8px 18px -8px rgba(255,217,138,.55)}
+.ach-shelf .ach[data-tier=rare],.ach-shelf .ach[data-tier=ultra]{box-shadow:inset 0 0 0 2px var(--rim),0 8px 18px -8px var(--rim)}
+.ach-shelf-empty{display:flex;align-items:center;gap:12px;color:var(--dim);font-size:15px}
+.ach-shelf-empty i{width:var(--tile);aspect-ratio:1;border-radius:10px;border:2px dashed rgba(255,217,138,.35);background:rgba(255,217,138,.05);flex:none}
+.ach-empty{grid-column:1/-1;font-size:15px;color:var(--dim);padding:10px 2px}
+/* the card for the selected badge (under the wall in the side panel, beside it in the centred card) */
+.ach-card{flex:none;height:228px;overflow:hidden;padding:16px 18px;border-radius:14px;background:rgba(255,255,255,.05);box-shadow:0 0 0 1px rgba(255,255,255,.07);display:flex;flex-direction:column;gap:6px;min-width:0}
+.ach-card[hidden]{display:none}
+.ach-card-top{display:flex;gap:14px;align-items:center;min-width:0}
+.ach-big{flex:none;width:76px;height:76px;border-radius:10px;object-fit:cover;background:#0b0d14;box-shadow:inset 0 0 0 2px var(--rim),0 0 22px -8px var(--rim)}
+.ach-card.locked .ach-big{filter:grayscale(1) brightness(.7)}
+.ach-card-h{min-width:0;flex:1}
+.ach-card-t{font-size:19px;font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.ach-meta{display:flex;gap:10px;align-items:center;margin-top:4px;font-size:13px}
+.ach-tier{font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--rim)}
+.ach-tier:empty,.ach-tags:empty{display:none}
+.ach-tag{display:inline-flex;align-items:center;gap:6px;color:var(--dim)}
+.ach-tag::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.ach-tag.story{color:#8fc3ff}.ach-tag.win{color:#ffd98a}.ach-tag.miss{color:#f0997b}
+.ach-tag.grade-platinum{color:#cfe3ff}.ach-tag.grade-gold{color:#f2c14e}.ach-tag.grade-silver{color:#c9ccd6}.ach-tag.grade-bronze{color:#d39a6a}
+.ach-card-d{font-size:15px;line-height:1.4;color:rgba(243,245,251,.8);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ach-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding-top:6px;border-top:1px solid var(--line);margin-top:auto}
+.ach-facts small{display:block;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.ach-facts b{display:block;font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ach-when{font-size:13px;color:var(--dim)}
+.ach-when:empty{display:none}
+.ach-msg{display:flex;flex-direction:column;gap:6px;margin:6px;padding:18px;border-radius:14px;border:1px solid var(--line);font-size:15px;color:var(--dim)}
+.ach-msg b{font-size:19px;font-weight:600;color:var(--ink)}
+.ach-msg.err b{color:#ffb4b4}
+.foot b+b{margin-left:-2px}
+body.in-ach .foot{flex-wrap:wrap;row-gap:8px}
+/* the centred card: the wall with the card beside it */
+body.layout-center.in-ach .items{display:flex;flex-direction:column;gap:0;height:min(64vh,720px)}
+body.layout-center .ach-body{display:grid;grid-template-columns:minmax(0,1fr) 320px;--tile:74px}
+body.layout-center .ach-card{height:auto;align-self:stretch;overflow-y:auto}
+body.layout-center .ach-big{width:92px;height:92px}
+body.layout-center .ach-card-top{flex-direction:column;align-items:flex-start}
+body.layout-center .ach-card-d{-webkit-line-clamp:6}
+body.reduce-motion.in-ach .items,body.reduce-motion .ach{animation:none;transition:none}
+@media (max-height:780px){body.in-ach .cover{display:none}body.in-ach .now{margin:14px 0 10px}body.in-ach .ach-card{height:186px;padding:12px 16px}body.in-ach .ach-big{width:60px;height:60px}body.in-ach .ach-card-d{-webkit-line-clamp:1}}
+@media (max-height:600px){body.in-ach .now,body.in-ach .paused{display:none}body.in-ach .ach-card{height:150px}body.in-ach .ach-body{--tile:58px}body.in-ach .ach-card-d{-webkit-line-clamp:1}body.in-ach .panel{padding-top:22px}}
+/* (beta.14) a short screen (a 1080p laptop at 150 %: 720 high): a little tighter, so the whole list and the prompts fit */
+@media (max-height:780px){body.layout-side .now{margin:16px 0 12px}body.layout-side .cover{width:84px}body.layout-side .item{padding:10px 16px}body.layout-side .items{gap:4px}body.layout-side .sep{margin:5px 6px}body.layout-side .paused{margin-bottom:8px}}

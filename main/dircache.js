@@ -5,17 +5,20 @@ const fs = require('fs');
 const path = require('path');
 
 function lister() {
-  const m = new Map(), x = new Map(), key = d => path.resolve(d).toLowerCase();
+  const m = new Map(), x = new Map(), key = d => path.resolve(d).toLowerCase(); let gen = 0;
   return {
     // the folder's entry names as on disk; [] when it's missing or unreadable
     names(dir) { const k = key(dir); let v = m.get(k); if (!v) { try { v = fs.readdirSync(dir); } catch { v = []; } m.set(k, v); } return v; },
     // (beta.10) build(names) worked out once per folder and kept with its listing (e.g. the manuals index: one pass over a
     // big covers folder instead of one per game); forget(dir) drops it too
     derived(dir, tag, build) { const k = key(dir); let o = x.get(k); if (!o) x.set(k, o = {}); if (!(tag in o)) o[tag] = build(this.names(dir)); return o[tag]; },
-    forget(dir) { if (dir) { m.delete(key(dir)); x.delete(key(dir)); } }
+    forget(dir) { if (dir) { gen++; m.delete(key(dir)); x.delete(key(dir)); } },
+    // (perf) the same listing read ahead with fs.promises, so names() then answers from memory without holding the app up
+    // (a forget() while it reads: that listing may be from before the change, so it isn't kept)
+    async prime(dir) { const k = key(dir), g = gen; if (m.has(k)) return; let v; try { v = await fs.promises.readdir(dir); } catch { v = []; } if (g === gen && !m.has(k)) m.set(k, v); }
   };
 }
 // outside a run: a plain listing every time
-const fresh = { names(dir) { try { return fs.readdirSync(dir); } catch { return []; } }, derived(dir, tag, build) { return build(this.names(dir)); }, forget() {} };
+const fresh = { names(dir) { try { return fs.readdirSync(dir); } catch { return []; } }, derived(dir, tag, build) { return build(this.names(dir)); }, forget() {}, async prime() {} };
 
 module.exports = { lister, fresh };

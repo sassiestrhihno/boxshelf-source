@@ -41,20 +41,42 @@ function installedState(st, lib) {
   return +(vdf.get(st, 'SizeOnDisk') || 0) > 0 && !!dir && isDir(path.join(lib, 'steamapps', 'common', String(dir)));
 }
 
-function libraryFolders(steamPath) {
-  // the same folder spelled differently ("C:\Steam\" vs "c:\steam") is one library: keyed by its normalised path
-  const fold = s => process.platform === 'win32' ? s.toLowerCase() : s; // (beta.12: Linux folders differ by case)
-  const out = new Map(), add = p => { const k = fold(path.resolve(p).replace(/[\\/]+$/, '')); if (!out.has(k)) out.set(k, p); };
+// the same folder spelled differently ("C:\Steam\" vs "c:\steam") is one library: keyed by its normalised path
+const fold = s => process.platform === 'win32' ? s.toLowerCase() : s; // (beta.12: Linux folders differ by case)
+const libKey = p => fold(path.resolve(p).replace(/[\\/]+$/, ''));
+// every library Steam lists, without touching their drives (reading libraryfolders.vdf only touches Steam's own folder)
+function libraryPaths(steamPath) {
+  const out = new Map(), add = p => { const k = libKey(p); if (!out.has(k)) out.set(k, p); };
   add(steamPath);
   const lf = readVdf(path.join(steamPath, 'steamapps', 'libraryfolders.vdf'));
   const root = lf && (vdf.get(lf, 'libraryfolders') || vdf.get(lf, 'LibraryFolders'));
-  if (root) {
-    for (const v of Object.values(root)) {
-      const p = typeof v === 'string' ? v : vdf.get(v, 'path');
-      if (p && isDir(p)) add(p.replace(/\\\\/g, '\\'));
-    }
-  }
+  if (root) for (const v of Object.values(root)) { const p = typeof v === 'string' ? v : vdf.get(v, 'path'); if (p) add(String(p).replace(/\\\\/g, '\\')); }
   return [...out.values()];
+}
+// (beta.14) a library on a drive that doesn't answer (asleep, unplugged, a network share that's gone) froze the whole app while
+// Boxshelf read it, because those reads wait in the main process (issue #34). probeLibraries() asks each drive without waiting
+// on it; one that hasn't answered within a few seconds is left out (and remembered for 5 minutes, so it doesn't cost the wait
+// again on every shelf refresh); libraryFolders() then never touches it.
+const DEAD = new Map(), DEAD_FOR = 5 * 60e3;
+const isDead = p => { const t = DEAD.get(libKey(p)); return !!t && Date.now() - t < DEAD_FOR; };
+// 'dir' | 'file' | 'none' (not there) | 'timeout' (the drive didn't answer)
+function answers(p, ms) {
+  return new Promise(res => { let done = false; const end = v => { if (!done) { done = true; clearTimeout(t); res(v); } }; const t = setTimeout(() => end('timeout'), ms);
+    fs.promises.stat(p).then(st => end(st.isDirectory() ? 'dir' : 'file'), () => end('none')); });
+}
+const driveOf = p => ((/^[a-z]:/i.exec(path.resolve(p)) || ['?'])[0]).toUpperCase();
+async function probeLibraries(steamPath, opts = {}) {
+  const log = typeof opts.log === 'function' ? opts.log : () => {}, ms = opts.timeout || 6000;
+  const paths = libraryPaths(steamPath).filter(p => !isDead(p));
+  const ok = await Promise.all(paths.map(async p => {
+    const a = await answers(p, ms);
+    if (a === 'timeout') { DEAD.set(libKey(p), Date.now()); log(`Steam: a library on drive ${driveOf(p)} didn't answer in ${Math.round(ms / 1000)} s: left out for now (asleep or unplugged?)`); }
+    return a === 'dir';
+  }));
+  return paths.filter((p, i) => ok[i]);
+}
+function libraryFolders(steamPath) {
+  return libraryPaths(steamPath).filter(p => !isDead(p) && isDir(p));
 }
 
 // Playtime + last played from the most recently used Steam account.
@@ -112,7 +134,7 @@ function scanSteam(givenPath, opts = {}) {
   const main = steamRoot(opts.mainPath), steamPath = isMainSteam(given) || !main ? given : main;
   const stats = userStats(steamPath);
   const games = [], seen = new Set(); let manifests = 0, notInstalled = 0, tools = 0;
-  const libs = libraryFolders(steamPath); if (steamPath !== given && !libs.some(l => process.platform === 'win32' ? path.resolve(l).toLowerCase() === path.resolve(given).toLowerCase() : path.resolve(l) === path.resolve(given))) libs.push(given);
+  const libs = Array.isArray(opts.libs) ? opts.libs.slice() : libraryFolders(steamPath); if (steamPath !== given && !libs.some(l => process.platform === 'win32' ? path.resolve(l).toLowerCase() === path.resolve(given).toLowerCase() : path.resolve(l) === path.resolve(given))) libs.push(given);
   for (const lib of libs) {
     const apps = path.join(lib, 'steamapps');
     for (const ent of readDir(apps)) {
@@ -144,5 +166,29 @@ function scanSteam(givenPath, opts = {}) {
   return games;
 }
 let lastLogKey = '';
+// (beta.14) scanSteam with every library's drive asked first (see probeLibraries): the folder set in Settings and Steam's own
+// folder are asked too, so a Steam folder on a drive that's gone can't hold the app up either
+async function scanSteamSafe(givenPath, opts = {}) {
+  const log = typeof opts.log === 'function' ? opts.log : () => {}, ms = opts.timeout || 6000;
+  const g = String(givenPath || '').trim().replace(/^"(.*)"$/, '$1'); if (!g) return [];
+  const probe = /\.(exe|sh)$/i.test(g) ? path.dirname(g) : g.replace(/[\\/]+$/, '') || g;
+  if (isDead(probe)) return [];
+  const a = await answers(probe, ms);
+  if (a === 'timeout') { DEAD.set(libKey(probe), Date.now()); log(`Steam: the Steam folder (drive ${driveOf(probe)}) didn't answer in ${Math.round(ms / 1000)} s: the PC shelf leaves Steam out for now`); return []; }
+  const given = steamRoot(g); if (!given) return scanSteam(givenPath, opts);
+  let mainPath = opts.mainPath || ''; if (mainPath && (isDead(mainPath) || (await answers(mainPath, ms)) !== 'dir')) mainPath = '';
+  const main = steamRoot(mainPath), steamPath = isMainSteam(given) || !main ? given : main;
+  return scanSteam(givenPath, { ...opts, mainPath, libs: await probeLibraries(steamPath, opts) });
+}
 
-module.exports = { scanSteam, isTool, steamRoot, isMainSteam, libraryFolders }; // (beta.12: libraryFolders for main/gamewatch.js)
+// false when the Steam folder set in Settings is on a drive that didn't answer (now, or within the last 5 minutes)
+async function steamAnswers(p, log, ms = 6000) {
+  const g = String(p || '').trim().replace(/^"(.*)"$/, '$1'); if (!g) return true;
+  const probe = /\.(exe|sh)$/i.test(g) ? path.dirname(g) : g.replace(/[\\/]+$/, '') || g;
+  if (isDead(probe)) return false;
+  if ((await answers(probe, ms)) !== 'timeout') return true;
+  DEAD.set(libKey(probe), Date.now()); if (typeof log === 'function') log(`Steam: the Steam folder (drive ${driveOf(probe)}) didn't answer in ${Math.round(ms / 1000)} s: the PC shelf leaves Steam out for now`);
+  return false;
+}
+
+module.exports = { scanSteam, scanSteamSafe, steamAnswers, probeLibraries, isTool, steamRoot, isMainSteam, libraryFolders, _t: { DEAD, answers } }; // (beta.12: libraryFolders for main/gamewatch.js)

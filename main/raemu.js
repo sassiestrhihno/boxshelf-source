@@ -63,23 +63,60 @@ async function checkPcsx2(exe, env) {
   const a = parseIni(await readText(f)).achievements || {};
   if (!truthy(a.enabled)) return { state: 'off', user: a.username || '', detail: 'Achievements are turned off in PCSX2' };
   if (!a.token) return { state: 'signed-out', user: a.username || '', detail: 'Not signed in to RetroAchievements in PCSX2' };
-  return { state: 'ok', user: a.username || '', detail: truthy(a.challengemode) ? 'Hardcore mode on' : '' };
+  return { state: 'ok', user: a.username || '', popups: a.notifications === undefined || truthy(a.notifications), detail: truthy(a.challengemode) ? 'Hardcore mode on' : '' };
 }
 
-const EMU = { Dolphin: checkDolphin, PPSSPP: checkPpsspp, PCSX2: checkPcsx2 };
-const SYSTEMS = [['gc', 'Dolphin'], ['wii', 'Dolphin'], ['psp', 'PPSSPP'], ['ps2', 'PCSX2']];
+// (beta.14) DuckStation (PlayStation) and RetroArch (every retro console, and any other console played through it)
+async function duckIni(exe, env) {
+  const dir = path.dirname(exe), home = env.USERPROFILE || env.HOME || '', local = env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+  const portable = await exists(path.join(dir, 'portable.txt'));
+  return firstExisting([...(portable ? [path.join(dir, 'settings.ini')] : []), path.join(local, 'DuckStation', 'settings.ini'), ...emucfg.docsDirs(env).map(d => path.join(d, 'DuckStation', 'settings.ini')),
+    ...(process.platform === 'linux' ? [path.join(env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'duckstation', 'settings.ini'), path.join(home, '.var', 'app', 'org.duckstation.DuckStation', 'data', 'duckstation', 'settings.ini')] : [])]);
+}
+async function checkDuckstation(exe, env) {
+  const f = await duckIni(exe, env); if (!f) return { state: 'unknown', user: '', detail: 'DuckStation settings not found (run DuckStation once)' };
+  const a = parseIni(await readText(f)).cheevos || {};
+  if (!truthy(a.enabled)) return { state: 'off', user: a.username || '', detail: 'Achievements are turned off in DuckStation' };
+  if (!a.token) return { state: 'signed-out', user: a.username || '', detail: 'Not signed in to RetroAchievements in DuckStation' };
+  return { state: 'ok', user: a.username || '', popups: a.notifications === undefined || truthy(a.notifications), detail: truthy(a.challengemode) ? 'Hardcore mode on' : '' };
+}
+// retroarch.cfg: beside the program (Windows keeps it there), else the user's RetroArch folder. `key = "value"` lines
+const cfgVal = (t, k) => { const m = new RegExp('^\\s*' + k + '\\s*=\\s*"?([^"\\r\\n]*)"?', 'm').exec(t || ''); return m ? m[1].trim() : ''; };
+async function checkRetroarch(exe, env) {
+  const dir = path.dirname(exe), home = env.USERPROFILE || env.HOME || '', appdata = env.APPDATA || path.join(home, 'AppData', 'Roaming');
+  const f = await firstExisting([path.join(dir, 'retroarch.cfg'), path.join(appdata, 'RetroArch', 'retroarch.cfg'),
+    ...(process.platform === 'linux' ? [exe + '.config/retroarch/retroarch.cfg', path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'retroarch', 'retroarch.cfg'), path.join(home, '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'retroarch.cfg')] : [])]);
+  if (!f) return { state: 'unknown', user: '', detail: 'RetroArch settings not found (run RetroArch once)' };
+  const t = await readText(f), user = cfgVal(t, 'cheevos_username');
+  if (!truthy(cfgVal(t, 'cheevos_enable'))) return { state: 'off', user, detail: 'Achievements are turned off in RetroArch' };
+  if (!user || !(cfgVal(t, 'cheevos_token') || cfgVal(t, 'cheevos_password'))) return { state: 'signed-out', user, detail: 'Not signed in to RetroAchievements in RetroArch' };
+  const vis = cfgVal(t, 'cheevos_visibility_unlock');
+  return { state: 'ok', user, popups: !vis || truthy(vis), detail: truthy(cfgVal(t, 'cheevos_hardcore_mode_enable')) ? 'Hardcore mode on' : '' };
+}
+
+const EMU = { Dolphin: checkDolphin, PPSSPP: checkPpsspp, PCSX2: checkPcsx2, DuckStation: checkDuckstation, RetroArch: checkRetroarch };
+// which emulator a console's program is (by its file name); another one (melonDS, mGBA, RMG…) has no achievements of its own
+function emuKind(exe) {
+  const n = path.basename(String(exe || '')).toLowerCase();
+  return /retroarch/.test(n) ? 'RetroArch' : /dolphin/.test(n) ? 'Dolphin' : /pcsx2/.test(n) ? 'PCSX2' : /ppsspp/.test(n) ? 'PPSSPP' : /duckstation/.test(n) ? 'DuckStation' : null;
+}
+// the consoles always listed (their usual emulator named even before one is chosen); every other console RetroAchievements
+// covers is listed once it has an emulator
+const BASE = { gc: 'Dolphin', wii: 'Dolphin', psp: 'PPSSPP', ps2: 'PCSX2' };
 
 // cfg: the app config; supported: RA console ids (main/ra.js CONSOLE_ID); env: for tests
 async function check(cfg, supported, env = process.env) {
-  const raUser = String((cfg && cfg.ra && cfg.ra.user) || '').trim();
-  const memo = new Map(); // gc and wii often share one Dolphin
-  return Promise.all(SYSTEMS.map(async ([system, emulator]) => {
-    const base = { system, emulator };
+  const raUser = String((cfg && cfg.ra && cfg.ra.user) || '').trim(), sys = (cfg && cfg.systems) || {};
+  const ids = [...new Set([...Object.keys(BASE), ...Object.keys(supported || {}).filter(id => sys[id] && String(sys[id].emulator || '').trim())])];
+  const memo = new Map(); // one emulator often runs several consoles (Dolphin: GameCube and Wii; RetroArch: all the retro ones)
+  return Promise.all(ids.map(async system => {
+    const exe = String((sys[system] && sys[system].emulator) || '').trim(), kind = exe ? emuKind(exe) : null, emulator = kind || (exe ? path.basename(exe).replace(/\.exe$/i, '') : BASE[system] || '');
+    const base = { system, emulator, exeKey: exe ? path.resolve(exe).toLowerCase() : '' };
     if (!supported[system]) return { ...base, state: 'unsupported', user: '', detail: system === 'wii' ? 'Few Wii games have achievement sets yet' : 'RetroAchievements does not cover this console' };
-    const exe = String((cfg && cfg.systems && cfg.systems[system] && cfg.systems[system].emulator) || '').trim();
-    if (!exe) return { ...base, state: 'no-emulator', user: '', detail: `No ${emulator} set up for this console` };
-    const key = emulator + '|' + path.resolve(exe);
-    if (!memo.has(key)) memo.set(key, EMU[emulator](exe, env).catch(() => ({ state: 'unknown', user: '', detail: `Could not read ${emulator} settings` })));
+    if (!exe) return { ...base, state: 'no-emulator', user: '', detail: `No ${emulator || 'emulator'} set up for this console` };
+    if (!kind) return { ...base, state: 'no-ra', user: '', detail: `${emulator} has no RetroAchievements: play this console in RetroArch to earn them` };
+    const key = kind + '|' + base.exeKey;
+    if (!memo.has(key)) memo.set(key, EMU[kind](exe, env).catch(() => ({ state: 'unknown', user: '', detail: `Could not read ${kind} settings` })));
     const r = { ...base, ...(await memo.get(key)) };
     if (r.state === 'ok' && raUser && r.user && r.user.toLowerCase() !== raUser.toLowerCase())
       return { ...r, state: 'other-user', detail: `${emulator} is signed in as ${r.user}, not ${raUser}` };
@@ -87,4 +124,4 @@ async function check(cfg, supported, env = process.env) {
   }));
 }
 
-module.exports = { check, parseIni };
+module.exports = { check, parseIni, emuKind };

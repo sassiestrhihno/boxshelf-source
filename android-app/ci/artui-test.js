@@ -51,8 +51,8 @@ module.exports = async function artUiPass({ browser, base, check, newPage, OUT }
       let head = ''; for (let i = 0; i < 30; i++) { await w(200); const h = document.querySelector('#bss .bss-head em'); head = h ? h.textContent : ''; if (/cover/.test(head)) break; }
       const rows = [...document.querySelectorAll('#bss .bss-row .nm')].map(e => e.textContent);
       return { title: document.querySelector('#bss .bss-title').textContent, head, first: rows[0], rows }; });
-    check('Box art (Windows): the page is "Box art & manuals", Art Studio is its first row, and its heading sums up the covers',
-      pg.title === 'Box art & manuals' && pg.first === 'Art Studio' && /games have a cover/.test(pg.head) && pg.rows.includes('Download missing art now'), JSON.stringify(pg).slice(0, 300));
+    check('Box art (Windows): the page is "Box art & media" (the Settings regroup), Art Studio is its first row, and its heading sums up the covers',
+      pg.title === 'Box art & media' && pg.first === 'Art Studio' && /games have a cover/.test(pg.head) && pg.rows.includes('Download missing art now'), JSON.stringify(pg).slice(0, 300));
 
     // PSP's games grid
     const gr = await page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms));
@@ -64,6 +64,43 @@ module.exports = async function artUiPass({ browser, base, check, newPage, OUT }
         marks: sl.map(s => (s.querySelector('b') || {}).textContent).join(''), strip: (document.querySelector('.bsa-gi') || {}).textContent || '' }; });
     check('Box art (Windows): the games grid has a No cover filter, part pictures with marks (not letters), the UMD named on PSP, and the highlighted game in the strip',
       gr.pills.some(p => /^No cover/.test(p)) && /UMD/.test(gr.key) && gr.icons === 4 && /^[✓!×•]{4}$/.test(gr.marks) && /Front .* · Back .* · Spine .* · UMD /.test(gr.strip), JSON.stringify(gr).slice(0, 400));
+
+    // (beta.14) "On your shelf" is the shelf's own case shape: a 3DS game's case is the 3DS box (wider than tall), not a
+    // tall box shaped by its scan; a GameCube game's is the GameCube case
+    const shp = await page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms)), out = {};
+      for (const sys of ['n3ds', 'gc']) {
+        if (window.Settings && Settings.isOpen && Settings.isOpen()) { await Settings.close(); await w(900); }
+        const g = (await window.boxshelf.artGames({ systemId: sys }))[0]; if (!g) { out[sys] = 'no game'; continue; }
+        Setup.open({ page: 'artgame', systemId: sys, file: g.file, title: g.title });
+        for (let i = 0; i < 50 && !document.querySelector('.bsa-case'); i++) await w(200); await w(1200);
+        const c = document.querySelector('.bsa-case'); out[sys] = { ar: c ? +getComputedStyle(c).getPropertyValue('--ar') : null, shelf: Shelf.caseRatio(sys) };
+      }
+      if (window.Settings && Settings.isOpen && Settings.isOpen()) { await Settings.close(); await w(900); }
+      return out; });
+    const near = (x) => x && typeof x === 'object' && x.shelf && Math.abs(x.ar - Math.max(.45, Math.min(1.6, x.shelf))) < .002;
+    check('Art Studio: "On your shelf" is the shelf\'s own case shape (a 3DS game the wide 3DS box, a GameCube game its case)', near(shp.n3ds) && near(shp.gc) && shp.n3ds.ar > 1, JSON.stringify(shp));
+
+    // (beta.14) an Art Studio pick reaches the shelf at once: Settings hands the new pictures over (artPatch → Shelf.artPlaced)
+    // and the case on screen swaps its front in place, no rescan; a pick in the Studio while Settings is open calls it
+    const placed = await page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms)), out = {};
+      if (window.Settings && Settings.isOpen && Settings.isOpen()) { await Settings.close(); await w(900); }
+      for (let i = 0; i < 6 && !((Shelf._artOf() || {}).file); i++) { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); await w(1200); } /* (a game with a file, not Surprise me) */
+      const g0 = Shelf._artOf(), img = () => document.querySelector('.slot.sel .f-front img'), before = img() && img().getAttribute('src');
+      const url = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      out.n = g0 && g0.file ? Shelf.artPlaced({ file: g0.file, art: { front: url } }) : -1; await w(1500);
+      out.changed = !!img() && img().getAttribute('src') !== before; out.gameArt = (Shelf._artOf().art || {}).front === url; out.hadOther = true;
+      // the Studio's own path: artPatch calls Shelf.artPlaced
+      const calls = []; const orig = Shelf.artPlaced; Shelf.artPlaced = o => { calls.push(o && o.file); return orig(o); };
+      const g = (await window.boxshelf.artGames({ systemId: 'psp' }))[0]; /* (a PSP game: the GameCube checks below want their game untouched) */
+      Setup.open({ page: 'artgame', systemId: 'psp', file: g.file, title: g.title });
+      for (let i = 0; i < 50 && document.querySelectorAll('.bsa-card').length < 3; i++) await w(200); await w(800);
+      const key = k => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+      key('ArrowDown'); await w(500); key('ArrowRight'); await w(500); key('Enter'); for (let i = 0; i < 30 && !calls.length; i++) await w(200);
+      out.studioCalls = calls.length; out.studioFile = calls[0] === g.file; Shelf.artPlaced = orig;
+      if (window.Settings && Settings.isOpen && Settings.isOpen()) { await Settings.close(); await w(900); }
+      return out; });
+    check('Art Studio: a pick reaches the shelf at once (Settings hands the new pictures to the shelf; the case on screen swaps its front in place)',
+      placed.n >= 1 && placed.gameArt && (placed.changed || !placed.hadOther) && placed.studioCalls >= 1 && placed.studioFile, JSON.stringify(placed));
 
     // a GameCube game's page
     const gp = await page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms)), out = {};

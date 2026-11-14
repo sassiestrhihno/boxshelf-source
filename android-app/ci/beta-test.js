@@ -197,17 +197,24 @@ module.exports = async function betaPass({ browser, base, check, newPage, OUT })
     // (beta.11) Details with a controller: the stick held down keeps stepping (it used to take one step per push), and
     // the panel glides to each item (many in-between scroll positions, no jumps)
     await w3.page.bringToFront(); // (Boxshelf ignores pads on a page without the focus, as with a game in front)
+    // (beta.14: Your copy only just overflows at 853x480, so a shorter window makes the panel scroll and the glide show)
+    const vp0 = w3.page.viewportSize(); await w3.page.setViewportSize({ width: vp0.width, height: 320 }); await w3.page.waitForTimeout(600);
     const dg = await w3.page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms)), out = {};
       const key = k => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
       for (let i = 0; i < 8 && Shelf.getMode() !== 'browse'; i++) { key('Escape'); await w(400); }
       key('i'); for (let i = 0; i < 20 && Shelf.getMode() !== 'details'; i++) await w(150); await w(900);
       const dm = document.getElementById('dMenu'); out.menuWasOpen = !!(dm && !dm.hidden); if (out.menuWasOpen) { key('Escape'); await w(500); }
       out.mode = Shelf.getMode(); out.qm = !!document.querySelector('#app.qm-open'); out.focus = document.hasFocus();
-      const d = document.getElementById('details'); out.scrolls = d.scrollHeight - d.clientHeight;
+      const d = document.getElementById('details');
       const btn = () => ({ pressed: false, touched: false, value: 0 });
       const pad = { id: 'Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, btn) };
       Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: () => [pad, null, null, null] }); window.dispatchEvent(Object.assign(new Event('gamepadconnected'), { gamepad: pad }));
       await w(600); // (the pad at rest first: input still held from before Settings closed is ignored on purpose)
+      // (beta.14: Details has tabs; Overview has only Play to stand on, so RB over to Your copy, the tab with a list of rows
+      // (rename, add to a shelf, hide, emulator, launch command, set up, manual, box art) to step down through)
+      const tab = () => (document.querySelector('#dvNav .dv-t.cur') || { dataset: {} }).dataset.s;
+      for (let i = 0; i < 5 && tab() !== 'copy'; i++) { if (window.__padHold) await __padHold(pad, 5, 150); else { pad.buttons[5] = { pressed: true, touched: true, value: 1 }; pad.timestamp++; await w(150); pad.buttons[5] = btn(); pad.timestamp++; } await w(500); }
+      out.tab = tab(); d.scrollTop = 0; await w(300); out.scrolls = d.scrollHeight - d.clientHeight;
       // (beta.12: a jump is a big move between frames that came close together; on a slow machine (GitHub's software
       // drawing) frames are far apart and a smooth glide covers more ground between two of them)
       const seen = new Set(), tops = [], ts = []; let on = true; (function f() { tops.push(Math.round(d.scrollTop)); ts.push(performance.now()); const e = d.querySelector('.pad-focus'); if (e) seen.add(e.id || e.textContent.trim().slice(0, 20)); if (on) requestAnimationFrame(f); })();
@@ -215,6 +222,7 @@ module.exports = async function betaPass({ browser, base, check, newPage, OUT })
       out.steps = seen.size; out.distinct = new Set(tops).size; let jumps = 0; for (let i = 1; i < tops.length; i++) if (Math.abs(tops[i] - tops[i - 1]) > 120 && ts[i] - ts[i - 1] < 40) jumps++; out.jumps = jumps;
       const e = d.querySelector('.pad-focus'); if (e) { const a = e.getBoundingClientRect(), q = d.getBoundingClientRect(); out.inView = a.top >= q.top - 1 && a.bottom <= q.bottom + 1; }
       try { delete navigator.getGamepads; } catch (x) {} key('Escape'); await w(600); return out; });
+    await w3.page.setViewportSize(vp0); await w3.page.waitForTimeout(600);
     check('Beta (Windows): in Details a held stick keeps stepping and the panel glides to each item (no jumps), the item in view',
       dg.steps >= 3 && dg.jumps === 0 && dg.inView === true && (dg.scrolls <= 0 || dg.distinct >= 4), JSON.stringify(dg));
     // A on the theme tiles keeps the highlighted theme (it used to step on to the next one) and puts it on the shelf now

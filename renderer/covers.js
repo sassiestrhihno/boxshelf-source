@@ -154,10 +154,11 @@ function drawBack(style,game,lines,blurb){
   const bandH=band(ctx,W,Hh,style,"");
   ctx.fillStyle="#fff";ctx.textAlign="left";ctx.textBaseline="alphabetic";ctx.font=`22px "${FONTS[game.seed%FONTS.length]}", Lexend, sans-serif`;
   wrapLines(ctx,game.title.toUpperCase(),W*.88).slice(0,2).forEach((l,i)=>ctx.fillText(l,W*.06,bandH+40+i*26));
-  const shotW=W*.42,shotH=shotW*.6,top=bandH+90;
-  [[W*.06,top],[W*.52,top],[W*.06,top+shotH+10],[W*.52,top+shotH+10]].forEach(([sx,sy],i)=>{drawScene(ctx,sx,sy,shotW,shotH,{hue:game.hue+i*35},r,KINDS[(game.seed>>>i)%KINDS.length]);ctx.strokeStyle="rgba(255,255,255,.7)";ctx.lineWidth=2;ctx.strokeRect(sx,sy,shotW,shotH)});
-  let y=top+shotH*2+44;ctx.font="13px Lexend, sans-serif";
-  if(blurb){ctx.fillStyle="rgba(255,255,255,.9)";const bl=wrapLines(ctx,blurb,W*.88).slice(0,6);bl.forEach(l=>{ctx.fillText(l,W*.06,y);y+=17});y+=10}
+  // (beta.14) a wide or square box (SNES, N64, DS, 3DS, Game Boy) has a short back: one row of three shots, so the text still fits
+  const short=Hh<W*1.15,shotW=short?W*.28:W*.42,shotH=shotW*.6,top=bandH+(short?80:90);
+  (short?[[W*.06,top],[W*.36,top],[W*.66,top]]:[[W*.06,top],[W*.52,top],[W*.06,top+shotH+10],[W*.52,top+shotH+10]]).forEach(([sx,sy],i)=>{drawScene(ctx,sx,sy,shotW,shotH,{hue:game.hue+i*35},r,KINDS[(game.seed>>>i)%KINDS.length]);ctx.strokeStyle="rgba(255,255,255,.7)";ctx.lineWidth=2;ctx.strokeRect(sx,sy,shotW,shotH)});
+  let y=short?top+shotH+34:top+shotH*2+44;ctx.font="13px Lexend, sans-serif";
+  if(blurb){ctx.fillStyle="rgba(255,255,255,.9)";const bl=wrapLines(ctx,blurb,W*.88).slice(0,6);bl.forEach(l=>{if(y>Hh-14)return;ctx.fillText(l,W*.06,y);y+=17});y+=10} /* (beta.14) a short back (a wide or square box) stops at its last whole line, no line cut in half */
   (lines||[]).forEach(([k,v])=>{if(y>Hh-40)return;ctx.fillStyle="rgba(255,255,255,.55)";ctx.fillText(k,W*.06,y);ctx.fillStyle="#fff";const vv=wrapLines(ctx,String(v),W*.6)[0]||"";ctx.fillText(vv,W*.34,y);y+=22});
   return c;
 }

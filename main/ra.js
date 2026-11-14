@@ -80,10 +80,11 @@ function matchGame(list, title) {
 }
 
 // Progress for one game: { id, title, total, earned, points, pointsEarned, hardcore, icon, achievements:[{id,title,desc,points,badge,earned,earnedHardcore,date}] }
-async function progress(sysId, title, force) {
+// maxAge: how old a saved copy may be (10 min by default; the Home menu asks for one from after the game started)
+async function progress(sysId, title, force, maxAge) {
   const list = await gameList(sysId);
   const g = matchGame(list, title); if (!g) return null;
-  const data = await cached(`game-${g.id}-${userKey()}`, force ? 0 : 10 * 60e3, () => call('API_GetGameInfoAndUserProgress', { g: g.id, u: creds.user, a: 1 }) /* u: whose progress (the site refuses the call without it) */)
+  const data = await cached(`game-${g.id}-${userKey()}`, force ? 0 : maxAge > 0 ? Math.min(maxAge, 10 * 60e3) : 10 * 60e3, () => call('API_GetGameInfoAndUserProgress', { g: g.id, u: creds.user, a: 1 }) /* u: whose progress (the site refuses the call without it) */)
     .catch(e => { log('RA: achievements for', title, '(game ' + g.id + ') failed:', e.message); throw e; });
   if (!data || typeof data !== 'object' || !data.Achievements) { log('RA: achievements for', title, 'came back without a list', JSON.stringify(data).slice(0, 200)); throw new Error('RetroAchievements sent no achievement list for this game. Try again in a moment.'); }
   const ach = Object.values(data.Achievements || {}).sort((a, b) => (a.DisplayOrder || 0) - (b.DisplayOrder || 0)).map(a => ({
@@ -94,6 +95,17 @@ async function progress(sysId, title, force) {
   return { id: g.id, title: data.Title || g.title, console: data.ConsoleName, icon: data.ImageIcon ? MEDIA + data.ImageIcon : null, box: data.ImageBoxArt ? MEDIA + data.ImageBoxArt : null,
     total: ach.length, earned: ach.filter(a => a.earned).length, points: ach.reduce((s, a) => s + a.points, 0), pointsEarned: ach.filter(a => a.earned).reduce((s, a) => s + a.points, 0),
     completion: data.UserCompletion || null, completionHardcore: data.UserCompletionHardcore || null, mastered: data.HighestAwardKind || null, achievements: ach, url: `https://retroachievements.org/game/${g.id}` };
+}
+// (beta.14) the Home menu over a game: does it have a set? Answered from the console's game list as last downloaded, of
+// any age (no request); only a console whose list was never downloaded asks for it (once, then kept a day as usual).
+// { id, count } or null
+async function hasSet(sysId, title) {
+  const cid = CONSOLE_ID[sysId]; if (!cid || !enabled()) return null;
+  let list = null; const m = mem.get(`list-${cid}`);
+  if (m && Array.isArray(m.data)) list = m.data;
+  else { try { const j = JSON.parse(await fs.promises.readFile(path.join(dir, `list-${cid}.json`), 'utf8')); if (j && Array.isArray(j.data)) list = j.data; } catch {} }
+  if (!list) list = await gameList(sysId);
+  const g = matchGame(list || [], title); return g && +g.count > 0 ? { id: g.id, count: +g.count } : null;
 }
 
 // Lightweight progress for a whole shelf (for badges): uses the per-user completed list (cached 10 min)
@@ -115,10 +127,9 @@ async function profile() {
 async function recent(minutes) {
   if (!enabled()) return [];
   const r = await call('API_GetUserRecentAchievements', { u: creds.user, m: Math.max(1, Math.ceil(minutes)) });
-  return (Array.isArray(r) ? r : []).map(a => ({ id: a.AchievementID, title: a.Title, desc: a.Description, points: a.Points, badge: `${MEDIA}/Badge/${a.BadgeName}.png`, game: a.GameTitle, hardcore: a.HardcoreMode === 1, date: a.Date }));
-}
-// user / key: check these without switching the account in use (a shelf or Details look-up running meanwhile keeps the saved one)
+  return (Array.isArray(r) ? r : []).map(a => ({ id: a.AchievementID, title: a.Title, desc: a.Description, points: a.Points, badge: `${MEDIA}/Badge/${a.BadgeName}.png`, game: a.GameTitle, gameId: a.GameID, hardcore: a.HardcoreMode === 1 || a.HardcoreMode === '1', date: a.Date }));
+}// user / key: check these without switching the account in use (a shelf or Details look-up running meanwhile keeps the saved one)
 async function test(user, key) { const who = user !== undefined ? { user: String(user || '').trim(), key: String(key || '').trim() } : creds; if (!who.user || !who.key) throw new Error('Fill in the username and web API key first.');
   const p = await call('API_GetUserProfile', { u: who.user }, who); if (!p || !p.User) throw new Error('No profile came back. Check the username and web API key.'); return { user: p.User, points: p.TotalPoints }; }
 
-module.exports = { init, setCredentials, enabled, progress, shelfProgress, profile, recent, test, CONSOLE_ID, matchGame, norm };
+module.exports = { init, setCredentials, enabled, progress, hasSet, shelfProgress, profile, recent, test, CONSOLE_ID, matchGame, norm };

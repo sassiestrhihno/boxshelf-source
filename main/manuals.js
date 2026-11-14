@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
-const { scanSystem } = require('./scanner');
+const { scanSystemAsync } = require('./scanner'); // (the background passes scan with fs.promises: a sync walk held the app up to a second per console)
 const { isFile, artBase, manualDirFor } = require('./paths');
 
 const SYSTEM_WORDS = { gc: ['gamecube', 'game cube', 'gcn', 'ngc'], wii: ['wii'], wiiu: ['wii u', 'wiiu'], psp: ['psp', 'playstation portable'], sw: ['switch'], sw2: ['switch 2', 'switch'], ps3: ['ps3', 'playstation 3'], ps4: ['ps4', 'playstation 4'], ps5: ['ps5', 'playstation 5'], ps2: ['ps2', 'playstation 2'], x360: ['xbox 360', 'xbox360', 'x360'], n3ds: ['3ds', 'nintendo 3ds'], psx: ['playstation', 'psx', 'ps1'], nes: ['nes', 'nintendo entertainment system', 'famicom'], snes: ['snes', 'super nintendo', 'super famicom'], n64: ['n64', 'nintendo 64'], gb: ['game boy', 'gameboy'], gbc: ['game boy color', 'gameboy color', 'gbc'], gba: ['game boy advance', 'gba'], nds: ['nintendo ds', 'nds'], megadrive: ['genesis', 'mega drive', 'megadrive'], mastersystem: ['master system', 'sms'], gamegear: ['game gear'], dreamcast: ['dreamcast'], saturn: ['saturn', 'sega saturn'], pcengine: ['turbografx', 'turbografx-16', 'pc engine', 'pc-engine', 'tg-16', 'tg16'], neogeo: ['neo geo', 'neo-geo', 'neogeo'], arcade: ['arcade'], segacd: ['sega cd', 'mega cd', 'mega-cd'], sega32x: ['32x', 'sega 32x'], atari2600: ['atari 2600', '2600'], atarilynx: ['lynx', 'atari lynx'], wonderswan: ['wonderswan'], dos: ['dos', 'ms-dos', 'msdos'] };
@@ -222,14 +222,14 @@ async function searchArchive(sysId, title, opts = {}) {
 // Find candidates for every game on the shelves given. progress({done,total,stage}).
 async function findAll(systems, progress, token) {
   let done = 0; const all = [];
-  for (const { def, cfg } of systems) { await new Promise(r => setImmediate(r)); for (const g of scanSystem(def, cfg)) all.push({ def, cfg, g }); } // (beta.9: a breath between consoles)
+  for (const { def, cfg } of systems) { await new Promise(r => setImmediate(r)); for (const g of await scanSystemAsync(def, cfg)) all.push({ def, cfg, g }); } // (beta.9: a breath between consoles)
   const out = new Array(all.length), per = {}, perDone = {}; all.forEach(x => { per[x.def.id] = (per[x.def.id] || 0) + 1; perDone[x.def.id] = 0; });
   const ls = require('./dircache').lister(); // each folder listed once for the whole search, not once per game
   await pool(all, 3, async ({ def, cfg, g }, k) => {
     if (token && token.cancelled) { out[k] = null; return; }
     if (k && k % 25 === 0) await new Promise(r => setImmediate(r));
     const dir = artDir(cfg, g.file), base = artBase(g.file);
-    const have = hasManual(dir, base, ls); // a downloaded PDF waiting to be turned into pages counts too
+    await ls.prime(dir); const have = hasManual(dir, base, ls); // a downloaded PDF waiting to be turned into pages counts too
     let candidates = [];
     if (!have) { try { candidates = await search(def.id, g.title); } catch (e) { log('Manual search error', g.title, e.message); } await new Promise(r => setTimeout(r, 200)); }
     out[k] = { systemId: def.id, system: def.name, title: g.title, file: g.file, have, candidates };
@@ -441,11 +441,11 @@ async function autoFetch(systems, opts = {}) {
   for (const { def, cfg } of systems) {
     if (opts.skip && opts.skip(def)) continue;
     await new Promise(r => setImmediate(r)); // (beta.9) a breath between consoles: every console's scan in one go held up the main process
-    for (const g of scanSystem(def, cfg)) {
+    for (const g of await scanSystemAsync(def, cfg)) {
       if (g.extra) continue;
       if (++nG % 25 === 0) await new Promise(r => setImmediate(r));
       const dir = artDir(cfg, g.file), base = artBase(g.file), key = def.id + '|' + g.file.toLowerCase();
-      if (hasManual(dir, base, ls)) continue;
+      await ls.prime(dir); if (hasManual(dir, base, ls)) continue;
       if (opts.locked && opts.locked(def.id, g.file)) continue; // Manual Studio: a game whose manual was chosen by hand (or set to none) is left alone
       const seen = m[key]; if (seen && seen.v === AUTO_V && now - seen.at < (seen.err ? 864e5 : AUTO_RETRY)) continue;
       todo.push({ def, cfg, g, key });
@@ -494,19 +494,20 @@ async function recheck(systems, opts = {}) {
   // (beta.9) opts.force: again on demand (Settings → Get manuals → Check my manuals); opts.progress({ system, sysDone,
   // sysTotal, checked, moved, shrunk }) once per console
   const m = memo(); if (m.__recheck === RECHECK_V && !opts.force) return { checked: 0, moved: 0, shrunk: 0 };
-  const ls = require('./dircache').lister(), { backupDir, sizeOf } = require('./spreads'); let checked = 0, moved = 0, shrunk = 0, sysDone = 0; const list = []; // (list: the games set aside, { sysId, file })
+  const ls = require('./dircache').lister(), { backupDir, sizeOfAsync } = require('./spreads'); let checked = 0, moved = 0, shrunk = 0, sysDone = 0; const list = []; // (list: the games set aside, { sysId, file })
   for (const { def, cfg } of systems) {
     sysDone++; if (def.id === 'wiiu') continue;
     await breath(); if (opts.idle) await opts.idle(); if (opts.cancelled && opts.cancelled()) return { checked, moved, shrunk, list, cancelled: true };
     if (opts.progress) { try { opts.progress({ system: def.name || def.id, sysDone, sysTotal: systems.length, checked, moved, shrunk }); } catch {} }
-    let games = []; try { games = scanSystem(def, cfg); } catch { continue; }
+    let games = []; try { games = await scanSystemAsync(def, cfg); } catch { continue; }
     for (const g of games) {
       const key = def.id + '|' + g.file.toLowerCase(), seen = m[key], dir = artDir(cfg, g.file), base = artBase(g.file);
-      if (!hasManual(dir, base, ls)) continue;
+      await ls.prime(dir); if (!hasManual(dir, base, ls)) continue;
       if (opts.locked && opts.locked(def.id, g.file)) continue;
       // pages too big to show (a 13000 px scan) are made smaller, whatever the manual's source (two pages tell)
       if (shrinker) { const pre0 = (base + '-manual-').toLowerCase(), first = ls.names(dir).filter(f => f.toLowerCase().startsWith(pre0) && /\.(jpe?g|png)$/i.test(f)).slice(0, 2);
-        if (first.some(f => { const z = sizeOf(path.join(dir, f)); return z && z[0] > PAGE_MAX_W; })) { await shrinkPages(dir, base); ls.forget(dir); shrunk++; } }
+        let big = false; for (const f of first) { const z = await sizeOfAsync(path.join(dir, f)); if (z && z[0] > PAGE_MAX_W) { big = true; break; } }
+        if (big) { await shrinkPages(dir, base); ls.forget(dir); await ls.prime(dir); shrunk++; } }
       const coll = opts.collInfo ? opts.collInfo(key) : null; if (coll && coll.src) continue;
       if (seen && seen.hand) continue;
       checked++; let why = '', wrong = false;
@@ -521,7 +522,7 @@ async function recheck(systems, opts = {}) {
         }
       }
       if (!why) { const pre = (base + '-manual-').toLowerCase(), pages = ls.names(dir).filter(f => f.toLowerCase().startsWith(pre) && /\.(jpe?g|png|webp)$/i.test(f));
-        const tiny = pages.filter(f => { const z = sizeOf(path.join(dir, f)); return z && z[0] < 300; }).length;
+        let tiny = 0; for (const f of pages) { const z = await sizeOfAsync(path.join(dir, f)); if (z && z[0] < 300) tiny++; } // (fs.promises: every page's header, sync, held the app up)
         if (tiny) why = `${tiny} thumbnail page${tiny === 1 ? '' : 's'}`; }
       if (!why) continue;
       const pre = base.toLowerCase() + '-manual', files = ls.names(dir).filter(f => { const l = f.toLowerCase(); return l.startsWith(pre + '-') || l === pre + '.pdf'; });

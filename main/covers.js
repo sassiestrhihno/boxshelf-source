@@ -12,10 +12,10 @@ const https = require('https');
 const { scanSystem, scanSystemAsync, cleanTitle } = require('./scanner');
 const { isFile, artBase, artDirFor } = require('./paths');
 
-const LIBRETRO = { gc: 'Nintendo - GameCube', wii: 'Nintendo - Wii', psp: 'Sony - PlayStation Portable', wiiu: 'Nintendo - Wii U', sw: 'Nintendo - Switch', ps3: 'Sony - PlayStation 3', ps4: 'Sony - PlayStation 4', ps2: 'Sony - PlayStation 2', x360: 'Microsoft - Xbox 360', n3ds: 'Nintendo - Nintendo 3DS',
+const LIBRETRO = { gc: 'Nintendo - GameCube', wii: 'Nintendo - Wii', psp: 'Sony - PlayStation Portable', wiiu: 'Nintendo - Wii U', sw: 'Nintendo - Switch', ps3: 'Sony - PlayStation 3', ps4: 'Sony - PlayStation 4', ps2: 'Sony - PlayStation 2', x360: 'Microsoft - Xbox 360', n3ds: 'Nintendo - Nintendo 3DS', xbox: 'Microsoft - Xbox',
   // (beta.6) the retro shelves (folder names checked on thumbnails.libretro.com)
   psx: 'Sony - PlayStation', nes: 'Nintendo - Nintendo Entertainment System', snes: 'Nintendo - Super Nintendo Entertainment System', n64: 'Nintendo - Nintendo 64', gb: 'Nintendo - Game Boy', gbc: 'Nintendo - Game Boy Color', gba: 'Nintendo - Game Boy Advance', nds: 'Nintendo - Nintendo DS', megadrive: 'Sega - Mega Drive - Genesis', mastersystem: 'Sega - Master System - Mark III', gamegear: 'Sega - Game Gear', dreamcast: 'Sega - Dreamcast', saturn: 'Sega - Saturn', pcengine: 'NEC - PC Engine - TurboGrafx 16', neogeo: 'SNK - Neo Geo', arcade: 'FBNeo - Arcade Games', segacd: 'Sega - Mega-CD - Sega CD', sega32x: 'Sega - 32X', atari2600: 'Atari - 2600', atarilynx: 'Atari - Lynx', wonderswan: 'Bandai - WonderSwan', dos: 'DOS' };
-const LAUNCHBOX = { gc: 'Nintendo GameCube', wii: 'Nintendo Wii', psp: 'Sony PSP', wiiu: 'Nintendo Wii U', sw: 'Nintendo Switch', sw2: 'Nintendo Switch 2', ps3: 'Sony Playstation 3', ps4: 'Sony Playstation 4', ps5: 'Sony Playstation 5', ps2: 'Sony Playstation 2', x360: 'Microsoft Xbox 360', n3ds: 'Nintendo 3DS',
+const LAUNCHBOX = { gc: 'Nintendo GameCube', wii: 'Nintendo Wii', psp: 'Sony PSP', wiiu: 'Nintendo Wii U', sw: 'Nintendo Switch', sw2: 'Nintendo Switch 2', ps3: 'Sony Playstation 3', ps4: 'Sony Playstation 4', ps5: 'Sony Playstation 5', ps2: 'Sony Playstation 2', x360: 'Microsoft Xbox 360', n3ds: 'Nintendo 3DS', xbox: 'Microsoft Xbox',
   // (beta.6) the retro shelves: LaunchBox's own platform names (the index rebuilds once to take them in)
   psx: 'Sony Playstation', nes: 'Nintendo Entertainment System', snes: 'Super Nintendo Entertainment System', n64: 'Nintendo 64', gb: 'Nintendo Game Boy', gbc: 'Nintendo Game Boy Color', gba: 'Nintendo Game Boy Advance', nds: 'Nintendo DS', megadrive: 'Sega Genesis', mastersystem: 'Sega Master System', gamegear: 'Sega Game Gear', dreamcast: 'Sega Dreamcast', saturn: 'Sega Saturn', pcengine: 'NEC TurboGrafx-16', neogeo: 'SNK Neo Geo AES', arcade: 'Arcade', segacd: 'Sega CD', sega32x: 'Sega 32X', atari2600: 'Atari 2600', atarilynx: 'Atari Lynx', wonderswan: 'WonderSwan', dos: 'MS-DOS' };
 const IDX_V = 8; // 8: full box wraps (Box - Full) indexed too, to cut spines from
@@ -154,19 +154,28 @@ async function getText(url) {
 }
 // → 'ok' | 'missing' (404 / not a picture: it isn't there) | 'busy' (5xx / 429 twice: try another day). A timeout or a dropped
 // connection, or a 5xx, is tried once more after a moment; a second network error throws (offline), as download() always did
+// (beta.14) the time limit covers the picture's bytes too: a site that stopped half-way threw a bare "The operation was
+// aborted" that wasn't tried again. Now a dropped connection mid-picture is tried once more like one before it; running out
+// of time says so (and isn't tried again: that would hold a download slot for another 45 s)
+const DL_MS = 45000;
 async function downloadEx(url, dest, opt) { // opt.zip (beta.10): a .zip is wanted (GameTDB's databases), not a picture
   for (let i = 0; ; i++) {
-    let r; try { r = await net.fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(45000), cache: 'no-store' }); } // saved to the covers folder: no second copy in Chromium's cache
+    const t0 = Date.now();
+    let r; try { r = await net.fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(DL_MS), cache: 'no-store' }); } // saved to the covers folder: no second copy in Chromium's cache
     catch (e) { if (i === 0) { await new Promise(z => setTimeout(z, 1200)); continue; } throw e; }
-    if (r.ok) { const s = await saveBody(r, dest, !!(opt && opt.zip)); return s === true ? 'ok' : s === 'notimage' ? 'busy' : 'missing'; }
+    if (r.ok) {
+      let buf; try { buf = Buffer.from(await r.arrayBuffer()); }
+      catch (e) { if (Date.now() - t0 >= DL_MS - 1000) throw new Error(`${hostOf(url)} took too long to send the picture`);
+        if (i === 0) { await new Promise(z => setTimeout(z, 1200)); continue; } throw new Error(`${hostOf(url)} stopped sending the picture`); }
+      const s = await saveBody(buf, dest, !!(opt && opt.zip)); return s === true ? 'ok' : s === 'notimage' ? 'busy' : 'missing'; }
     if (r.status >= 500 || r.status === 429) { if (i === 0) { await new Promise(z => setTimeout(z, 1200)); continue; } return 'busy'; }
     return r.status === 404 || r.status === 410 ? 'missing' : 'busy'; // (a 403 / 401 is often a CDN's passing block: not remembered as "not there")
   }
 }
 async function download(url, dest, opt) { return (await downloadEx(url, dest, opt)) === 'ok'; }
 const { isImageBuf } = require('./imgcheck'); // (beta.8) PNG, JPEG, WebP, GIF, BMP or AVIF/HEIF by its first bytes (beta.10: shared with stremio / archive / pccovers)
-async function saveBody(r, dest, zip) {
-  const buf = Buffer.from(await r.arrayBuffer());
+const hostOf = u => { try { return new URL(u).hostname; } catch { return 'The art site'; } };
+async function saveBody(buf, dest, zip) {
   if (buf.length < 1024) return false; // not a real image
   // (beta.8) a 200 that isn't a picture (a Wi-Fi sign-in page, a CDN error page) is never saved as the cover: art that's
   // there is never fetched again, so it would stay broken. Asked again later. (beta.10) zip: a zip's own first bytes instead
@@ -833,12 +842,12 @@ function gameInfoRaw(sysId, title) {
   const { overview, release, year, dev, pub, genres, esrb, players, coop, rating, wiki, video } = g;
   const imgs = (infoIdx && infoIdx.images && infoIdx.images[g.id]) || [];
   const urls = re => imgs.filter(x => re.test(x.type)).map(x => 'https://images.launchbox-app.com/' + x.file);
-  return { overview, release, year, dev, pub, genres, esrb, players, coop, rating: rating ? Math.round(+rating * 10) / 10 : undefined, wiki, video, name: g.name, shots: urls(/^Screenshot - Gameplay/).concat(urls(/^Screenshot - (Game Title|Game Select)/)).slice(0, 8), bg: urls(/^Fanart - Background/)[0] || null, logo: urls(/^Clear Logo$/)[0] || null };
+  return { overview, release, year, dev, pub, genres, esrb, players, coop, rating: rating ? Math.round(+rating * 10) / 10 : undefined, wiki, video, name: g.name, shots: urls(/^Screenshot - Gameplay/).concat(urls(/^Screenshot - (Game Title|Game Select)/)).slice(0, 12), bg: urls(/^Fanart - Background/)[0] || null, logo: urls(/^Clear Logo$/)[0] || null };
 }
 function hasInfo() { return idxStamp() > 0; } // cheap: never parses the index just to answer this
 
 // the index, built (downloaded) if it has to be: Art Studio's "build the LaunchBox index" button
 async function buildIndex(progress) { if (lbOverride) return true; await launchboxIndex(progress || (() => {})); return true; }
-module.exports = { _setIndex: x => { lbOverride = x; }, LAUNCHBOX, init, matchTitle, matchName, lookupNames, sgMatch, setSpineCutter, setCartMaker, makeCart, CART_SYS, discId, downloadCovers, coverage, cancel, pause, isPaused, isImageBuf, HD_MIN, gameInfo, flushInfoCache, hasInfo, invalidateInfo, norm, launchboxMatch, libretroMatch, pickImages,
+module.exports = { _setIndex: x => { lbOverride = x; }, LAUNCHBOX, LIBRETRO, init, matchTitle, matchName, lookupNames, sgMatch, setSpineCutter, setCartMaker, makeCart, CART_SYS, discId, downloadCovers, coverage, cancel, pause, isPaused, isImageBuf, HD_MIN, gameInfo, flushInfoCache, hasInfo, invalidateInfo, norm, launchboxMatch, libretroMatch, pickImages,
   // Art Studio (main/artstudio.js) reuses these rather than keeping its own copies
   candidates, libretroAll, libretroIndex, readyIndex, indexState, buildIndex, refreshIndex, cancelRefresh, indexInfo, edition, lbRegion, lrRegion, tdbRegion, download, downloadEx, sizeOf, artFile, isLow, placeArt, setOnPlaced, replacedFor, cutSpine, cutBack, canCut: () => !!spineCutter, pool, KINDS, ART_EXT, REPLACED };

@@ -4,13 +4,11 @@
 /* Blur (1.76): the softened cover is the whole picture, so it shows at full strength and the floor glow stays faint */
 body.theme-blur .floor{opacity:.3}
 body.theme-blur .bg-layer img{opacity:.85}
-body.theme-cube .bg-layer img,body.theme-blueshift .bg-layer img,body.theme-swirl .bg-layer img,body.theme-pocket .bg-layer img,
-body.theme-oled .bg-layer img,body.theme-walnut .bg-layer img,body.theme-forest .bg-layer img,body.theme-crt .bg-layer img,
+body.theme-cube .bg-layer img,body.theme-blueshift .bg-layer img,body.theme-swirl .bg-layer img,
+body.theme-oled .bg-layer img,body.theme-forest .bg-layer img,body.theme-crt .bg-layer img,
 body.theme-vhs .bg-layer img,body.theme-synth .bg-layer img{opacity:0}
 body.theme-cube .floor,body.theme-blueshift .floor,body.theme-synth .floor{opacity:.42}
-body.theme-swirl .floor,body.theme-walnut .floor,body.theme-forest .floor,body.theme-crt .floor,body.theme-vhs .floor{opacity:.34}
-body.theme-pocket .floor{opacity:.28}
-body.theme-pocket .sel-halo{opacity:.5} /* (a lime glow at full strength drowns the LCD's soft greens) */
+body.theme-swirl .floor,body.theme-forest .floor,body.theme-crt .floor,body.theme-vhs .floor{opacity:.34}
 /* OLED: true black everywhere it can be (pixels off), only a small glow under the shelf */
 body.theme-oled .floor{opacity:.16}
 body.theme-oled .vignette{display:none}
@@ -18,17 +16,203 @@ body.theme-oled .sel-halo{opacity:.45}
 /* the tube themes draw their own edges: the shared vignette would darken them twice */
 body.theme-crt .vignette,body.theme-vhs .vignette{opacity:.5}
 
+/* (beta.14) Nebula, Abyss, Ember, Dusk, Prism, Hologram: their own pictures, so no blurred cover behind them. The first
+   four move on #themeFx's three layers: each layer only as big as its glow, moved by transform / opacity (the graphics card
+   runs them; no frame loop). They hold while the shelf slides (.hold, app.js fxHold), while something covers the shelf
+   (style.css) and stand still at Handheld / Low (body:not(.fx)) and with Reduce motion. The same rules draw the Themes
+   page's preview (.tp-fx, themes-page.js), which moves only while that page is open. */
+body.theme-nebula .bg-layer img,body.theme-abyss .bg-layer img,body.theme-ember .bg-layer img,body.theme-dusk .bg-layer img,body.theme-prism .bg-layer img,body.theme-holo .bg-layer img{opacity:0}
+body.theme-nebula .floor,body.theme-prism .floor{opacity:.38}
+body.theme-abyss .floor,body.theme-holo .floor{opacity:.42}
+body.theme-ember .floor,body.theme-dusk .floor{opacity:.32}
+@keyframes bsTxDrift{0%,100%{transform:translate3d(-4%,-2%,0) scale(1.02)}50%{transform:translate3d(4%,3%,0) scale(1.1)}}
+@keyframes bsTxDrift2{0%,100%{transform:translate3d(3%,2%,0) rotate(0deg)}50%{transform:translate3d(-3%,-3%,0) rotate(6deg)}}
+@keyframes bsTxShaft{0%,100%{opacity:.3;transform:skewX(-10deg) translate3d(-2%,0,0)}50%{opacity:.85;transform:skewX(-10deg) translate3d(3%,0,0)}}
+@keyframes bsTxBreathe{0%,100%{opacity:.7;transform:scale(1)}50%{opacity:1;transform:scale(1.08)}}
+@keyframes bsTxRise{0%{transform:translate3d(0,0,0)}100%{transform:translate3d(0,-50%,0)}}
+@keyframes bsTxTw{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes bsTxSlide{0%,100%{transform:translate3d(-6%,0,0)}50%{transform:translate3d(6%,0,0)}}
+body.theme-nebula #themeFx,body.theme-abyss #themeFx,body.theme-ember #themeFx,body.theme-dusk #themeFx{display:block}
+:is(body.theme-nebula #themeFx,.tp-fx[data-t="nebula"]) i,:is(body.theme-abyss #themeFx,.tp-fx[data-t="abyss"]) i,
+:is(body.theme-ember #themeFx,.tp-fx[data-t="ember"]) i,:is(body.theme-dusk #themeFx,.tp-fx[data-t="dusk"]) i{will-change:transform}
+:is(body.theme-nebula #themeFx,.tp-fx[data-t="nebula"]) i:nth-child(1){left:2%;top:4%;width:62%;height:70%;background:radial-gradient(closest-side,rgba(150,70,255,.34),transparent);animation:bsTxDrift 26s ease-in-out infinite}
+:is(body.theme-nebula #themeFx,.tp-fx[data-t="nebula"]) i:nth-child(2){left:40%;top:28%;width:56%;height:62%;background:radial-gradient(closest-side,rgba(30,190,200,.26),transparent);animation:bsTxDrift2 32s ease-in-out infinite}
+:is(body.theme-nebula #themeFx,.tp-fx[data-t="nebula"]) i:nth-child(3){left:34%;top:4%;width:42%;height:44%;background:radial-gradient(closest-side,rgba(255,90,170,.16),transparent);animation:bsTxDrift 40s ease-in-out infinite reverse}
+:is(body.theme-abyss #themeFx,.tp-fx[data-t="abyss"]) i:nth-child(1){left:-10%;top:-6%;width:120%;height:78%;transform-origin:50% 0;background:linear-gradient(100deg,transparent 30%,rgba(160,230,255,.15) 38%,transparent 46%,transparent 58%,rgba(160,230,255,.1) 64%,transparent 72%);-webkit-mask-image:linear-gradient(#000 10%,transparent);mask-image:linear-gradient(#000 10%,transparent);animation:bsTxShaft 11s ease-in-out infinite}
+:is(body.theme-abyss #themeFx,.tp-fx[data-t="abyss"]) i:nth-child(2){left:-20%;top:-6%;width:120%;height:70%;transform-origin:50% 0;background:linear-gradient(104deg,transparent 52%,rgba(160,230,255,.12) 58%,transparent 64%,transparent 80%,rgba(160,230,255,.08) 84%,transparent 88%);-webkit-mask-image:linear-gradient(#000 10%,transparent);mask-image:linear-gradient(#000 10%,transparent);animation:bsTxShaft 15s ease-in-out -6s infinite}
+:is(body.theme-abyss #themeFx,.tp-fx[data-t="abyss"]) i:nth-child(3){left:15%;top:-14%;width:70%;height:36%;background:radial-gradient(closest-side,rgba(120,220,255,.24),transparent);animation:bsTxDrift 20s ease-in-out infinite}
+:is(body.theme-ember #themeFx,.tp-fx[data-t="ember"]) i:nth-child(1){left:12%;width:76%;bottom:-22%;height:56%;background:radial-gradient(closest-side,rgba(255,110,40,.32),transparent);animation:bsTxBreathe 9s ease-in-out infinite}
+:is(body.theme-ember #themeFx,.tp-fx[data-t="ember"]) i:nth-child(2){left:0;top:0;width:100%;height:200%;background:var(--bs-ember-rise) 0 0/100% 50% repeat-y;animation:bsTxRise 40s linear infinite}
+:is(body.theme-ember #themeFx,.tp-fx[data-t="ember"]) i:nth-child(3){left:0;top:0;width:100%;height:62%;will-change:auto;background:linear-gradient(180deg,#0e0a09 8%,rgba(14,10,9,0))}
+:is(body.theme-dusk #themeFx,.tp-fx[data-t="dusk"]) i:nth-child(1){left:30%;top:42%;width:40%;height:30%;background:radial-gradient(closest-side,rgba(255,190,120,.3),transparent);animation:bsTxBreathe 14s ease-in-out infinite}
+:is(body.theme-dusk #themeFx,.tp-fx[data-t="dusk"]) i:nth-child(2){left:0;top:0;width:100%;height:42%;background:var(--bs-dusk-stars) 0 0/100% 100% no-repeat;animation:bsTxTw 7s ease-in-out infinite}
+:is(body.theme-dusk #themeFx,.tp-fx[data-t="dusk"]) i:nth-child(3){left:-10%;top:40%;width:120%;height:12%;background:radial-gradient(closest-side,rgba(255,160,190,.12),transparent);animation:bsTxSlide 46s ease-in-out infinite}
+/* still: Handheld / Low, Reduce motion; Ember's rising layer (a screen twice as tall) isn't kept at all then: its backdrop has sparks of its own */
+body:not(.fx) :is(.tp-fx,#themeFx) i,body.reduce-motion :is(.tp-fx,#themeFx) i{animation:none!important;will-change:auto!important}
+body:not(.fx).theme-ember #themeFx i:nth-child(2),body:not(.fx) .tp-fx[data-t="ember"] i:nth-child(2){display:none}
+#themeFx.hold i{animation-play-state:paused!important}
+
+/* (beta.14) the second six: Starfield, Rainy Night, Cherry Blossom, Snowfall and the showpieces Event Horizon and Glass Lake
+   (themes-extra.js; they replace Pocket and Walnut). Only #themeFx's three layers move, by transform / opacity (the graphics
+   card runs them, no frame loop); the pictures they move are custom properties made once by themes-extra.js. They hold
+   while the shelf slides (.hold) or something covers it (style.css), and are still at Handheld / Low (body:not(.fx)) and
+   with Reduce motion, where Starfield's two flying star layers are left out (its backdrop has stars of its own). A falling
+   layer is one screen and a half tall, its picture one tile a third of that, moved down exactly one tile per loop */
+body.theme-starfield .bg-layer img,body.theme-rain .bg-layer img,body.theme-sakura .bg-layer img,body.theme-snow .bg-layer img,body.theme-eventhorizon .bg-layer img,body.theme-glasslake .bg-layer img{opacity:0}
+body.theme-starfield .floor,body.theme-eventhorizon .floor{opacity:.3}
+body.theme-rain .floor,body.theme-snow .floor,body.theme-glasslake .floor{opacity:.38}
+body.theme-sakura .floor{opacity:.34}
+body.theme-starfield #themeFx,body.theme-rain #themeFx,body.theme-sakura #themeFx,body.theme-snow #themeFx,body.theme-eventhorizon #themeFx,body.theme-glasslake #themeFx{display:block}
+:is(body.theme-starfield,body.theme-rain,body.theme-sakura,body.theme-snow,body.theme-eventhorizon,body.theme-glasslake) #themeFx i{will-change:transform}
+@keyframes bsTxWarp{0%{transform:scale(.6);opacity:0}50%{opacity:1}100%{transform:scale(1.3);opacity:0}}
+@keyframes bsTxRainA{0%{transform:skewX(-9deg) translate3d(0,0,0)}100%{transform:skewX(-9deg) translate3d(0,33.3333%,0)}}
+@keyframes bsTxRainB{0%{transform:skewX(-6deg) translate3d(0,0,0)}100%{transform:skewX(-6deg) translate3d(0,33.3333%,0)}}
+@keyframes bsTxPetalA{0%{transform:skewX(-14deg) translate3d(0,0,0)}100%{transform:skewX(-14deg) translate3d(0,33.3333%,0)}}
+@keyframes bsTxPetalB{0%{transform:skewX(-10deg) translate3d(0,0,0)}100%{transform:skewX(-10deg) translate3d(0,33.3333%,0)}}
+@keyframes bsTxFlakes{0%{transform:translate3d(0,0,0)}100%{transform:translate3d(0,33.3333%,0)}}
+@keyframes bsTxSway{0%{translate:-2.5% 0}100%{translate:2.5% 0}}
+@keyframes bsTxDisk{0%{transform:scaleY(.12) rotate(0deg)}100%{transform:scaleY(.12) rotate(360deg)}}
+@keyframes bsTxSpin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+@keyframes bsTxAurA{0%{transform:translate3d(-3%,0,0) scaleY(1);opacity:.72}100%{transform:translate3d(3%,-1.5%,0) scaleY(1.16);opacity:1}}
+@keyframes bsTxAurB{0%{transform:translate3d(4%,0,0) scaleY(.92);opacity:.45}100%{transform:translate3d(-4%,1%,0) scaleY(1.1);opacity:.85}}
+@keyframes bsTxAurR{0%{transform:translate3d(-3%,0,0) scaleY(1);opacity:.2}100%{transform:translate3d(3%,1.5%,0) scaleY(1.16);opacity:.3}}
+/* Starfield: two star layers in turn, each growing out from a point just above the shelf and fading in and out (so
+   together the sky stays as full), the stars at the very centre and at the edges masked away; a faint glow far ahead */
+body.theme-starfield #themeFx i:nth-child(-n+2){inset:0;transform-origin:50% 38%;opacity:0;-webkit-mask-image:radial-gradient(ellipse 72% 72% at 50% 38%,transparent 0,#000 16%,#000 46%,transparent 100%);mask-image:radial-gradient(ellipse 72% 72% at 50% 38%,transparent 0,#000 16%,#000 46%,transparent 100%)}
+body.theme-starfield #themeFx i:nth-child(1){background:var(--bs-sf-a) 50% 50%/cover no-repeat;animation:bsTxWarp 30s linear infinite}
+body.theme-starfield #themeFx i:nth-child(2){background:var(--bs-sf-b) 50% 50%/cover no-repeat;animation:bsTxWarp 30s linear -15s infinite}
+body.theme-starfield #themeFx i:nth-child(3){left:25%;top:10%;width:50%;height:56%;background:radial-gradient(closest-side,rgba(175,200,255,.15),rgba(120,150,255,.05) 55%,transparent);animation:bsTxBreathe 16s ease-in-out infinite}
+/* Rainy Night: near rain (sparser, brighter, quicker) and far rain, both slanting; the city lights breathe */
+body.theme-rain #themeFx i:nth-child(-n+2){left:-15%;top:-50%;width:130%;height:150%}
+body.theme-rain #themeFx i:nth-child(1){background:var(--bs-rain-a) 0 0/100% 33.3333% repeat-y;transform:skewX(-9deg);opacity:.85;animation:bsTxRainA .8s linear infinite}
+body.theme-rain #themeFx i:nth-child(2){background:var(--bs-rain-b) 0 0/100% 33.3333% repeat-y;transform:skewX(-6deg);opacity:.7;animation:bsTxRainB 1.3s linear infinite}
+body.theme-rain #themeFx i:nth-child(3){left:0;top:0;width:100%;height:64%;background:radial-gradient(ellipse 14% 20% at 18% 34%,rgba(255,170,70,.16),transparent 70%),radial-gradient(ellipse 12% 18% at 84% 28%,rgba(255,190,90,.13),transparent 70%),radial-gradient(ellipse 16% 22% at 62% 10%,rgba(80,140,255,.14),transparent 70%);animation:bsTxBreathe 11s ease-in-out infinite}
+/* Cherry Blossom: near and far petals drifting down and across, swaying (the sway is the separate translate property, so
+   it adds to the fall); the glow on the horizon breathes */
+body.theme-sakura #themeFx i:nth-child(-n+2){left:-20%;top:-50%;width:140%;height:150%}
+body.theme-sakura #themeFx i:nth-child(1){background:var(--bs-sk-a) 0 0/100% 33.3333% repeat-y;transform:skewX(-14deg);animation:bsTxPetalA 26s linear infinite,bsTxSway 7s ease-in-out infinite alternate}
+body.theme-sakura #themeFx i:nth-child(2){background:var(--bs-sk-b) 0 0/100% 33.3333% repeat-y;transform:skewX(-10deg);opacity:.75;animation:bsTxPetalB 40s linear infinite,bsTxSway 10s ease-in-out -4s infinite alternate-reverse}
+body.theme-sakura #themeFx i:nth-child(3){left:14%;top:42%;width:72%;height:28%;background:radial-gradient(closest-side,rgba(255,160,195,.2),transparent);animation:bsTxBreathe 13s ease-in-out infinite}
+/* Snowfall: big soft flakes close by, small ones far off, both swaying; a low mist drifts along the hills */
+body.theme-snow #themeFx i:nth-child(-n+2){left:-10%;top:-50%;width:120%;height:150%}
+body.theme-snow #themeFx i:nth-child(1){background:var(--bs-sn-a) 0 0/100% 33.3333% repeat-y;animation:bsTxFlakes 18s linear infinite,bsTxSway 6s ease-in-out infinite alternate}
+body.theme-snow #themeFx i:nth-child(2){background:var(--bs-sn-b) 0 0/100% 33.3333% repeat-y;opacity:.8;animation:bsTxFlakes 34s linear infinite,bsTxSway 9s ease-in-out -3s infinite alternate-reverse}
+body.theme-snow #themeFx i:nth-child(3){left:-10%;top:46%;width:120%;height:18%;background:radial-gradient(closest-side,rgba(170,200,240,.11),transparent);animation:bsTxSlide 50s ease-in-out infinite}
+/* Event Horizon: laid exactly over its backdrop's black hole (the 1600 x 900 frame, cover: --u is one unit of it; centre
+   800,330, shadow r 170). 1: the disk's light, a turning ring of streaks squashed flat (scaleY then rotate, so it turns in
+   its own plane); 2: the shadow again over it (the disk's far side passes behind the hole), with the disk's near side
+   still crossing in front, clipped to the shadow; 3: hot spots running round the photon ring and the lensed ring outside it */
+body.theme-eventhorizon #themeFx{--u:max(calc(100vw / 1600),calc(100vh / 900))}
+body.theme-eventhorizon #themeFx i:nth-child(1){left:calc(50% - 860 * var(--u));top:calc(50% - 980 * var(--u));width:calc(1720 * var(--u));height:calc(1720 * var(--u));border-radius:50%;transform:scaleY(.12);opacity:.55;
+  background:conic-gradient(rgba(255,230,190,0),rgba(255,236,200,.55) 14deg,rgba(255,170,90,.1) 30deg,rgba(255,220,170,.4) 52deg,transparent 70deg,rgba(255,200,140,.5) 96deg,rgba(255,150,70,.08) 120deg,rgba(255,240,210,.6) 150deg,transparent 172deg,rgba(255,190,120,.35) 200deg,rgba(255,120,50,.06) 228deg,rgba(255,236,200,.5) 258deg,transparent 280deg,rgba(255,210,150,.45) 310deg,rgba(255,160,80,.1) 335deg,rgba(255,230,190,0));
+  -webkit-mask-image:radial-gradient(closest-side,transparent 20%,#000 24%,#000 40%,rgba(0,0,0,.45) 60%,transparent 92%);mask-image:radial-gradient(closest-side,transparent 20%,#000 24%,#000 40%,rgba(0,0,0,.45) 60%,transparent 92%);animation:bsTxDisk 90s linear infinite}
+body.theme-eventhorizon #themeFx i:nth-child(2){left:calc(50% - 170 * var(--u));top:calc(50% - 290 * var(--u));width:calc(340 * var(--u));height:calc(340 * var(--u));border-radius:50%;overflow:hidden;background:radial-gradient(closest-side,#000 94%,transparent);will-change:auto}
+body.theme-eventhorizon #themeFx i:nth-child(2)::after{content:"";position:absolute;left:calc(-690 * var(--u));top:calc(67 * var(--u));width:calc(1720 * var(--u));height:calc(206 * var(--u));opacity:.72;clip-path:inset(50% 0 0 0);
+  background:radial-gradient(closest-side,transparent 20%,#fff8e8 23.5%,rgba(255,207,128,.85) 33%,rgba(255,138,58,.45) 52%,rgba(184,58,24,.16) 76%,transparent)}
+body.theme-eventhorizon #themeFx i:nth-child(3){left:calc(50% - 255 * var(--u));top:calc(50% - 375 * var(--u));width:calc(510 * var(--u));height:calc(510 * var(--u));border-radius:50%;opacity:.8;
+  background:conic-gradient(transparent,rgba(255,245,225,.9) 18deg,transparent 50deg,transparent 120deg,rgba(255,200,140,.6) 150deg,transparent 185deg,transparent 230deg,rgba(255,235,200,.75) 262deg,transparent 300deg);
+  -webkit-mask-image:radial-gradient(closest-side,transparent 64%,#000 67.7%,transparent 71%,rgba(0,0,0,.4) 74%,rgba(0,0,0,.25) 86%,transparent 97%);mask-image:radial-gradient(closest-side,transparent 64%,#000 67.7%,transparent 71%,rgba(0,0,0,.4) 74%,rgba(0,0,0,.25) 86%,transparent 97%);animation:bsTxSpin 54s linear infinite}
+/* Glass Lake: two curtains of northern lights folding slowly over the mountains, and the first one's reflection in the
+   lake below the mountains' own (upside down about the waterline, 57.6%, moving with it, broken by faint ripples) */
+body.theme-glasslake #themeFx i:nth-child(1){left:-15%;top:0;width:130%;height:44%;transform-origin:50% 100%;background:var(--bs-gl-a) 0 0/100% 100% no-repeat;animation:bsTxAurA 23s ease-in-out infinite alternate}
+body.theme-glasslake #themeFx i:nth-child(2){left:-20%;top:-2%;width:140%;height:34%;transform-origin:50% 100%;background:var(--bs-gl-b) 0 0/100% 100% no-repeat;opacity:.65;animation:bsTxAurB 31s ease-in-out -9s infinite alternate}
+body.theme-glasslake #themeFx i:nth-child(3){left:-15%;top:71.2%;width:130%;height:44%;transform-origin:50% 0;opacity:.25;background:repeating-linear-gradient(180deg,rgba(2,10,16,.55) 0 1.5px,transparent 1.5px 6px),var(--bs-gl-ar) 0 0/100% 100% no-repeat;
+  -webkit-mask-image:linear-gradient(180deg,transparent 10%,#000 30%,rgba(0,0,0,.6));mask-image:linear-gradient(180deg,transparent 10%,#000 30%,rgba(0,0,0,.6));animation:bsTxAurR 23s ease-in-out infinite alternate}
+/* still (Handheld / Low, Reduce motion on the page or the window) */
+html.reduce-motion #themeFx i{animation:none!important;will-change:auto!important}
+body:not(.fx).theme-starfield #themeFx i:nth-child(-n+2),body.reduce-motion.theme-starfield #themeFx i:nth-child(-n+2),html.reduce-motion body.theme-starfield #themeFx i:nth-child(-n+2){display:none}
+
+/* (beta.14) five more: Neon City, Deep Sea, Thunderstorm, Fireflies and Desert Night (themes-extra.js), made like the six
+   above: only #themeFx's three layers move, by transform / opacity (the graphics card runs them, no frame loop, no canvas);
+   the pictures they move are custom properties made once by themes-extra.js. They hold while the shelf slides (.hold) or
+   something covers it (style.css), and stand still at Handheld / Low (body:not(.fx)) and with Reduce motion (the rules
+   above), where a layer that only lights up now and then (the lightning, the shooting star) stays dark */
+body.theme-neoncity .bg-layer img,body.theme-deepsea .bg-layer img,body.theme-storm .bg-layer img,body.theme-fireflies .bg-layer img,body.theme-desertnight .bg-layer img{opacity:0}
+body.theme-neoncity .floor,body.theme-deepsea .floor{opacity:.38}
+body.theme-storm .floor,body.theme-fireflies .floor,body.theme-desertnight .floor{opacity:.32}
+body.theme-neoncity #themeFx,body.theme-deepsea #themeFx,body.theme-storm #themeFx,body.theme-fireflies #themeFx,body.theme-desertnight #themeFx{display:block}
+:is(body.theme-neoncity,body.theme-deepsea,body.theme-storm,body.theme-fireflies,body.theme-desertnight) #themeFx i{will-change:transform}
+body.theme-neoncity #themeFx,body.theme-desertnight #themeFx{--u:max(calc(100vw / 1600),calc(100vh / 900))}
+@keyframes bsTxFlick{0%,22%{opacity:1}22.6%,31%{opacity:.3}31.6%,58%{opacity:1}58.6%{opacity:.5}59.4%{opacity:1}60.2%{opacity:.6}61%,82%{opacity:1}82.6%,89%{opacity:.4}89.6%,100%{opacity:1}}
+@keyframes bsTxLaneR{0%{transform:translate3d(-50%,0,0)}100%{transform:translate3d(0,0,0)}}
+@keyframes bsTxLaneL{0%{transform:translate3d(0,0,0)}100%{transform:translate3d(-50%,0,0)}}
+@keyframes bsTxFan{0%{transform:rotate(-4deg);opacity:.55}100%{transform:rotate(4deg);opacity:1}}
+@keyframes bsTxFlash{0%,80%{opacity:0}81.2%{opacity:.8}83.5%{opacity:.5}84.5%{opacity:.58}92%{opacity:.1}100%{opacity:0}}
+@keyframes bsTxFlashAt{0%{translate:0 0}33.333%{translate:105% 6%}66.667%{translate:48% -4%}}
+@keyframes bsTxWander{0%{transform:translate3d(0,0,0)}30%{transform:translate3d(1.8%,-2.4%,0)}65%{transform:translate3d(-1.4%,-3.8%,0)}100%{transform:translate3d(-2.6%,-.8%,0)}}
+@keyframes bsTxWander2{0%{transform:translate3d(0,0,0)}35%{transform:translate3d(-2%,1.6%,0)}70%{transform:translate3d(1.2%,-2.6%,0)}100%{transform:translate3d(2.6%,.6%,0)}}
+@keyframes bsTxBlink{0%,100%{opacity:.28}36%{opacity:.34}50%{opacity:1}62%{opacity:.88}78%{opacity:.3}}
+@keyframes bsTxMeteor{0%,86%{opacity:0;transform:rotate(16deg) translate3d(0,0,0)}87.4%{opacity:1}91%{opacity:.85}93%,100%{opacity:0;transform:rotate(16deg) translate3d(190%,0,0)}}
+@keyframes bsTxMeteorAt{0%{translate:0 0}33.333%{translate:40vw 0}66.667%{translate:-3vw 14vh}}
+/* Neon City: 1, a set of windows and roof-top neon that flickers (now and then a few go dark for a moment); 2, tail lights
+   streaming right along the street at the towers' feet (the frame's 498-516, laid on the backdrop's cover frame by --u);
+   3, traffic on a sky lane above the towers, going left */
+body.theme-neoncity #themeFx i:nth-child(1){inset:0;background:var(--bs-nc-win) 50% 50%/cover no-repeat;animation:bsTxFlick 9s linear infinite}
+body.theme-neoncity #themeFx i:nth-child(2){left:0;top:calc(50% + 48 * var(--u));width:200%;height:calc(18 * var(--u));background:var(--bs-nc-a) 0 0/50% 100% repeat-x;animation:bsTxLaneR 6s linear infinite}
+body.theme-neoncity #themeFx i:nth-child(3){left:0;top:calc(50% - 292 * var(--u));width:200%;height:calc(14 * var(--u));opacity:.7;background:var(--bs-nc-b) 0 0/50% 100% repeat-x;animation:bsTxLaneL 11s linear infinite}
+/* Deep Sea: 1, rays from the surface fanning slowly; 2 and 3, far and near jellyfish rising (a layer two screens tall, one
+   screen of them repeated, moved up one screen a loop) and swaying */
+body.theme-deepsea #themeFx i:nth-child(1){left:-25%;top:-8%;width:150%;height:92%;transform-origin:50% 0;
+  background:conic-gradient(from 160deg at 50% 0,transparent 0deg,rgba(150,230,255,.12) 4deg,transparent 9deg,transparent 14deg,rgba(150,230,255,.08) 17deg,transparent 22deg,rgba(170,240,255,.1) 27deg,transparent 33deg,transparent 360deg);
+  -webkit-mask-image:linear-gradient(#000,rgba(0,0,0,.5) 45%,transparent 88%);mask-image:linear-gradient(#000,rgba(0,0,0,.5) 45%,transparent 88%);animation:bsTxFan 16s ease-in-out infinite alternate}
+body.theme-deepsea #themeFx i:nth-child(-n+3):nth-child(n+2){left:-5%;top:0;width:110%;height:200%}
+body.theme-deepsea #themeFx i:nth-child(2){background:var(--bs-ds-b) 0 0/100% 50% repeat-y;opacity:.85;animation:bsTxRise 110s linear infinite,bsTxSway 13s ease-in-out -5s infinite alternate-reverse}
+body.theme-deepsea #themeFx i:nth-child(3){background:var(--bs-ds-a) 0 0/100% 50% repeat-y;animation:bsTxRise 70s linear -30s infinite,bsTxSway 9s ease-in-out infinite alternate}
+/* Thunderstorm: 1, the lightning: a soft glow (and a faint far bolt) behind the clouds, once every 13 s, rising in a fifth of
+   a second and fading over a second or so, never a hard flash; it moves to a new place only while dark (steps, 3 x 13 s);
+   2, the far cloud deck; 3, the heavy near deck, rolling past faster */
+body.theme-storm #themeFx i:nth-child(1){left:6%;top:-4%;width:44%;height:60%;opacity:0;
+  background:var(--bs-st-bolt) 50% 96%/14% 50% no-repeat,radial-gradient(closest-side,rgba(190,205,255,.34),rgba(150,170,235,.13) 52%,transparent);animation:bsTxFlash 13s linear infinite,bsTxFlashAt 39s steps(1,end) infinite}
+body.theme-storm #themeFx i:nth-child(2){left:0;top:20%;width:200%;height:36%;opacity:.9;background:var(--bs-st-far) 0 0/50% 100% repeat-x;
+  -webkit-mask-image:linear-gradient(transparent,#000 22%,#000 62%,transparent);mask-image:linear-gradient(transparent,#000 22%,#000 62%,transparent);animation:bsTxLaneL 240s linear infinite}
+body.theme-storm #themeFx i:nth-child(3){left:0;top:-8%;width:200%;height:54%;background:var(--bs-st-near) 0 0/50% 100% repeat-x;
+  -webkit-mask-image:linear-gradient(#000 52%,transparent 98%);mask-image:linear-gradient(#000 52%,transparent 98%);animation:bsTxLaneL 150s linear infinite}
+/* Fireflies: three swarms, each wandering on its own path and blinking at its own pace (still: all softly lit) */
+body.theme-fireflies #themeFx i{inset:0}
+body.theme-fireflies #themeFx i:nth-child(1){background:var(--bs-ff-a) 50% 50%/cover no-repeat;opacity:.85;animation:bsTxWander 19s ease-in-out infinite alternate,bsTxBlink 4.2s ease-in-out infinite}
+body.theme-fireflies #themeFx i:nth-child(2){background:var(--bs-ff-b) 50% 50%/cover no-repeat;opacity:.7;animation:bsTxWander2 23s ease-in-out -7s infinite alternate,bsTxBlink 5.6s ease-in-out -2s infinite}
+body.theme-fireflies #themeFx i:nth-child(3){background:var(--bs-ff-c) 50% 50%/cover no-repeat;opacity:.6;animation:bsTxWander 29s ease-in-out -12s infinite alternate-reverse,bsTxBlink 7.1s ease-in-out -4.5s infinite}
+/* Desert Night: 1, a disc of stars turning once in 12 minutes about a point high on the left (the frame's 620,110; the
+   stars thin out towards its rim); 2, the dunes and the moon's disc laid back over it, exactly as the backdrop draws them
+   (static); 3, a shooting star every 11 s, from one of three places in turn (it moves on only while unseen) */
+body.theme-desertnight #themeFx i:nth-child(1){left:calc(50% - 1100 * var(--u));top:calc(50% - 1260 * var(--u));width:calc(1840 * var(--u));height:calc(1840 * var(--u));background:var(--bs-dn-spin) 0 0/100% 100% no-repeat;animation:bsTxSpin 720s linear infinite}
+body.theme-desertnight #themeFx i:nth-child(2){inset:0;background:var(--bs-dn-cover);will-change:auto}
+body.theme-desertnight #themeFx i:nth-child(3){left:6%;top:7%;width:15%;height:calc(2.2 * var(--u));border-radius:2px;opacity:0;transform-origin:0 50%;transform:rotate(16deg);
+  background:linear-gradient(90deg,rgba(190,210,255,0),rgba(200,220,255,.4) 70%,#fff 97%,rgba(255,255,255,0));animation:bsTxMeteor 11s linear infinite,bsTxMeteorAt 33s steps(1,end) infinite}
+
 /* Custom themes (1.76, Windows: app.js setCustomThemes): the picture is the whole backdrop, so the blurred cover is left
    out and nothing moves on the theme layer; blur (theme.json) softens the picture, glow sets the light under the shelf */
 body.theme-custom .bg-layer img{opacity:0!important}
 body.theme-custom .theme-fx,body.theme-custom .theme-canvas{display:none!important}
 body.theme-custom .floor{opacity:var(--custom-glow,.35)}
-body.custom-blur .bg-layer .tint{filter:blur(22px);transform:scale(1.08)}
+body.custom-blur .bg-layer .tint{filter:blur(var(--custom-soften,22px));transform:scale(1.08)}
+/* (beta.14) Make a theme: slow movement of the picture (both backdrop layers run the same clock, so a change of game
+   doesn't jump), particles and scanlines on the theme layer, the floor; held while sliding (.hold), still at Handheld / Low */
+@keyframes bsTxKb{0%,100%{transform:scale(1.08) translate3d(-2%,-1%,0)}50%{transform:scale(1.16) translate3d(2%,1%,0)}}
+@keyframes bsTxPan{0%,100%{transform:scale(1.1) translate3d(-3%,0,0)}50%{transform:scale(1.1) translate3d(3%,-1%,0)}}
+@keyframes bsTxFall{0%{transform:translate3d(0,0,0)}100%{transform:translate3d(0,50%,0)}}
+body.fx.custom-motion-drift:not(.reduce-motion) .bg-layer .tint{animation:bsTxPan 60s ease-in-out infinite}
+body.fx.custom-motion-zoom:not(.reduce-motion) .bg-layer .tint{animation:bsTxKb 30s ease-in-out infinite}
+.bg-layer.hold .tint{animation-play-state:paused!important}
+body.theme-custom.custom-fx #themeFx{display:block!important}
+body.custom-fx #themeFx i{will-change:auto}
+body.custom-px-sparks #themeFx i:nth-child(1){left:0;top:0;width:100%;height:200%;background:var(--bs-ember-rise) 0 0/100% 50% repeat-y;animation:bsTxRise 40s linear infinite}
+body.custom-px-snow #themeFx i:nth-child(1){left:0;top:-100%;width:100%;height:200%;background:var(--bs-tile-snow) 0 0/100% 50% repeat-y;animation:bsTxFall 30s linear infinite}
+body.custom-px-stars #themeFx i:nth-child(1){inset:0;background:var(--bs-tile-stars) 50% 50%/cover no-repeat;animation:bsTxTw 6s ease-in-out infinite}
+body.custom-px-dust #themeFx i:nth-child(1){left:-10%;top:-10%;width:120%;height:120%;background:var(--bs-tile-dust) 0 0/100% 100% no-repeat;animation:bsTxDrift 50s ease-in-out infinite}
+body:not(.fx).custom-px-sparks #themeFx i:nth-child(1),body:not(.fx).custom-px-snow #themeFx i:nth-child(1){display:none}
+body.custom-scan #themeFx i:nth-child(3){inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 2px,transparent 2px 4px)}
+body.custom-floor-none .floor{opacity:0!important}
+body.custom-floor-mirror .floor{opacity:calc(var(--custom-glow,.35)*.7);filter:saturate(.15) brightness(1.5)}
+.bg-video{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.bg-video video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.bg-video b{position:absolute;inset:0}
+#app.bg-art .bg-video{display:none}
 
-/* Settings → Theme: eighteen tiles don't fit beside the row's name, so they go under it in two lines of nine, each wide
-   enough for its name (settings.js matches a click or tap to a tile by line as well) */
+/* Settings → Theme: the tiles don't fit beside the row's name, so they go under it, seven to a line (beta.14: thirty-three,
+   five lines), each wide enough for its name (settings.js matches a click or tap to a tile by line as well) */
 .bss-row:has(>.bss-tiles){flex-wrap:wrap;row-gap:12px;padding-top:14px;padding-bottom:16px}
-.bss-row>.bss-tiles{flex:1 1 100%;display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:10px;padding:0}
+.bss-row>.bss-tiles{flex:1 1 100%;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;padding:0}
 .bss-row>.bss-tiles .bss-tile{width:auto;min-width:0;height:64px;border-radius:10px}
 .bss-row>.bss-tiles .bss-tile span{font-size:13.5px;padding:12px 8px 5px}
 .bss-row>.bss-tiles .bss-tile.on{transform:none}
@@ -39,6 +223,9 @@ body.custom-blur .bg-layer .tint{filter:blur(22px);transform:scale(1.08)}
 .qm-opt.sw .qm-swl{position:absolute;left:0;right:0;bottom:0;padding:12px 7px 5px;font-size:11.5px;font-weight:600;line-height:1.15;color:#fff;text-align:left;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:linear-gradient(transparent,rgba(0,0,0,.6));text-shadow:0 1px 2px rgba(0,0,0,.65);pointer-events:none}
 .qm-opt.sw.cur::after{left:auto;right:6px;top:6px;bottom:auto;margin-left:0;width:6px;height:6px}
+/* (beta.14) Look & sound: its twelve themes four to a row, a little taller (the design's) */
+.qm-opts.g4:has(>.qm-opt.sw){grid-template-columns:repeat(4,minmax(0,1fr))}
+.qm-opts.g4>.qm-opt.sw{height:62px}
 .platform-android .bss-row>.bss-tiles .bss-tile{height:70px;border-radius:6px;opacity:.72}
 .platform-android .bss-row>.bss-tiles .bss-tile.on{opacity:1}
 .platform-android .bss-row>.bss-tiles .bss-tile span{font-size:14.5px;padding:14px 8px 6px}

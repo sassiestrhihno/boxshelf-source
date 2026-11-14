@@ -21,10 +21,17 @@ const SOFT = 'Boxshelf';
 const UA = `Boxshelf/${(() => { try { return require('../package.json').version; } catch { return '0'; } })()}`;
 const HIT_TTL = 7 * 864e5, MISS_TTL = 864e5, HASH_MAX = 64 * 1048576, TIMEOUT = 15000, DL_TIMEOUT = 45000, MAX_GAMES = 20000, MAX_HASH = 20000;
 // ScreenScraper's console numbers (systemesListe.php) for the shelves Boxshelf has; PS4 and Steam aren't covered
-const SYS = { gc: 13, wii: 16, wiiu: 18, sw: 225, n3ds: 17, psp: 61, ps2: 58, ps3: 59, x360: 33, megadrive: 1, mastersystem: 2, nes: 3, snes: 4, gb: 9, gbc: 10, gba: 12, n64: 14, nds: 15, gamegear: 21, dreamcast: 23, saturn: 22, pcengine: 31, neogeo: 142, arcade: 75, segacd: 20, sega32x: 19, atari2600: 26, atarilynx: 28, wonderswan: 45, dos: 135, psx: 57 }; // (beta.6: the retro shelves)
+const SYS = { gc: 13, wii: 16, wiiu: 18, sw: 225, n3ds: 17, psp: 61, ps2: 58, ps3: 59, x360: 33, xbox: 32, megadrive: 1, mastersystem: 2, nes: 3, snes: 4, gb: 9, gbc: 10, gba: 12, n64: 14, nds: 15, gamegear: 21, dreamcast: 23, saturn: 22, pcengine: 31, neogeo: 142, arcade: 75, segacd: 20, sega32x: 19, atari2600: 26, atarilynx: 28, wonderswan: 45, dos: 135, psx: 57 }; // (beta.6: the retro shelves)
 // media type → Art Studio part. box-texture is the whole wrap (back | spine | front): the spine is cut from it. (box-3D is a
 // rendered 3D box, not flat art: not offered, the same as LaunchBox's "Box - 3D")
 const PART_MEDIA = { front: ['box-2D'], back: ['box-2D-back'], spine: ['box-2D-side', 'box-texture'], disc: ['support-2D'] };
+// (beta.14) Details' screenshots (main/moreshots.js): the in-game screenshot, the title screen and the fan art, kept in the same
+// lookup. A lookup cached before these were kept has no flag (its 4th field) and is asked again when screenshots are wanted.
+const SHOT_MEDIA = { ss: 'play', sstitle: 'title' }; // (beta.14: real screenshots only, no fan art)
+// (beta.14) Details' trailer (main/trailers.js): ScreenScraper's short gameplay capture, its "normalized" copy first (one size
+// and format for every game), else the capture as it was sent. Kept in the same lookup; a lookup cached before these were
+// kept (its 4th field under 2) is asked again when a trailer is wanted.
+const VIDEO_MEDIA = ['video-normalized', 'video'];
 const REGION = r => { r = String(r || '').toLowerCase(); return r === 'us' || r === 'cus' ? 'usa' : r === 'jp' ? 'jpn' : r === 'wor' ? 'world' : /^(eu|fr|de|es|it|uk|nl|pt|se|dk|fi|no|pl|gr|ru|au|nz)$/.test(r) ? 'eur' : ''; };
 const REGION_WORD = { usa: 'USA', eur: 'Europe', jpn: 'Japan', world: 'World' };
 const CART = new Set(['n3ds', 'sw', 'sw2', 'nes', 'snes', 'n64', 'gb', 'gbc', 'gba', 'nds', 'megadrive', 'mastersystem', 'gamegear', 'pcengine', 'neogeo', 'arcade', 'sega32x', 'atari2600', 'atarilynx', 'wonderswan']);
@@ -57,6 +64,7 @@ function clean(u) {
   x.protocol = 'https:'; return x.toString();
 }
 const isMedia = u => { try { const x = new URL(String(u)); return /(^|\.)screenscraper\.fr$/i.test(x.hostname) && /mediaJeu\.php$/i.test(x.pathname); } catch { return false; } };
+const isVideoMedia = u => { try { const x = new URL(String(u)); return /(^|\.)screenscraper\.fr$/i.test(x.hostname) && /media(Video)?Jeu\.php$/i.test(x.pathname); } catch { return false; } };
 function sign(u) { const x = new URL(u); const p = credParams(); delete p.output; for (const [k, v] of Object.entries(p)) if (v) x.searchParams.set(k, v); return x.toString(); }
 
 // ---------- cache: { games: { "<sys>|<file>|<size>": [jeuId|0, at, [media]] }, hashes: { "<file>|<size>|<mtime>": [crc, md5, sha1] } } ----------
@@ -79,10 +87,13 @@ class SsError extends Error { constructor(code, msg) { super(msg); this.code = c
 function pause(ms, why) { pausedUntil = Math.max(pausedUntil, Date.now() + ms); pauseWhy = why; }
 const nextUtcDay = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1) - Date.now() + 60e3; };
 const PAUSE_MSG = { rate: 'ScreenScraper asked us to slow down', quota: "Today's ScreenScraper lookups are used up", closed: 'ScreenScraper is closed to apps right now', auth: 'The ScreenScraper login was not accepted', blocked: 'ScreenScraper has blocked this version of Boxshelf' };
-async function limited(fn) { // the account's maxthreads at once, every request spaced to its per-minute rate
+// (beta.14) stale(): checked once the turn comes; true = given up without a request (and without using up the spacing):
+// the Art Studio's previews of a part no longer on screen, which used to keep a new game's lookup waiting behind them
+const STALE = Symbol('stale');
+async function limited(fn, stale) { // the account's maxthreads at once, every request spaced to its per-minute rate
   while (active >= maxThreads) await new Promise(r => queue.push(r));
   active++;
-  try { const at = Math.max(Date.now(), lastAt + spacing); lastAt = at; const wait = at - Date.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait)); return await fn(); } // (the slot is taken before the wait: two callers never share one)
+  try { if (stale && stale()) return STALE; const at = Math.max(Date.now(), lastAt + spacing); lastAt = at; const wait = at - Date.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait)); return await fn(); } // (the slot is taken before the wait: two callers never share one)
   finally { active--; const n = queue.shift(); if (n) n(); }
 }
 // the account's limits, as each answer reports them (numbers arrive as strings)
@@ -142,24 +153,35 @@ async function hashes(file, st) {
 }
 // the media an answer lists → [{ type, region, url (clean), ext }]: only the types Art Studio uses, only ScreenScraper's own addresses
 function mediaOf(jeu) {
-  const want = new Set(Object.values(PART_MEDIA).flat()), out = [];
+  const want = new Set([...Object.values(PART_MEDIA).flat(), ...Object.keys(SHOT_MEDIA)]), out = [], shotN = {}, vids = [];
   for (const m of Array.isArray(jeu && jeu.medias) ? jeu.medias : []) {
-    if (!m || !want.has(String(m.type))) continue; if (m.parent && m.parent !== 'jeu') continue;
+    if (!m || m.parent && m.parent !== 'jeu') continue;
+    // (beta.14) one of each video type, kept apart so the 80 pictures never crowd it out
+    if (VIDEO_MEDIA.includes(String(m.type))) { if (!vids.some(v => v.type === m.type)) { const url = clean(m.url); if (url) vids.push({ type: String(m.type), region: '', url, ext: '.mp4' }); } continue; }
+    if (!want.has(String(m.type)) || out.length >= 80) continue;
+    if (SHOT_MEDIA[m.type] && (shotN[m.type] = (shotN[m.type] || 0) + 1) > 4) continue; /* (a few regions of each: never crowding out the box art) */
     const url = clean(m.url); if (!url) continue;
     const f = String(m.format || '').toLowerCase(); out.push({ type: String(m.type), region: String(m.region || '').toLowerCase().slice(0, 8), url, ext: f === 'jpg' || f === 'jpeg' ? '.jpg' : f === 'webp' ? '.webp' : '.png' });
-    if (out.length >= 80) break;
   }
-  return out;
+  return out.concat(vids);
 }
 // which ScreenScraper game a file is, and its media. cacheOnly: no requests (a restyle job uses only what the picker looked up)
-async function lookup(sysId, game, { cacheOnly = false, match = matchFn, discId = discIdFn } = {}) {
+async function lookup(sysId, game, { cacheOnly = false, match = matchFn, discId = discIdFn, shots = false, videos = false } = {}) {
   const sys = SYS[sysId], file = String((game && game.file) || ''); if (!sys || !file) return null;
   let st = null; try { st = await fs.promises.stat(file); } catch {}
   const size = st && st.isFile() ? st.size : +(game && game.sizeBytes) || 0;
   const c = cacheGet(), ck = sysId + '|' + file.toLowerCase() + '|' + size, hit = c.games[ck];
   // (media addresses from the disk cache are cleaned again: a hand-edited or older file never carries a credential onward)
-  if (hit && Date.now() - hit[1] < (hit[0] ? HIT_TTL : MISS_TTL)) return hit[0] ? { id: hit[0], media: (Array.isArray(hit[2]) ? hit[2] : []).map(m => m && { ...m, url: clean(m.url) }).filter(m => m && m.url) } : null;
+  if (hit && Date.now() - hit[1] < (hit[0] ? HIT_TTL : MISS_TTL) && !(shots && hit[0] && !hit[3] && !cacheOnly) && !(videos && hit[0] && (+hit[3] || 0) < 2 && !cacheOnly)) return hit[0] ? { id: hit[0], media: (Array.isArray(hit[2]) ? hit[2] : []).map(m => m && { ...m, url: clean(m.url) }).filter(m => m && m.url) } : null;
   if (cacheOnly || !enabled()) return null;
+  // (beta.14) one lookup per game at a time: Details' screenshots and its trailer ask together (one request, one hashing)
+  if (lookFlights.has(ck)) return lookFlights.get(ck);
+  const p = lookupNet(sysId, sys, file, st, size, game, match, discId, c, ck);
+  lookFlights.set(ck, p); p.then(() => lookFlights.delete(ck), () => lookFlights.delete(ck));
+  return p;
+}
+const lookFlights = new Map();
+async function lookupNet(sysId, sys, file, st, size, game, match, discId, c, ck) {
   const name = path.basename(file), q = { systemeid: sys, romtype: romType(file, st && st.isDirectory()), romnom: name, romtaille: size || undefined };
   try { const h = await hashes(file, st); if (h) Object.assign(q, h.crc ? { crc: h.crc } : {}, { md5: h.md5, sha1: h.sha1 }); } catch {} // (a file that can't be read: matched by name)
   if ((sysId === 'gc' || sysId === 'wii') && discId) { try { const id = discId(file); if (id) q.serialnum = id; } catch {} }
@@ -173,7 +195,58 @@ async function lookup(sysId, game, { cacheOnly = false, match = matchFn, discId 
     if (m) { jeu = m.jeu; if (!Array.isArray(jeu.medias) || !jeu.medias.length) { const r2 = await api('jeuInfos.php', { systemeid: sys, gameid: m.id }); if (r2 && r2.jeu) jeu = r2.jeu; } }
   }
   const out = jeu ? { id: +jeu.id || String(jeu.id), media: mediaOf(jeu) } : null;
-  c.games[ck] = out ? [out.id, Date.now(), out.media] : [0, Date.now()]; cacheSave(); return out;
+  c.games[ck] = out ? [out.id, Date.now(), out.media, 2] : [0, Date.now()]; cacheSave(); return out; /* (beta.14: 2 = the videos kept too) */
+}
+// (beta.14) Details' screenshots: [{ url (clean), ext, kind: 'play' | 'title' | 'fan', type }], one of each type, the best region
+// first. No account: []. Busy (a quota, a pause, offline): throws, so main/moreshots.js asks again another time.
+const SHOT_REGION = ['us', 'wor', 'eu', 'ss', 'jp'];
+async function shots(sysId, game, opts = {}) {
+  if (!configured() || !SYS[sysId]) return [];
+  let hit; try { hit = await lookup(sysId, game, { shots: true, match: opts.match || matchFn, discId: opts.discId || discIdFn }); } catch (e) { if (e.code === 'nocreds' || e.code === 'auth') return []; throw e; }
+  if (!hit) return [];
+  const rank = m => { const i = SHOT_REGION.indexOf(m.region); return i < 0 ? SHOT_REGION.length : i; }, out = [];
+  for (const type of Object.keys(SHOT_MEDIA)) { const m = hit.media.filter(x => x.type === type).sort((a, b) => rank(a) - rank(b))[0]; if (m) out.push({ url: m.url, ext: m.ext, kind: SHOT_MEDIA[type], type }); }
+  return out;
+}
+// (beta.14) Details' trailer: the game's gameplay capture { url (clean), type } ('video-normalized' first), or null (no account,
+// no match, no video). Busy (a quota, a pause, offline) or a sign-in that isn't accepted (code 'off'): throws, so
+// main/trailers.js asks again another time and never marks the game as having no clip
+async function video(sysId, game, opts = {}) {
+  if (!SYS[sysId]) return null;
+  const off = () => { const x = new SsError('off', 'ScreenScraper is not signed in'); return x; };
+  if (!enabled()) throw off();
+  let hit; try { hit = await lookup(sysId, game, { shots: true, videos: true, cacheOnly: !!opts.cacheOnly, match: opts.match || matchFn, discId: opts.discId || discIdFn }); } catch (e) { if (e.code === 'nocreds' || e.code === 'auth') throw off(); throw e; }
+  if (!hit) { if (!enabled()) throw off(); return null; }
+  for (const type of VIDEO_MEDIA) { const m = hit.media.find(x => x.type === type); if (m) return { url: m.url, type }; }
+  return null;
+}
+// a video from video() → dest: 'ok' | 'missing' (not there, not an MP4, or over VIDEO_MAX) | 'busy'; throws when offline.
+// Only the request's start waits its turn in the limiter (spaced like every other request); the video itself comes in after
+// that, streamed to dest.part, so box art and lookups never wait behind a download
+const VIDEO_MAX = 80 << 20, VIDEO_TIMEOUT = 120000;
+async function downloadVideo(url, dest) {
+  if (!isVideoMedia(url)) return 'missing';
+  if (!enabled() || Date.now() < pausedUntil) return 'busy';
+  const ac = new AbortController(), timer = setTimeout(() => ac.abort(), VIDEO_TIMEOUT), part = dest + '.part';
+  const why = (e, what) => /abort|timeout/i.test(e && e.name + ' ' + e.message) ? `ScreenScraper took too long to ${what}` : what === 'answer' ? "Couldn't reach ScreenScraper" : 'ScreenScraper stopped sending the video';
+  try {
+    const r = await limited(async () => { try { return await (fetchFn || require('electron').net.fetch)(sign(url), { headers: { 'User-Agent': UA }, signal: ac.signal, cache: 'no-store' }); } catch (e) { throw new Error(why(e, 'answer')); } });
+    if (r.status === 404) return 'missing';
+    if (!r.ok) { failure(r.status, '', null); return 'busy'; }
+    const len = +((r.headers && r.headers.get && r.headers.get('content-length')) || 0); if (len > VIDEO_MAX) { ac.abort(); return 'missing'; }
+    let got = 0, head = Buffer.alloc(0), big = false, fh = null;
+    try {
+      fh = await fs.promises.open(part, 'w');
+      const put = async b => { got += b.length; if (got > VIDEO_MAX) return false; if (head.length < 8) head = Buffer.concat([head, b.subarray(0, 8)]); await fh.write(b); return true; };
+      if (r.body && typeof r.body.getReader === 'function') { const rd = r.body.getReader();
+        for (;;) { const { done, value } = await rd.read(); if (done) break; if (!(await put(Buffer.from(value)))) { big = true; ac.abort(); try { rd.cancel(); } catch {} break; } } }
+      else if (!(await put(Buffer.from(await r.arrayBuffer())))) big = true;
+      await fh.close(); fh = null;
+    } catch (e) { if (fh) { try { await fh.close(); } catch {} } await fs.promises.unlink(part).catch(() => {}); throw new Error(why(e, 'send the video')); }
+    // (an MP4 starts with its ftyp box; "NOMEDIA" is a short text)
+    if (big || got < 1024 || head.toString('latin1', 4, 8) !== 'ftyp') { await fs.promises.unlink(part).catch(() => {}); return 'missing'; }
+    await fs.promises.rename(part, dest); return 'ok';
+  } finally { clearTimeout(timer); }
 }
 // Art Studio candidates for one part: [{ url (clean), ext, src?, cut?, source:'screenscraper', type, region, edition, kind, label }].
 // Never throws: no account, no match, offline, a quota or a refused login all mean "nothing from ScreenScraper this time".
@@ -198,22 +271,25 @@ async function candidates(sysId, game, part, opts = {}) {
     return out;
   } catch (e) { if (e.code !== 'nocreds') log('ScreenScraper:', e.message); return []; }
 }
-// a media file (a clean address from candidates()) → dest: 'ok' | 'missing' | 'busy'; throws when offline (as covers.downloadEx)
-async function download(url, dest) {
+// a media file (a clean address from candidates()) → dest: 'ok' | 'missing' | 'busy' | 'cancelled' (opts.stale() was true
+// when its turn came: nothing asked); throws when offline (as covers.downloadEx)
+async function download(url, dest, opts = {}) {
   if (!isMedia(url)) return 'missing';
   if (!enabled()) return 'busy'; // no account (or a refused one) right now: not "missing" (that would hide the picture for a week)
   if (Date.now() < pausedUntil) return 'busy';
-  return limited(async () => {
+  const r = await limited(async () => {
     let r; try { r = await (fetchFn || require('electron').net.fetch)(sign(url), { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(DL_TIMEOUT), cache: 'no-store' }); }
     catch (e) { throw new Error(/abort|timeout/i.test(e && e.name + ' ' + e.message) ? 'ScreenScraper took too long to answer' : "Couldn't reach ScreenScraper"); }
     if (r.status === 404) return 'missing';
     if (!r.ok) { failure(r.status, '', null); return 'busy'; }
-    const b = Buffer.from(await r.arrayBuffer());
+    // (beta.14) the time limit also covers the picture's own bytes: running out there said only "The operation was aborted"
+    let b; try { b = Buffer.from(await r.arrayBuffer()); } catch (e) { throw new Error(/abort|timeout/i.test(e && e.name + ' ' + e.message) ? 'ScreenScraper took too long to send the picture' : 'ScreenScraper stopped sending the picture'); }
     // a picture, by its first bytes: ScreenScraper answers a missing media with a short text ("NOMEDIA") and status 200
     const pic = (b.length > 64 && ((b[0] === 0x89 && b[1] === 0x50) || (b[0] === 0xff && b[1] === 0xd8) || (b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP')));
     if (!pic) return 'missing';
     await fs.promises.writeFile(dest + '.part', b); await fs.promises.rename(dest + '.part', dest); return 'ok';
-  });
+  }, opts && opts.stale);
+  return r === STALE ? 'cancelled' : r;
 }
 // Settings → Test: { ok, left } or { ok:false, error } (words for the screen; never a credential)
 async function test() {
@@ -226,5 +302,5 @@ async function test() {
 }
 const state = () => ({ configured: configured(), enabled: enabled(), paused: Date.now() < pausedUntil ? pauseWhy : '', threads: maxThreads, devLogin: hasDevLogin() });
 
-module.exports = { init, candidates, download, test, configured, enabled, credsChanged, isMedia, clean, state, SYS, HASH_MAX, 
+module.exports = { init, candidates, shots, video, downloadVideo, download, test, configured, enabled, credsChanged, isMedia, clean, state, SYS, HASH_MAX, 
   _t: { cacheGet, apiUrl, lookup, hashes, mediaOf, reset: () => { cache = null; pausedUntil = 0; pauseWhy = ''; badSig = ''; maxThreads = 1; spacing = 0; lastAt = 0; }, paused: () => pausedUntil, why: () => pauseWhy, threads: () => maxThreads } };

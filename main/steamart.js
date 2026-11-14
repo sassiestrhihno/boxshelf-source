@@ -59,7 +59,7 @@ async function fetchInfo(appid) {
       genres: (d.genres || []).map(g => g.description).join('; ') || undefined,
       metacritic: d.metacritic && d.metacritic.score || undefined,
       overview: String(d.short_description || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").slice(0, 1200) || undefined,
-      shots: (d.screenshots || []).slice(0, 8).map(s => s.path_full).filter(u => /^https:\/\//.test(u)), bg: /^https:\/\//.test(d.background_raw || '') ? d.background_raw : null };
+      shots: (d.screenshots || []).slice(0, 12).map(s => s.path_full).filter(u => /^https:\/\//.test(u)), bg: /^https:\/\//.test(d.background_raw || '') ? d.background_raw : null };
   } catch (e) { log('steam info', appid, e.message); }
 }
 

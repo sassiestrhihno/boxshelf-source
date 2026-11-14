@@ -16,6 +16,7 @@ module.exports = async function shotViewPass({ browser, base, check }) {
     for (let i = 0; i < 8; i++) { if (await page.evaluate(() => { const g = Shelf._lib.cur(); return !!(g && g.kind === 'rom'); })) break; await page.keyboard.press('ArrowRight'); await page.waitForTimeout(350); }
     await page.keyboard.press('i'); await page.waitForFunction(() => Shelf.getMode() === 'details' && document.querySelectorAll('#dShots .d-shot').length > 2, null, { timeout: 15000, polling: 200 });
     await page.waitForTimeout(900);
+    await page.evaluate(() => { const t = document.querySelector('#dvNav .dv-t[data-s="media"]'); if (t) t.click(); }); await page.waitForTimeout(400); // (beta.14, Windows: the screenshots are in the Media tab)
     // the keyboard: Enter on the 2nd screenshot, right, left, Esc
     await page.focus('#dShots .d-shot:nth-child(2)'); await page.keyboard.press('Enter'); await page.waitForTimeout(600); o.open = await st();
     await page.keyboard.press('ArrowRight'); await page.waitForTimeout(400); o.next = await st();
@@ -41,7 +42,7 @@ module.exports = async function shotViewPass({ browser, base, check }) {
     await pp.waitForTimeout(2500);
     for (let i = 0; i < 8; i++) { if (await pp.evaluate(() => { const g = Shelf._lib.cur(); return !!(g && g.kind === 'rom'); })) break; await pp.keyboard.press('ArrowRight'); await pp.waitForTimeout(350); }
     await pp.keyboard.press('i'); await pp.waitForFunction(() => Shelf.getMode() === 'details' && document.querySelectorAll('#dShots .d-shot').length > 2, null, { timeout: 15000, polling: 200 });
-    await pp.waitForTimeout(900); await pp.focus('#dShots .d-shot:nth-child(1)'); await pp.keyboard.press('Enter'); await pp.waitForTimeout(600);
+    await pp.waitForTimeout(900); await pp.evaluate(() => { const t = document.querySelector('#dvNav .dv-t[data-s="media"]'); if (t) t.click(); }); await pp.waitForTimeout(400); await pp.focus('#dShots .d-shot:nth-child(1)'); await pp.keyboard.press('Enter'); await pp.waitForTimeout(600);
     await press(5); o.pRb = await sn(); await press(15); o.pRight = await sn(); await press(4); o.pLb = await sn();
     await press(1); await pp.waitForTimeout(500); o.pBack = await sn();
   } catch (e) { o.perr = e.message; }

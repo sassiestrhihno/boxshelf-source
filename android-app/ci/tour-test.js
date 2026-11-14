@@ -1,5 +1,5 @@
 // Device test pass "tour" (beta.11), run by web-device-test.js: the shelf tour (renderer/tour.js) on the Windows page at
-// 1600 x 900. Settings → Shelf → Show the tour starts it; it opens each screen in turn (Details, Inspect, the quick menu,
+// 1600 x 900. Settings → Shelf & museum → More options → Show the tour starts it (beta.14); it opens each screen in turn (Details, Inspect, the quick menu,
 // the Art Studio, Settings) with a spotlight and a card that stay on screen; Enter goes on, Esc ends it and closes
 // whatever it opened, and it's marked done. With a controller, A goes on and B ends it. An install set up before this
 // version doesn't get it on its own; the Android page never has it. Checks results, never speed. Screenshots: tour-*.png.
@@ -36,12 +36,14 @@ module.exports = async function tourPass({ browser, base, check, OUT }) {
 
     // (counts the Inspect step's turns of the case)
     await page.evaluate(() => { window.__turns = 0; const o = Shelf._tour.inspectTurn; Shelf._tour.inspectTurn = () => { window.__turns++; o(); }; });
-    // Settings → Shelf → Show the tour
-    const row = await page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms));
+    // Settings → Shelf & museum → More options → Show the tour (beta.14: the tour's row moved to the tab's More options page)
+    const row = await page.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms)), rowsOn = () => [...document.querySelectorAll('#bss .bss-row')];
       Setup.open({ page: 'shelf' }); for (let i = 0; i < 40 && !document.querySelector('#bss.on .bss-row'); i++) await w(150); await w(600);
-      const r = [...document.querySelectorAll('#bss .bss-row')].find(e => /Show the tour/.test(e.textContent)); if (r) r.click(); await w(300);
+      const mo = rowsOn().find(e => /^\s*More options/.test(e.textContent)); if (mo) mo.click();
+      for (let i = 0; i < 40 && !rowsOn().some(e => /^\s*Show the tour/.test(e.textContent)); i++) await w(150); await w(400);
+      const r = rowsOn().find(e => /^\s*Show the tour/.test(e.textContent)); if (r) r.click(); await w(300);
       const b = r && [...r.querySelectorAll('button, .btn, [role="button"]')].find(e => /Start/.test(e.textContent)); if (b && !(window.BS_TOUR && BS_TOUR.on())) b.click();
-      for (let i = 0; i < 40 && !BS_TOUR.on(); i++) await w(150); return { found: !!r, on: BS_TOUR.on(), settings: Settings.isOpen() }; });
+      for (let i = 0; i < 40 && !BS_TOUR.on(); i++) await w(150); return { more: !!mo, found: !!r, on: BS_TOUR.on(), settings: Settings.isOpen() }; });
 
     // every step with Enter: its screen, the spotlight and the card on screen and apart
     const seen = [];
@@ -58,14 +60,14 @@ module.exports = async function tourPass({ browser, base, check, OUT }) {
     await page.keyboard.press('Escape'); await page.waitForTimeout(1500);
     const after = await page.evaluate(() => ({ on: BS_TOUR.on(), mode: Shelf.getMode(), settings: Settings.isOpen(), qm: Shelf.quickMenuOpen(), done: !!((Shelf._tour.cfg() || {}).ui || {}).tourDone }));
     check('Tour (Windows): an install set up before this version doesn\'t get it on its own; Settings → Shelf → Show the tour starts it',
-      !auto && row.found && row.on && !row.settings, JSON.stringify({ auto, row }));
+      !auto && row.more && row.found && row.on && !row.settings, JSON.stringify({ auto, row }));
     check('Tour: ten steps in order, each opening its screen (Find a game, Details, Inspect, the quick menu, the Art Studio, Settings)',
       seen.map(s => s.k).join() === STEPS.join() && by('Find a game').mode === 'find' && by('Details').mode === 'details' && by('Inspect').mode === 'inspect' && by('Quick menu').qm && by('Art Studio').settings && by('Adding games').settings && by('Done').mode === 'browse' && !by('Done').settings,
       JSON.stringify(seen.map(s => [s.k, s.mode, s.settings ? 'S' : '', s.qm ? 'Q' : ''])));
     check('Tour: on the Inspect step the case turns by itself (a side every couple of seconds), and stops after', (by('Inspect').turns || 0) >= 1 && await page.evaluate(async () => { const n = window.__turns; await new Promise(r => setTimeout(r, 2600)); return window.__turns === n; }),
       JSON.stringify({ turns: by('Inspect').turns }));
     check('Tour: every step\'s card is on screen, beside its spotlight (not on it)', seen.length === STEPS.length && seen.every(s => s.card && s.apart) && seen.filter(s => s.spot).length === STEPS.length - 2,
-      JSON.stringify(seen.filter(s => !s.card || !s.apart).map(s => s.k)));
+      JSON.stringify({ off: seen.filter(s => !s.card || !s.apart).map(s => s.k), noSpot: seen.filter(s => !s.spot).map(s => s.k) }));
     check('Tour: Esc ends it, closes what it opened and remembers it was seen', !after.on && after.mode === 'browse' && !after.settings && !after.qm && after.done, JSON.stringify(after));
 
     // with a controller: A goes on, B ends it (and nothing reaches the shelf meanwhile)
@@ -141,7 +143,7 @@ module.exports = async function tourPass({ browser, base, check, OUT }) {
   } catch (e) { check('Settings close (classic page) ran to the end', false, e && e.message); }
   await sctx.close();
 
-  // (beta.12) RocketLauncher in Settings → Consoles: found (?rl=1, the pretend one), its switch, the front end; GameCube's page
+  // (beta.12) RocketLauncher in Settings → Consoles (beta.14: Library › More options, page "more-consoles"): found (?rl=1, the pretend one), its switch, the front end; GameCube's page
   // gets "Start games with" and the folder check once it's on; nothing at all when RocketLauncher isn't there
   const rlRows = async (q, on) => { const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 } });
     await ctx.addInitScript(() => { try { Object.defineProperty(Navigator.prototype, 'getGamepads', { configurable: true, value: () => [null, null, null, null] }); } catch (e) {} });
@@ -149,7 +151,7 @@ module.exports = async function tourPass({ browser, base, check, OUT }) {
     try { await pg.goto(base + '?platform=windows&shelf=1' + q); await pg.waitForFunction(() => window.Shelf && Shelf._qs && Shelf._qs().g && window.Setup && window.Settings, null, { timeout: 90000, polling: 250 });
       o = await pg.evaluate(async on => { const w = ms => new Promise(r => setTimeout(r, ms)), o = {};
         const names = () => [...document.querySelectorAll('#bss .bss-row')].map(r => r.innerText.replace(/\s+/g, ' ').trim().slice(0, 140));
-        Setup.open({ page: 'consoles' }); for (let i = 0; i < 40 && !document.querySelector('#bss.on .bss-row'); i++) await w(150); await w(1500); o.consoles = names().filter(n => /RocketLauncher/.test(n));
+        Setup.open({ page: 'more-consoles' }); for (let i = 0; i < 40 && !document.querySelector('#bss.on .bss-row'); i++) await w(150); await w(1500); o.consoles = names().filter(n => /RocketLauncher/.test(n));
         if (on) { const c = (await window.boxshelf.getConfig()).config; c.rocket = { exe: 'C:\\HyperSpin\\RocketLauncher\\RocketLauncher.exe', mode: 'all', frontend: '' }; await window.boxshelf.saveConfig(c);
           const ci = Shelf.config && Shelf.config(); if (ci && ci.config) ci.config.rocket = c.rocket; await Settings.close(); await w(800);
           Setup.open({ page: 'gc' }); for (let i = 0; i < 40 && !document.querySelector('#bss.on .bss-row'); i++) await w(150); await w(1500); o.gc = names().slice(0, 5); }
@@ -168,9 +170,12 @@ module.exports = async function tourPass({ browser, base, check, OUT }) {
     await ap.goto(base + '?platform=android&shelf=1');
     await ap.waitForFunction(() => window.Shelf && Shelf._qs && Shelf._qs().g && window.BS_TOUR && window.Setup, null, { timeout: 90000, polling: 250 });
     const a = await ap.evaluate(async () => { const w = ms => new Promise(r => setTimeout(r, ms)); const started = BS_TOUR.start();
-      Setup.open({ page: 'shelf' }); for (let i = 0; i < 40 && !document.querySelector('#bss.on .bss-row'); i++) await w(150); await w(500);
-      return { started, row: [...document.querySelectorAll('#bss .bss-row')].some(e => /Show the tour/.test(e.textContent)) }; });
-    check('Tour: not on Android (no tour, no Show the tour row)', !a.started && !a.row, JSON.stringify(a));
+      const has = () => [...document.querySelectorAll('#bss .bss-row')].some(e => /Show the tour/.test(e.textContent));
+      Setup.open({ page: 'shelf' }); for (let i = 0; i < 40 && !document.querySelector('#bss.on .bss-row'); i++) await w(150); await w(500); const row = has();
+      /* (beta.14: on Windows the row is on Shelf & museum's More options page; Android's tab may have none) */
+      const mo = [...document.querySelectorAll('#bss .bss-row')].find(e => /^\s*More options/.test(e.textContent)); if (mo) { mo.click(); await w(1200); }
+      return { started, row, more: !!mo, moreRow: has() }; });
+    check('Tour: not on Android (no tour, no Show the tour row)', !a.started && !a.row && !a.moreRow, JSON.stringify(a));
   } catch (e) { check('Tour (Android) ran to the end', false, e && e.message); }
   await actx.close();
 };

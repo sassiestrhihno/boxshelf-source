@@ -50,7 +50,7 @@ module.exports = async function attractPass({ browser, base, check }) {
     await ctx.close(); }
   check('Controller (beta.12): a pad that appears with Start "held" for a moment doesn\'t open the quick menu; a real tap then does', q.staleOpened === false && q.tapOpened === true, JSON.stringify(q));
 
-  // ---- (beta.12) two pads listed: the quick menu never opens by itself (Paul's PC: an Xbox pad plus a DolphinBar's raw Wii
+  // ---- (beta.12) two pads listed: the quick menu never opens by itself (a tester's PC: an Xbox pad plus a DolphinBar's raw Wii
   // remote copy, "Vendor: 057e Product: 0306", which wasn't left out; the shelf took turns between them and read Start) ----
   const twoPads = async (second) => {
     const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 } });

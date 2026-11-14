@@ -2300,6 +2300,12 @@ window.BS_QUIET = () => ({ running: !!running, artPaused: !!art.paused, hidden: 
   // the manual studio (inside Art Studio, and the shelf's "Choose manual…") has no Android backing yet: the demo's pretend
   // manuals must not show up as real ones. Everything that shows it checks for manualStudio
   for (const k of ['manualStudio', 'manualGames', 'manualCands', 'manualUse', 'manualUndo', 'manualLock', 'manualOwn', 'manualPref', 'manualCancel', 'onManualCand', 'onManualJob']) delete api[k];
+  // (beta.14) the demo's pretend sound packs, real-instrument downloads, Your music, the web logo search, the emulators'
+  // achievement pop-ups and making custom themes: no Android backing yet. Left in, the Thor played the demo's sine-tone
+  // "Wii menu" pack on its Wii shelf and listed it (and Your music's made-up tones) as real choices
+  for (const k of ['soundPacks', 'soundPackRead', 'soundPackPick', 'soundPackImport', 'soundPackUpdate', 'soundPackRemove', 'soundPackExport', 'kenneyGet', 'instStatus', 'instDownload', 'instRead',
+    'musicList', 'musicRead', 'musicAdd', 'findLogoWeb', 'onLogoInstalled', 'emuPopups', 'customThemeCreate', 'customThemeRemove',
+    'qrCode', 'trailerChoices', 'trailerSet', 'moreInfo']) delete api[k]; /* (beta.14: IGDB's QR and game info, Change trailer: the demo's fakes, Windows / Linux only) */
   Object.assign(api, over, studioApi, { thumbFor }); // (thumbFor: the shelf's smaller copies, 0.3.3)
   const ALIASES = { gc: ['gamecube', 'ngc'], wii: [], wiiu: ['wii u'], sw: ['switch', 'nsw'], n3ds: ['3ds'], nds: ['ds'], ps2: ['playstation 2'], psp: [], psx: ['ps1', 'psx', 'playstation'],
     n64: ['nintendo 64'], dreamcast: ['dc'], saturn: [], megadrive: ['genesis', 'md'], mastersystem: ['sms', 'master system'], gamegear: ['gg', 'game gear'], snes: ['super nintendo', 'sfc'],

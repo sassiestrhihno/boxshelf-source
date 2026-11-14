@@ -46,7 +46,7 @@ module.exports = async function musicPass({ browser, base, check, newPage, OUT }
         ids.join() === 'drift,night,glow' && ids.every(id => r[id].bad === 0 && r[id].rmsDb > -55 && r[id].peakDb < -24) && sigs.size === 3, JSON.stringify(r));
 
       // the quick menu: chips, switching, Off (stops it, hides the volume chips), back on, volume; each saved
-      const q = await page.evaluate(QM, { row: 'Customize', act: [['music', 'night'], ['music', 'off'], ['music', 'glow'], ['mvol', '0.7']] });
+      const q = await page.evaluate(QM, { row: 'Customize|Look & sound', act: [['music', 'night'], ['music', 'off'], ['music', 'glow'], ['mvol', '0.7']] });
       const [a, b, c, d] = q.steps;
       check('Music (Windows): the quick menu\'s Customize offers Menu music (Drift, Night, Glow, Off) and Music volume (Quiet, Soft, Full)',
         q.music.join() === 'drift,night,glow,off' && q.mvol.join() === '0.2,0.4,0.7', `${q.music.join()} · ${q.mvol.join()}`);

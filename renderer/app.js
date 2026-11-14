@@ -20,7 +20,7 @@ const STYLE={
   ps2:{id:"ps2",rc:0.035,re:0.2,hue:226,ratio:0.711,depth:0.104,edge:.03,caseColor:"#0f1d55",caseSide:"#0a1440",spineInk:"#ffffff",band:{bg:"#0f1d55",fg:"#dfe6ff",label:"PS2"},spineBand:{bg:"#0f1d55",fg:"#dfe6ff",label:"PS2"},tint:["#1b2a7a","#070b24"],glow:"#8fa6ff"},
   x360:{id:"x360",rc:0.04,re:0.22,hue:115,ratio:0.711,depth:0.104,edge:.018,wrap:1 /* (beta.11) one printed sheet round front, spine and back, as on the real case; it looked like three inlays */,caseColor:"#1a7f1a",caseSide:"#0f5a12",spineInk:"#ffffff",band:{bg:"#107c10",fg:"#ffffff",label:"XBOX 360"},spineBand:{bg:"#107c10",fg:"#ffffff",label:"X360"},tint:["#145a16","#061a07"],glow:"#7ee87e"},
   psp:{id:"psp",rc:0.055,re:0.24,hue:235,ratio:0.589,depth:0.14,edge:.03,caseColor:"#101014",caseSide:"#07070a",spineInk:"#e8e8f0",band:{bg:"#0a0a0d",fg:"#ffffff",label:"PSP"},spineBand:{bg:"#0a0a0d",fg:"#ffffff",label:"PSP"},tint:["#4a4f63","#0b0c12"],glow:"#cfd6ff"},
-  n3ds:{id:"n3ds",rc:0.05,re:0.24,hue:352,ratio:1.127,depth:0.1,h:.64,edge:.03,caseColor:"#f4f4f6",caseSide:"#dcdde2",spineInk:"#3a3d45",band:{bg:"#ffffff",fg:"#d40f2a",label:"NINTENDO 3DS"},spineBand:{bg:"#ffffff",fg:"#d40f2a",label:"3DS"},tint:["#c0182e","#3a0710"],glow:"#ff7a8a"},
+  n3ds:{id:"n3ds",rc:0.05,re:0.24,hue:352,ratio:1.107,depth:0.089,h:.64,edge:.03,caseColor:"#f4f4f6",caseSide:"#dcdde2",spineInk:"#3a3d45",band:{bg:"#ffffff",fg:"#d40f2a",label:"NINTENDO 3DS"},spineBand:{bg:"#ffffff",fg:"#d40f2a",label:"3DS"},tint:["#c0182e","#3a0710"],glow:"#ff7a8a"},
   pc:{id:"pc",rc:0.02,re:0.16,hue:207,ratio:.667,depth:.07,edge:.015,caseColor:"#1b1f27",caseSide:"#11141a",spineInk:"#dfe8f3",band:null,spineBand:{bg:"#11141a",fg:"#8fb4d9",label:"PC"},tint:["#1d4a6e","#0a121c"],glow:"#8fc3ff"},
   // (beta.4) Custom: PC ports, recomps and games added by hand (Quiver's too); the PC case in a warm tint
   custom:{id:"custom",rc:0.02,re:0.16,hue:28,ratio:.667,depth:.07,edge:.015,caseColor:"#211b17",caseSide:"#15110e",spineInk:"#f3e6da",band:null,spineBand:{bg:"#15110e",fg:"#e0a878",label:"PC"},tint:["#6e3f1d","#1c120a"],glow:"#ffbf8a"},
@@ -29,6 +29,8 @@ const STYLE={
 };
 const WORDMARKS={home:["Home","Continue & favorites"],gc:["GameCube","Home console"],wii:["Wii","Motion console"],wiiu:["Wii U","Home console"],sw:["Switch","Hybrid console"],sw2:["Switch 2","Hybrid console"],psp:["PSP","Handheld"],ps3:["PS3","Home console"],ps4:["PS4","Home console"],ps5:["PS5","Home console"],x360:["Xbox 360","Home console"],n3ds:["3DS","Handheld"],ps2:["PS2","Home console"],pc:["PC","Steam, Epic & more"],custom:["Custom","PC ports & recomps"],media:["Media","Streaming"]};
 if(window.BS_SYSTEMS_EXTRA){Object.assign(STYLE,BS_SYSTEMS_EXTRA.style||{});Object.assign(WORDMARKS,BS_SYSTEMS_EXTRA.wordmarks||{})} // extra shelves (renderer/systems-extra.js)
+// (beta.14) what a case is made of: systems-extra.js names it (box, jewel, long); the rest are moulded keep cases
+const packOf=s=>s.pack||(s.rc<=.012?(s.depth<.1?"jewel":"box"):"keep");
 const APP_HUE={stremio:265,nuvio:200};
 
 /* ---------- state ---------- */
@@ -78,7 +80,7 @@ let lastLib=null;
 function hiddenSet(){const h=cfgInfo&&cfgInfo.config.ui.hidden;return new Set(Array.isArray(h)?h.map(String):[])}
 function prepare(list){
   const hid=hiddenSet();
-  const out=list.map(s0=>{
+  const out=addsShelves(list).map(s0=>{
     const all=s0.games||[],games=hid.size?all.filter(g=>!hid.has(String(g.id))):all,s={...s0,games,_hiddenN:all.length-games.length};
     const items=games.map(g=>{const seed=hash(g.title);return {...g,seed,hue:g.kind==="app"?(APP_HUE[g.appId]||seed%360):seed%360,scene:g.kind==="app"?"media":undefined}});
     if(s.kind==="console"&&s.hasEmulator&&!(cfgInfo&&cfgInfo.config.ui.emuCase===false)){ // ((beta.11) Settings → Shelf → Emulator case off: no "Open <emulator>" case)
@@ -157,15 +159,40 @@ function filterFn(v){
   return ()=>true;
 }
 function arrange(){
-  const keep=filterFn(filterBy);
+  const keep=filterFn(filterBy),own=addsIndex();
   allShelves.forEach(sh=>{if(sh.kind==="home"||!sh.items)return;if(!sh._base)sh._base=sh.items.slice();
-    const idx=new Map(sh._base.map((g,i)=>[g,i])),base=(a,b)=>idx.get(a)-idx.get(b);
+    const B=addsInto(sh,own); /* (beta.14) + Add to…: the games added to this shelf, among its own by title */
+    const idx=new Map(B.map((g,i)=>[g,i])),base=(a,b)=>idx.get(a)-idx.get(b);
     const by=(f,desc)=>(a,b)=>{const x=f(a),y=f(b);if(x==null&&y==null)return base(a,b);if(x==null)return 1;if(y==null)return -1;return (desc?y-x:x-y)||base(a,b)};
     const cmp={year:by(yearOf),recent:by(g=>histOf(g)&&histOf(g).last||null,true),most:by(g=>histOf(g)&&histOf(g).ms||null,true),rating:by(ratingOf,true),
       genre:(a,b)=>{const x=genreOf(a),y=genreOf(b);if(x===y)return base(a,b);if(!x)return 1;if(!y)return -1;return x.localeCompare(y)}}[sortBy]||base;
-    sh.items=[...sh._base.filter(g=>!isGame(g)&&!g.tail),...sh._base.filter(isGame).filter(keep).sort(cmp),...sh._base.filter(g=>g.tail)]; // (beta.7: a tail tile, the Custom shelf's Add games, stays last)
+    sh.items=[...B.filter(g=>!isGame(g)&&!g.tail),...B.filter(isGame).filter(keep).sort(cmp),...B.filter(g=>g.tail)]; // (beta.7: a tail tile, the Custom shelf's Add games, stays last)
   });
 }
+/* (beta.14, Windows / Linux) + Add to… (quick menu, Details' ···): any game shown on another console's shelf, or PC or
+   Custom, as well as its own. cfg.ui.shelfAdds { "<shelf id>": ["<game id>", ...] }. The added game is the same object as on
+   its own shelf (its own art, it starts exactly as it does there: shelfFor() is still its own shelf); on the shelf it was
+   added to it gets that shelf's case shape (mount() uses the shelf's style) and sits among the shelf's own games by title.
+   sh._base keeps only the shelf's own games (Home, Find, the museum and the counts read that); sh._adds is the set of
+   games added to it (sh.items has both). Kid mode: a game whose own shelf is hidden from kids isn't added anywhere */
+function addsMap(){const m=!ANDROID&&cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.shelfAdds;return m&&typeof m==="object"&&!Array.isArray(m)?m:null}
+function addsIndex(){const M=addsMap();if(!M||!Object.keys(M).length)return null;const own=new Map();
+  for(const sh of allShelves){if(!sh||sh.kind==="home")continue;for(const g of (sh._base||sh.items||[]))if(g&&isGame(g)&&!own.has(String(g.id)))own.set(String(g.id),{g,sh})}
+  return own}
+function addsInto(sh,own){sh._adds=null;const B=sh._base,L=own&&addsMap()[sh.id];if(!Array.isArray(L)||!L.length)return B;
+  const k=kidOn()&&cfgInfo.config.ui.kid,hid=new Set(((k&&k.hidden)||[]).map(String)),mine=new Set(B.filter(isGame).map(g=>String(g.id))),add=[];
+  for(const id of L){const e=own.get(String(id));if(!e||e.sh===sh||mine.has(String(id))||hid.has(String(e.sh.id))||add.includes(e.g))continue;add.push(e.g)}
+  if(!add.length)return B;sh._adds=new Set(add);const out=B.slice();
+  for(const g of add.sort(autoCmp)){let i=out.findIndex(x=>isGame(x)&&!sh._adds.has(x)&&autoCmp(x,g)>0);if(i<0){i=out.length;while(i>0&&out[i-1].tail)i--}out.splice(i,0,g)}
+  return out}
+// a shelf's own games (not the ones added to it), as arranged
+const ownItems=sh=>sh._adds?(sh.items||[]).filter(g=>!sh._adds.has(g)):(sh.items||[]);
+// PC or Custom with games added to it but none of its own (main.js only makes them when they have games): made here
+function addsShelves(list){const M=addsMap();if(!M)return list;let out=list;
+  for(const [id,name] of [["pc","PC"],["custom","Custom"]]){const L=M[id];if(!Array.isArray(L)||!L.length||out.some(s=>s&&s.id===id))continue;const want=new Set(L.map(String));
+    if(!out.some(s=>s&&s.id!==id&&(s.games||[]).some(g=>g&&want.has(String(g.id)))))continue;
+    const sh={id,kind:"steam",name,games:[]},at=out.findIndex(s=>s&&s.id==="media");out=out.slice();if(at<0)out.push(sh);else out.splice(at,0,sh)}
+  return out}
 // re-sort/filter and rebuild, keeping the selected game in view when it's still on the shelf
 function applyArrange(){
   const keepG=curGame();arrange();buildHome();if(!cur())return;
@@ -215,20 +242,80 @@ function buildHome(){
   HOME.items=items;HOME.games=items;
   // (beta.7) your collections (Details → Collections; cfg.ui.collections [{id,name,ids}]): shelves of your own right after
   // Home, mixing consoles the way Home does (each case keeps its own console's look); the games in the order added
-  const cols=[],byId=new Map(all.map(g=>[String(g.id),g]));
+  const cols=[],byId=new Map(all.map(g=>[String(g.id),g])),keep=cur(),U=autoNeeded()?[...new Set(byId.values())]:null,ctx={keep,byId};
+  // (beta.14) the automatic shelves you switched on (Settings → Library → My shelves), between Home and your own shelves
+  const autos=U?autoBuilt(U,ctx):[];
   for(const c of ((cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.collections)||[])){
-    if(!c||!c.id||!Array.isArray(c.ids))continue;const its=c.ids.map(id=>byId.get(String(id))).filter(Boolean);if(!its.length)continue;
-    const id="col-"+c.id;STYLE[id]=STYLE[id]||STYLE.home||STYLE.media;WORDMARKS[id]=[String(c.name||"Collection"),"Your collection"];
+    if(!c||!c.id||!Array.isArray(c.ids))continue;const id="col-"+c.id;
+    // (beta.14) a shelf that fills itself (c.rule): its games come from the rule, not the ones picked by hand
+    if(c.rule&&c.rule.kind&&U){const sh=autoShelf(id,String(c.name||"Collection"),"Your collection",autoRuleGames(c.rule,U),ctx);if(sh)cols.push(sh);continue}
+    const its=c.ids.map(id=>byId.get(String(id))).filter(Boolean);if(!its.length)continue;
+    STYLE[id]=STYLE[id]||STYLE.home||STYLE.media;WORDMARKS[id]=[String(c.name||"Collection"),"Your collection"];
     let sh=COLS.get(id);if(!sh){sh={id,kind:"home",col:true,name:"",games:[],items:[],hasEmulator:false};COLS.set(id,sh)}
-    sh.name=String(c.name||"Collection");sh.items=its;sh.games=its;cols.push(sh)}
-  const keep=cur();
+    sh.auto=false;sh.name=String(c.name||"Collection");sh.items=its;sh.games=its;cols.push(sh)}
   let list=allShelves.filter(s=>s!==HOME);
   // Android: a console set up without any games yet (RetroArch alone can enable a dozen) gets no tab of its own; if that
   // would leave nothing at all, they stay so the shelf can still say what to do next
   if(ON_ANDROID){const full=list.filter(hasGames);if(full.length)list=full}
-  shelves=items.length?[HOME,...cols,...list]:[...cols,...list];
+  shelves=items.length?[HOME,...autos,...cols,...list]:[...autos,...cols,...list];
+  if(typeof kidShelves==="function")shelves=kidShelves(shelves);
   const i=shelves.indexOf(keep);sysIdx=i>=0?i:Math.min(sysIdx,Math.max(0,shelves.length-1));
 }
+// (beta.14) automatic shelves: cfg.ui.autoShelves {recent, most, playing, finished, never, genre}, each off until switched
+// on, and My shelves that fill themselves: c.rule {kind: "genre" | "status" | "never" | "console", value}. Made where Home
+// is (buildHome), never per frame. The shelf on screen keeps its cases until you leave it (a game played or a Status set
+// would shift them under you), unless its games are gone; reHome() (Settings changed them) remakes it too
+const AUTO_SHELVES=[["recent","Recently played","Your last games"],["most","Most played","By play time"],["playing","Playing","Your status"],["finished","Finished","Your status"],["never","Never played","Not started yet"]];
+const autoCmp=(()=>{try{const c=new Intl.Collator(undefined,{sensitivity:"base",numeric:true});return (a,b)=>c.compare(String(a.title||""),String(b.title||""))}catch{return (a,b)=>String(a.title||"").localeCompare(String(b.title||""))}})();
+let homeThaw=false,autoChoiceCache=null;
+function autoOpts(){return (cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.autoShelves)||{}}
+function autoNeeded(){const a=autoOpts();if(AUTO_SHELVES.some(x=>a[x[0]]===true)||a.genre===true)return true;
+  return ((cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.collections)||[]).some(c=>c&&c.rule&&c.rule.kind)}
+function autoStatus(){const gs=(cfgInfo&&cfgInfo.config&&cfgInfo.config.games)||{};return g=>{const o=gs[g.id];return (o&&o.status)||""}}
+function autoShelf(id,name,sub,its,ctx){STYLE[id]=STYLE[id]||STYLE.home||STYLE.media;WORDMARKS[id]=[name,sub];
+  let sh=COLS.get(id);if(!sh){sh={id,kind:"home",col:true,name:"",games:[],items:[],hasEmulator:false};COLS.set(id,sh)}
+  sh.auto=true;sh.name=name;
+  if(sh===ctx.keep&&!homeThaw&&sh.items.length&&sh.items.every(g=>ctx.byId.get(String(g.id))===g))return sh;
+  if(!its.length)return null;sh.items=its;sh.games=its;return sh}
+function autoRuleGames(r,U){const v=String(r.value||"");
+  if(r.kind==="status"){const st=autoStatus();return U.filter(g=>st(g)===v).sort(autoCmp).slice(0,300)}
+  if(r.kind==="never")return U.filter(g=>{const h=histOf(g);return !(h&&h.count)}).sort(autoCmp).slice(0,300);
+  if(r.kind==="genre")return U.filter(g=>genresOf(g).includes(v)).sort(autoCmp).slice(0,300);
+  if(r.kind==="console")return U.filter(g=>{const s=allShelves[g._shelf];return !!s&&s.id===v}).sort(autoCmp).slice(0,300);
+  return []}
+function autoBuilt(U,ctx){const a=autoOpts(),out=[],st=autoStatus(),add=sh=>{if(sh)out.push(sh)},H=new Map();
+  for(const g of U){const h=histOf(g);if(h)H.set(g,h)}
+  const last=g=>(H.get(g)||{}).last||0,ms=g=>(H.get(g)||{}).ms||0,cnt=g=>(H.get(g)||{}).count||0;
+  for(const [k,name,sub] of AUTO_SHELVES){if(a[k]!==true)continue;let its=[];
+    if(k==="recent")its=U.filter(g=>cnt(g)&&last(g)).sort((x,y)=>last(y)-last(x)).slice(0,30);
+    else if(k==="most")its=U.filter(g=>ms(g)>0).sort((x,y)=>ms(y)-ms(x)||cnt(y)-cnt(x)).slice(0,30);
+    else if(k==="playing")its=U.filter(g=>st(g)==="playing").sort((x,y)=>last(y)-last(x)||autoCmp(x,y));
+    else if(k==="finished")its=U.filter(g=>st(g)==="finished").sort(autoCmp);
+    else if(k==="never")its=U.filter(g=>!cnt(g)).sort(autoCmp).slice(0,60);
+    add(autoShelf("auto-"+k,name,sub,its,ctx))}
+  // By genre: a shelf for each genre with 4 games or more, the 8 biggest, each A to Z (up to 100)
+  if(a.genre===true){const G=new Map();for(const g of U)for(const x of genresOf(g)){let l=G.get(x);if(!l)G.set(x,l=[]);l.push(g)}
+    const used=new Set();[...G].filter(e=>e[1].length>=4).sort((x,y)=>y[1].length-x[1].length||x[0].localeCompare(y[0])).slice(0,8).forEach(([n,l])=>{
+      let id="auto-genre-"+(n.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"x");while(used.has(id))id+="-";used.add(id);
+      add(autoShelf(id,n,"Genre",l.sort(autoCmp).slice(0,100),ctx))})}
+  return out}
+// Settings → My shelves: the genres and consoles your library has, for "Fill it automatically" (kept until the library changes)
+function autoChoices(){let n=0;for(const s of allShelves)n+=((s&&(s._base||s.items))||[]).length;
+  if(autoChoiceCache&&autoChoiceCache.a===allShelves&&autoChoiceCache.n===n)return autoChoiceCache.v;
+  const gen=new Map(),cons=[],seen=new Set();
+  for(const sh of allShelves){if(!sh||sh.kind==="home")continue;let k=0;
+    for(const g of (sh._base||sh.items||[])){if(!isGame(g))continue;k++;if(seen.has(g.id))continue;seen.add(g.id);for(const x of genresOf(g))gen.set(x,(gen.get(x)||0)+1)}
+    if(k)cons.push([sh.id,String(sh.name||sh.id),k])}
+  const v={genres:[...gen].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])),consoles:cons};autoChoiceCache={a:allShelves,n,v};return v}
+// Settings changed your shelves (or the automatic ones): made again, the one on screen too; you stay on it if it's still there
+function reHome(){if(!cfgInfo)return;const was=cur();homeThaw=true;try{buildHome()}finally{homeThaw=false}
+  // (beta.10) the shelf you were on is gone (buildHome keeps the index, so another shelf slid into it): show that shelf's own cases, from its first game
+  if(cur()!==was){closeDetails(true);sel=cur()?Math.max(0,cur().items.findIndex(isGame)):0;flipped=false;spin=0;spinT=0;cancelAnimationFrame(spinRaf);spinRaf=0;build();if(cur()){updateInfo();raShelfLoad();preloadModel()}tuneTo(cur());save();return}
+  renderTabs();if(cur()&&cur().col)build()}
+// a game's Status changed in Details: the Playing / Finished shelves (and shelves filled by Status) follow; the one on screen waits
+function autoStatusChanged(){if(!cfgInfo||sysBusy())return;const a=autoOpts();
+  if(!(a.playing===true||a.finished===true||((cfgInfo.config.ui.collections||[]).some(c=>c&&c.rule&&c.rule.kind==="status"))))return;
+  buildHome();renderTabs()}
 function homeLine(g){const h=HIST[g.id];const parts=[shelfFor(g).name];if(h&&h.count)parts.push("played "+fmtDay(h.last/1000));if(isFav(g))parts.push("♥ Favorite");return parts}
 async function toggleFav(){
   if((mode!=="browse"&&mode!=="details")||sysBusy())return; // the Home shelf appearing mid-switch would shift the shelves
@@ -250,7 +337,7 @@ function rumble(strong,weak,ms){try{if(attract||(cfgInfo&&cfgInfo.config.ui.rumb
 // change from Settings before it's saved; mmWant: whether the shelf wants music right now
 let mmTrack=null,mmLevel=null,mmWant=false;
 const MM_TRACKS=["drift","night","glow"],MM_OLD={calm:"drift",lounge:"night",chime:"glow"}; // (1.77: ambient tracks; 1.75's names still find theirs)
-function mmPick(){const u=(cfgInfo&&cfgInfo.config.ui)||{},v0=mmTrack!=null?mmTrack:u.music,v=MM_OLD[v0]||v0;return v==="off"||MM_TRACKS.includes(v)?v:"drift"}
+function mmPick(){const u=(cfgInfo&&cfgInfo.config.ui)||{},v0=mmTrack!=null?mmTrack:u.music,v=MM_OLD[v0]||v0;return v==="off"||MM_TRACKS.includes(v)||(v==="mine"&&!!api.musicList)?v:"drift"} /* (beta.14: "mine", Your music) */
 function mmVol(){const u=(cfgInfo&&cfgInfo.config.ui)||{},v=mmLevel!=null?mmLevel:u.musicLevel;return typeof v==="number"&&isFinite(v)?Math.max(0,Math.min(1,v)):.4}
 document.addEventListener("visibilitychange",()=>ambient(mmWant));
 // small clock in the top-right corner ("Fri 17 Oct  3:42 PM"), ticks on the minute
@@ -264,7 +351,13 @@ function clock(){clearTimeout(clockT);clockT=0;const el=$("clock");if(!el)return
 clock();
 // each shelf's musical key: semitones from the voice's root, plus a pentatonic colour (major by default; a softer minor/suspended one for the darker shelves)
 const KEYS={home:{key:0},gc:{key:0},wii:{key:2},wiiu:{key:4,scale:[0,2,4,7,9]},sw:{key:-3,scale:[0,2,5,7,9]},sw2:{key:-1,scale:[0,2,5,7,9]},psp:{key:-5},ps3:{key:-6,scale:[0,2,4,7,9]},ps4:{key:-7,scale:[0,3,5,7,10]},ps5:{key:-8,scale:[0,2,4,7,9]},x360:{key:-2,scale:[0,3,5,7,10]},n3ds:{key:1,scale:[0,2,4,7,9]},ps2:{key:-9},pc:{key:-4},media:{key:3,scale:[0,2,5,7,9]}};
-function tuneTo(s){if(window.Sound)Sound.set(s&&KEYS[s.id]?KEYS[s.id]:{key:0})}
+function tuneTo(s){if(window.Sound)Sound.set(Object.assign({shelf:s&&s.id||""},s&&KEYS[s.id]?KEYS[s.id]:{key:0}))} /* (beta.14: shelf: a console can have its own sound, Settings › Sound) */
+// (beta.14) sound packs, real instruments and Your music: how Sound reads them, and the packs' details (again whenever they change)
+let sndPacksOn=false;
+function sndPacksInit(){if(sndPacksOn||!window.Sound||!api.soundPacks)return;sndPacksOn=true;
+  Sound.set({loaders:{packRead:(id,f)=>api.soundPackRead(id,f),instRead:api.instRead?(k,m)=>api.instRead(k,m):null,musicList:api.musicList?()=>api.musicList():null,musicRead:api.musicRead?f=>api.musicRead(f):null}});
+  const load=()=>Promise.all([api.soundPacks().catch(()=>[]),api.instStatus?api.instStatus().catch(()=>null):null]).then(([p,st])=>{qsSoundsSync(p);Sound.set({packs:p||[],realInsts:st&&st.got?st.insts:{}});ambient(mmWant)});
+  setTimeout(load,1500);if(api.onSoundPacks)api.onSoundPacks(()=>load())}
 function ambient(on){mmWant=!!on;if(!window.Sound)return;const m=mmPick(),lv=mmVol();if(!on||!soundOn||m==="off"||lv<=0||document.hidden){Sound.ambientStop();return}Sound.ambientStart({track:m,level:lv})}
 const sfx={tick:(dir)=>play_("tick",{dir}),flip:()=>play_("flip"),sys:(dir)=>play_("shelf",{dir}),go:()=>play_("go"),back:()=>play_("back")};
 
@@ -341,6 +434,7 @@ function mount(s){
   slot.innerHTML=`<div class="box"><div class="face f-front"><div class="rim"></div><img alt="" draggable="false" decoding="async"><div class="dim"></div><div class="glare"></div><div class="sheen"></div></div><div class="face f-back"></div>
       <div class="face f-left"><div class="spine-band"></div><div class="spine-title"></div></div><div class="face f-right spine2"><div class="spine-band"></div><div class="spine-title"></div></div><div class="face bev bev-fl"></div><div class="face bev bev-fr"></div><div class="face bev bev-bl"></div><div class="face bev bev-br"></div></div>`;
   const os=cur()===HOME?stOf(g):sh;if(os!==sh){slot.style.setProperty("--bw",`calc(var(--ch) * ${os.ratio})`);slot.style.setProperty("--bd",`calc(var(--ch) * ${os.ratio*os.depth})`);slot.style.setProperty("--edge",`calc(var(--ch) * ${os.ratio*os.edge})`);slot.style.setProperty("--edge-in",`calc(var(--ch) * ${os.wrap?0:os.ratio*os.edge})`);slot.style.setProperty("--rc",`calc(var(--ch) * ${os.ratio*(os.rc||.03)})`);slot.style.setProperty("--re",`calc(var(--ch) * ${os.ratio*os.depth*(os.re||.3)})`);slot.style.setProperty("--case",os.caseColor);slot.style.setProperty("--case-side",os.caseSide);slot.style.setProperty("--spine-ink",os.spineInk)}
+  slot.classList.add("pk-"+packOf(os)); /* (beta.14) its material on the shelf (style.css): a matte card box, a jewel case's hinge, a keep case's sleeve lip */
   if(isFav(g))slot.classList.add("fav");
   if(g.romm&&g.romm.cloud)slot.classList.add("cloud"); /* (beta.12) a RomM game not on this device yet: Play downloads it */
   slot.querySelectorAll(".spine-band").forEach(band=>{band.style.background=os.spineBand.bg;band.style.color=os.spineBand.fg;band.textContent=g.kind==="emulator"?"EMU":g.kind==="setup"?"ADD":os.spineBand.label});
@@ -396,7 +490,7 @@ function place(s,i,win,inv){
   if(ANDROID)glareAndroid(s,ad,sg,x,ry);
   else if(ad<=3||!s.glareFar){s.glareFar=ad>3;s.glare.style.transform=`translateX(${((-ry/110-x/(bw*7))*83.25).toFixed(1)}%)`} // far cases keep theirs: saves ~25 transitions per move
   if(!s.drawn){s.drawn=true;queueCover(s,s.g,ad)}
-  if(d!==0)s.box.style.transform="";
+  if(d!==0){s.box.style.transform="";if(!ANDROID&&s.el.classList.contains("showback")){clearTimeout(s.el._sbT);s.el.classList.remove("showback")}}
 }
 // Android: build the missing invisible cases at the ends of the window, and take down the ones left far behind, one case
 // per task, nearest first, each after a frame has been drawn (rAF, then a task): never inside the step that moved the shelf
@@ -513,7 +607,20 @@ function spinSettle(){
   const k=Math.round(spinT/360)*360;spin-=k;spinT-=k; // keep both near zero, same frame of reference
   const side=norm===90||norm===270;spinEase();if(side)sfx.flip();return side; // tells a mouse drag the flip sound already played
 }
-function applyRotation(){const s=slots[sel];if(s){s.box.style.transform=`rotateY(${(flipped?180:0)+spin}deg)`;s.el.classList.toggle("flipped",flipped)}}
+/* (beta.14, the case flickered (its back drawn over its front) as Details opened) Details' small turn is part of this same
+   transform, not a separate CSS `rotate` on top of it: the two together made Chromium flatten the 3D case for a frame */
+function applyRotation(){const s=slots[sel];if(s){const a=(flipped?180:0)+spin;s.box.style.transform=`rotateY(${a+(!ANDROID&&mode==="details"?18:0)}deg)`; /* (!ANDROID: Details' DV2, which is defined further down) (test.13: 18°, was 9°: with the case left of centre, 9° left one side nearly edge-on and Chromium kept dropping and redrawing it, filmed frame by frame on an NVIDIA card: the "flickering spine" / blue rectangle; 18° keeps both sides clear) */s.el.classList.toggle("flipped",flipped);if(!ANDROID)showBack(s.el,a!==0)}}
+/* (test.11) a case's back is only drawn while the case is turned (details2.css .showback): the back art is made at the
+   first flip (ensureBack), so until then a PS2 / PS3 / PS4 / PS5 / Wii U back is a plain blue panel, and the frame the
+   browser drew the turning case flat it flashed as a long blue box beside the case. It goes again once the turn back to
+   the front has finished (the turn takes .75 s) */
+/* (test.15) Details always ends on one of two poses filmed steady on an NVIDIA card: the front turned 18°, or the back
+   (198°). A case left at an in-between angle with the stick settles to whichever of its front or back is nearer as Details
+   opens: any other final angle can leave a side, the front or the back nearly edge-on, which Chromium kept dropping and
+   redrawing (the Details flicker). (A fade on those faces instead, test.14, made it worse: opacity on a face of the 3D
+   case makes the whole case redraw.) */
+function dvPose(){const a=((((flipped?180:0)+spin)%360)+360)%360;flipped=a>90&&a<270;if(flipped)ensureBack();spin=0;spinT=0;cancelAnimationFrame(spinRaf);spinRaf=0;const b=slots[sel];if(b)b.box.classList.remove("free")}
+function showBack(el,on){clearTimeout(el._sbT);if(on){el.classList.add("showback");return}if(el.classList.contains("showback"))el._sbT=setTimeout(()=>el.classList.remove("showback"),800)}
 let landT;
 function landSel(){
   clearTimeout(landT);if(landSel.prev&&landSel.prev.el)landSel.prev.el.classList.remove("landed");landSel.prev=slots[sel];const s=slots[sel];if(!s)return;
@@ -591,15 +698,52 @@ const THEMES={
 };
 // older themes from before 1.28 map onto the current five
 const THEME_ALIAS={sunset:"spectrum",gallery:"midnight",synthwave:"arcade"};
+Object.assign(THEME_ALIAS,window.BS_THEME_RETIRED||{}); /* (beta.14) themes taken out (themes-extra.js): Pocket → Forest, Walnut → Midnight */
 // ten more themes (themes-extra.js: console-inspired, moody, animated retro), on Android since 0.3.5 and Windows since 1.75
 const XTHEMES=Array.isArray(window.BS_EXTRA_THEMES)?BS_EXTRA_THEMES.filter(t=>t&&t.id&&!THEMES[t.id]&&typeof t.tint==="function"):[];
-for(const t of XTHEMES)THEMES[t.id]={name:t.name,halo:typeof t.halo==="function"?t.halo:sh=>sh,tint:t.tint};
+for(const t of XTHEMES)THEMES[t.id]={name:t.name,halo:typeof t.halo==="function"?t.halo:sh=>sh,tint:t.tint,cssFx:!!t.css};
+/* (beta.14) the themes that move on #themeFx's CSS layers (Nebula, Abyss, Ember, Dusk) hold them still while the shelf
+   slides (BS_BUSY: 1.5 s after the last step), then carry on; one class on that one element, only for those themes */
+/* (beta.14: a custom theme's moving picture and its video hold too: the backdrop layers' own class, and the video paused) */
+/* (beta.14) Settings → Look → Keep themes moving while you scroll: no hold while the shelf slides; never with Reduce motion
+   (and nothing moves at Handheld / Low anyway). Not chosen yet: on for Windows, off on Android and Linux until tried there */
+const fxKeepDef=()=>!ANDROID&&!!(window.bsPlatform&&bsPlatform.os==="windows");
+const fxKeepOn=()=>{const v=cfgInfo&&cfgInfo.config.ui.themeKeepMoving;return typeof v==="boolean"?v:fxKeepDef()};
+const fxKeep=()=>!!cfgInfo&&fxKeepOn()&&!document.body.classList.contains("reduce-motion");
+window.BS_FX_KEEP=fxKeep; /* (themefx.js: the canvas showpieces' hold) */
+function fxHold(){if(!fxOn&&!fxHold.on)return; /* (Handheld / Low: nothing moves to hold) */if(fxKeep()&&!fxHold.on)return;const t=THEMES[themeId()];if(!t||!t.cssFx)return;const f=document.getElementById("themeFx");if(!f)return;
+  if(!fxHold.on){fxHold.on=true;f.classList.add("hold");if(t.custom){$("bgA").classList.add("hold");$("bgB").classList.add("hold");customVideoRun()}}
+  clearTimeout(fxHold.t);fxHold.t=setTimeout(()=>{fxHold.on=false;f.classList.remove("hold");$("bgA").classList.remove("hold");$("bgB").classList.remove("hold");customVideoRun()},1500)}
 const songHue=sh=>{try{const s=window.Sound&&Sound.theme==="melody"&&Sound.song();return s?s.hue:sh}catch{return sh}};
 const themeOf=()=>THEMES[themeId()]||THEMES.spectrum;let themeOverride=null;
-const themeId=()=>{const t=themeOverride||(cfgInfo&&cfgInfo.config.ui.theme)||"spectrum";return THEMES[t]?t:(THEME_ALIAS[t]||"spectrum")};
+/* (beta.14) a custom theme made for the evenings (Make a theme → When: Evenings) shows from 19:00 to 6:00; in the day the
+   theme you had before it (ui.themeDay), or Spectrum. A preview (themeOverride) always shows the theme itself */
+const themeId=()=>{const t=themeOverride||(cfgInfo&&cfgInfo.config.ui.theme)||"spectrum";if(!THEMES[t])return THEME_ALIAS[t]||"spectrum";
+  const c=!themeOverride&&THEMES[t].custom;if(c&&c.when==="evening"&&!eveningNow()){const d=cfgInfo&&cfgInfo.config.ui.themeDay;return d&&THEMES[d]&&!(THEMES[d].custom&&THEMES[d].custom.when==="evening")?d:"spectrum"}return t};
+function eveningNow(){const n=performance.now();if(!(n-(eveningNow.at||0)<60e3)||eveningNow.v==null){eveningNow.at=n;const h=new Date().getHours();eveningNow.v=h>=19||h<6}return eveningNow.v}
 // the body's theme classes: theme-<id>, plus (custom themes) theme-custom, custom-blur and the floor glow
 function themeCls(){const id=themeId(),c=(THEMES[id]||{}).custom||null;Object.keys(THEMES).forEach(k=>document.body.classList.toggle("theme-"+k,k===id));
-  document.body.classList.toggle("theme-custom",!!c);document.body.classList.toggle("custom-blur",!!(c&&c.blur));if(c)document.body.style.setProperty("--custom-glow",String(c.glow!=null?c.glow:.35));else document.body.style.removeProperty("--custom-glow")}
+  document.body.classList.toggle("theme-custom",!!c);document.body.classList.toggle("custom-blur",!!(c&&(c.soften>0||c.blur)));if(c)document.body.style.setProperty("--custom-glow",String(c.glow!=null?c.glow:.35));else document.body.style.removeProperty("--custom-glow");
+  customCls(c)}
+/* (beta.14) Make a theme's extras on the shelf: how soft the picture is, its slow movement, particles, scanlines, the
+   floor, and a video loop (themes-extra.css). All CSS layers, held while the shelf slides (fxHold) and still at Handheld / Low */
+function customCls(c){const B=document.body.classList,o=c||{};
+  if(c&&o.soften>0)document.body.style.setProperty("--custom-soften",o.soften+"px");else document.body.style.removeProperty("--custom-soften");
+  B.toggle("custom-motion-drift",o.motion==="drift");B.toggle("custom-motion-zoom",o.motion==="zoom");
+  ["dust","stars","snow","sparks"].forEach(k=>B.toggle("custom-px-"+k,o.particles===k));B.toggle("custom-scan",!!o.scanlines);B.toggle("custom-fx",!!(c&&((o.particles&&o.particles!=="none")||o.scanlines)));
+  B.toggle("custom-floor-mirror",o.floor==="mirror");B.toggle("custom-floor-none",o.floor==="none");customVideo(c)}
+function customShade(t){const sh=Math.max(0,Math.min(.9,+t.shade||0)),vg=+t.vignette>0?`radial-gradient(ellipse at 50% 50%,transparent ${Math.round(70-t.vignette*40)}%,rgba(0,0,0,${(t.vignette*.85).toFixed(2)})),`:"";
+  return `${vg}linear-gradient(180deg,rgba(0,0,0,${Math.min(.95,sh+.15).toFixed(2)}),rgba(0,0,0,${(sh*.5).toFixed(2)}) 35%,rgba(0,0,0,${(sh*.6).toFixed(2)}) 60%,rgba(0,0,0,${Math.min(.95,sh+.3).toFixed(2)}))`}
+function customVideo(c){let v=$("bgVideo");
+  if(!c||!c.video){if(v){const vd=v.querySelector("video");try{vd.pause();vd.removeAttribute("src");vd.load()}catch{}v.remove()}return}
+  if(!v){v=document.createElement("div");v.id="bgVideo";v.className="bg-video";v.setAttribute("aria-hidden","true");v.innerHTML='<video muted loop playsinline preload="auto"></video><b></b>';$("bgB").after(v)}
+  const vd=v.querySelector("video");vd.muted=true;if(vd.dataset.src!==c.video){vd.dataset.src=c.video;vd.src=c.video}
+  vd.style.objectPosition=c.focus==="top"?"50% 0":c.focus==="bottom"?"50% 100%":"50% 50%";v.querySelector("b").style.background=customShade(c);customVideoRun()}
+// the video plays only while it's seen and wanted: not at Handheld / Low or with Reduce motion, not while the shelf slides,
+// nor with Boxshelf in the background (a game running)
+function customVideoRun(){const v=$("bgVideo"),vd=v&&v.querySelector("video");if(!vd)return;const B=document.body.classList;
+  if(B.contains("fx")&&!B.contains("reduce-motion")&&!document.hidden&&!B.contains("idle-bg")&&!fxHold.on){const p=vd.play();if(p&&p.catch)p.catch(()=>{})}else vd.pause()}
+addEventListener("focus",()=>setTimeout(customVideoRun,0));addEventListener("blur",()=>setTimeout(customVideoRun,0));document.addEventListener("visibilitychange",customVideoRun);
 function applyTheme(){themeCls();fxTheme();updateBg();landSel()}
 // (1.76, Windows) custom themes: pictures the user puts in "Custom themes\<name>\" (main/customthemes.js). Each becomes a
 // theme like the built-in ones: a tile, a halo from its accent colour, and a backdrop of its picture (or the picture for
@@ -614,18 +758,21 @@ function setCustomThemes(list){
   for(const t of CUSTOM){document.body.classList.remove("theme-"+t.id);delete THEMES[t.id]} // (its class first: themeCls only knows the themes in the new list)
   if(typeof QM_THEMES!=="undefined")for(let i=QM_THEMES.length-1;i>=0;i--)if(/^custom-/.test(QM_THEMES[i][0]))QM_THEMES.splice(i,1);
   CUSTOM=(Array.isArray(list)?list:[]).filter(t=>t&&/^custom-[a-z0-9-]{1,48}$/.test(t.id)&&typeof t.bg==="string"&&!THEMES[t.id]).slice(0,60);
-  for(const t of CUSTOM){const hue=hexHue(t.accent),sh=Math.max(0,Math.min(.9,+t.shade||0));
-    THEMES[t.id]={name:String(t.name||"Custom").slice(0,40),custom:t,halo:()=>hue,
-      tint:()=>{const s=cur(),u=(s&&t.sys&&t.sys[s.id])||t.bg;return `linear-gradient(180deg,rgba(0,0,0,${Math.min(.95,sh+.15).toFixed(2)}),rgba(0,0,0,${(sh*.5).toFixed(2)}) 35%,rgba(0,0,0,${(sh*.6).toFixed(2)}) 60%,rgba(0,0,0,${Math.min(.95,sh+.3).toFixed(2)})),${cssUrl(u)} center/cover no-repeat,#0b0c14`}};
+  for(const t of CUSTOM){const hue=hexHue(t.accent);
+    /* (beta.14) the shade with Make a theme's edges (vignette), its focus point, a night picture after 19:00, and only on
+       the shelves it was made for (the others show Spectrum's wash) */
+    THEMES[t.id]={name:String(t.name||"Custom").slice(0,40),custom:t,halo:()=>hue,cssFx:(t.motion&&t.motion!=="none")||(t.particles&&t.particles!=="none")||!!t.video,
+      tint:()=>{const s=cur();if(Array.isArray(t.shelves)&&t.shelves.length&&!(s&&t.shelves.includes(s.id))){const g=curGame()||{hue:220};return THEMES.spectrum.tint(shelfHue(g),g)}
+        const u=(s&&t.sys&&t.sys[s.id])||(t.night&&eveningNow()?t.night:t.bg),pos=t.focus==="top"?"center top":t.focus==="bottom"?"center bottom":"center";return `${customShade(t)},${cssUrl(u)} ${pos}/cover no-repeat,#0b0c14`}};
     if(typeof QM_THEMES!=="undefined")QM_THEMES.push([t.id,THEMES[t.id].name]);
-    t._im=[t.bg,...Object.values(t.sys||{})].map(u=>{const im=new Image();im.decoding="async";im.src=u;if(im.decode)im.decode().catch(()=>{});return im})}
+    t._im=[t.bg,...(t.night?[t.night]:[]),...Object.values(t.sys||{})].map(u=>{const im=new Image();im.decoding="async";im.src=u;if(im.decode)im.decode().catch(()=>{});return im})}
   window.BS_CUSTOM_THEMES=CUSTOM.map(t=>({id:t.id,name:THEMES[t.id].name,bg:t.bg,accent:t.accent}));
   try{window.dispatchEvent(new CustomEvent("bs-custom-themes"))}catch{}
   fxTheme.t=null;applyTheme()}
 async function loadCustomThemes(){if(!api.customThemes)return;try{setCustomThemes(await api.customThemes())}catch(e){console.warn("custom themes",e)}}
 // the theme's moving layer follows the shelf's colour to the nearest degree, and is only told when that changes: at Low
 // (a still picture) every call redrew the whole screen-sized canvas, once per move
-function fxTheme(){if(!window.ThemeFx)return;const g=curGame(),t=themeId(),h=g?Math.round(shelfHue(g)):220;if(t===fxTheme.t&&h===fxTheme.h)return;fxTheme.t=t;fxTheme.h=h;ThemeFx.set(t,{hue:h})}
+function fxTheme(){if(!window.ThemeFx)return;const g=curGame(),t=themeId(),h=g?Math.round(shelfHue(g)):220;if(t===fxTheme.t&&h===fxTheme.h)return;if(fxTheme.t&&t!==fxTheme.t&&!document.body.classList.contains("theme-"+t))themeCls(); /* (beta.14) an evenings-only theme came or went with the hour */fxTheme.t=t;fxTheme.h=h;ThemeFx.set(t,{hue:h})}
 // (1.76: the Background setting became the Artwork and Blur themes; bgOverride / setBackground are kept as no-ops for callers)
 const bgMode=()=>themeId()==="artwork"?"art":"blur";let bgOverride=null;
 // the backdrop layer that fades out is hidden once its fade is over. On Android that's a class taken off by a timer
@@ -767,7 +914,7 @@ function renderTabs(){
 // backdrop's cross-fade ends ~.9 s after the last move) and you've paused a moment
 let shelfMovedAt=-1e9;window.BS_BUSY=()=>performance.now()-shelfMovedAt<1500;
 window.BS_SLIDING=()=>performance.now()-shelfMovedAt<650; // (beta.12) just the slide itself (.55 s) and a frame or two: what the moving backdrop waits out on Android and Linux
-function go(i){const n=slots.length;i=Math.max(0,Math.min(n-1,i));if(i===sel)return false;shelfMovedAt=performance.now();const dir=i>sel?1:-1;const prev=slots[sel];if(prev)prev.box.classList.remove("free");sel=i;flipped=false;spin=0;spinT=0;cancelAnimationFrame(spinRaf);spinRaf=0;layout();sfx.tick(dir);if(ANDROID){clearTimeout(go.saveT);go.saveT=setTimeout(save,700)}else save();return true} /* Android: the place is written once you stop, not on every step of a held stick */
+function go(i){const n=slots.length;i=Math.max(0,Math.min(n-1,i));if(i===sel)return false;shelfMovedAt=performance.now();fxHold();const dir=i>sel?1:-1;const prev=slots[sel];if(prev)prev.box.classList.remove("free");sel=i;flipped=false;spin=0;spinT=0;cancelAnimationFrame(spinRaf);spinRaf=0;layout();sfx.tick(dir);if(ANDROID){clearTimeout(go.saveT);go.saveT=setTimeout(save,700)}else save();return true} /* Android: the place is written once you stop, not on every step of a held stick */
 if(ANDROID)addEventListener("visibilitychange",()=>{if(document.hidden&&go.saveT){clearTimeout(go.saveT);go.saveT=0;save()}}); // a game launched straight after a step: written as Boxshelf goes to the back
 const move=d=>{if(mode!=="browse"&&mode!=="details")return;if(!go(sel+d)&&d)bump(d)};
 function bump(d){const s=slots[sel];if(!s)return;s.box.style.transform=`translateX(${d*10}px) rotateY(${(flipped?180:0)+spin}deg)`;setTimeout(applyRotation,120)} /* +spin: a box turned to its spine stays turned during the nudge */
@@ -842,7 +989,7 @@ function setSystem(i){
     const t=pendingSys>=0&&shelves[pendingSys]===target?pendingSys:shelves.indexOf(target);pendingSys=-1;
     try{
       if(t<0||(mode!=="browse"&&mode!=="details")){renderTabs();brandIn(dir);return}
-      sysIdx=t;shelfMovedAt=performance.now();sel=Math.max(0,shelves[t].items.findIndex(isGame));flipped=false;spin=0;spinT=0;cancelAnimationFrame(spinRaf);spinRaf=0;build();brandIn(dir);save();preloadModel();raShelfLoad();tuneTo(cur());ambient(true);rumble(0,.25,60);
+      sysIdx=t;shelfMovedAt=performance.now();fxHold();sel=Math.max(0,shelves[t].items.findIndex(isGame));flipped=false;spin=0;spinT=0;cancelAnimationFrame(spinRaf);spinRaf=0;build();brandIn(dir);save();preloadModel();raShelfLoad();tuneTo(cur());ambient(true);rumble(0,.25,60);
       await coversReady(260);
     }catch(e){console.warn("shelf switch",e)}
     finally{if(gen===swapGen&&pendingSys<0)requestAnimationFrame(()=>track.classList.remove("swap"))} // never leave the shelf invisible
@@ -922,6 +1069,8 @@ function fillDetails(){
   $("dTrailer").hidden=!(g.kind==="rom"&&i.video);
   // (beta.7) Media: says when there's nothing there yet (a preview found later fills it); the tab is marked when there's something
   {const has=!!shots.length||!$("dTrailer").hidden;$("dNoMedia").hidden=has;$("dTabMedia").classList.toggle("has",has)}
+  dShotsMore(g,s,shots); // (beta.14) fewer than 6 screenshots: more are asked for, once per game per run
+  dInfoMore(g,s); // (beta.14) IGDB connected and LaunchBox's info has gaps: IGDB's fills them, once per game per run
   const grid=$("dGrid");grid.innerHTML="";
   /* (beta.12, Windows) the museum placard: every fact, the platform first (the file is in Your copy) */
   const skip=new Set(g.kind==="rom"?(DV2?["File"]:["Released","Genre","Players","Rating","Community score","Format","File"]):[]);
@@ -948,17 +1097,41 @@ function fillDetails(){
   $("dEmu").hidden=!(g.kind==="rom"&&s.hasEmulator);$("dEmu").textContent=`Open ${s.emulatorName||"emulator"}`;
   {const pc=g.kind==="steam"&&!!api.pcCoverOptions,b=$("dBoxArt"),p=$("dBoxArtPc");if(b)b.hidden=!(g.kind==="rom"&&api.artStudio&&g.file);if(p)p.hidden=!pc;} /* (beta.9) a PC game's Box art sits beside Play (it has no manual or Inspect), not in More */{const b=$("dRename");if(b)b.hidden=!(api.renameGame&&((g.kind==="rom"&&g.file)||g.kind==="steam"));} /* (beta.5: PC games too, through the cover picker) */
   {const b=$("dCols");if(b)b.hidden=!isGame(g)||g.kind==="app";}
+  {const b=$("dAddTo");if(b)b.hidden=!addCan(g);if(b&&!b.hidden){const c=$("dCols");if(c)c.hidden=true}} /* (beta.14) Add to… (Windows / Linux, not in Kid mode); it covers My shelves, so the older My shelves button steps aside */
   {const b=$("dChooseManual");if(b){b.hidden=!(g.kind==="rom"&&api.manualStudio&&g.file);b.textContent=hasManual(g)?"Choose manual…":"Find a manual…";b.title=!hasManual(g)&&g.manualMiss?`Boxshelf looked online on ${new Date(g.manualMiss).toLocaleDateString()} and found no manual for this game. Search or add one here.`:""}}
   {const b=$("dGameEmu");if(b){const own=g.kind==="rom"?gameEmu(g):"";b.hidden=!(g.kind==="rom"&&api.gameEmulator);b.textContent=own?(emuLabel(own).length>16?emuLabel(own).slice(0,15)+"…":emuLabel(own)):"Emulator";b.title=own?`Runs in ${own} (just this game). Press to change.`:`Runs in the shelf's ${s.emulatorName||"emulator"}. Press to pick a different build for just this game.`;b.classList.toggle("own",!!own)}}
   if(DV2)dvFill(g); // (beta.12) the sections only the Windows Details has: Your play, Status, Favourite, Your copy, the placard
   renderHints(); // Y's prompt follows this game's trailer / achievements row (updateInfo drew the bar before this fill)
   pvSchedule(); // (beta.7) its video preview, after a rest
 }
+// (beta.14) more screenshots (main/moreshots.js, Windows and Linux): a console game with fewer than 6 asks main once per run;
+// main answers from what it saved before or fetches the missing ones (ScreenScraper with the account, libretro's snap and
+// title screen, IGDB with keys). The new ones join the end of the strip, so the ones on screen never move; they land only
+// while this game is still in Details, and never while the shelf slides.
+var SHOTS_ASKED=new Set(); // (var: a refill on start-up can come before this line)
+function dShotsMore(g,s,shots){if(!SHOTS_ASKED||ANDROID||!g||g.kind!=="rom"||!api.moreShots||!s||!g.file||shots.length>=6)return;const k=s.id+"|"+g.file;if(SHOTS_ASKED.has(k))return;SHOTS_ASKED.add(k);
+  api.moreShots({systemId:s.id,file:g.file,title:g.title,shots}).then(r=>{const list=Array.isArray(r)?r.filter(u=>typeof u==="string"&&u):[];const now=(g.info&&g.info.shots)||[];if(list.length<=now.length)return;
+    if(g.info)g.info.shots=list;else g.info={shots:list};const land=()=>{if(window.BS_BUSY&&BS_BUSY())return void setTimeout(land,300);if((mode==="details"||mode==="shot")&&curGame()===g)dShotsAdd(g)};land()}).catch(()=>{SHOTS_ASKED.delete(k)})}
+// (beta.14) IGDB's game info (main/igdb.js, Windows and Linux, only with the keys): a console game missing a description,
+// genres, developer or release date asks main once per run; what comes back only fills gaps (LaunchBox's values stay), and
+// Details is filled again if this game is still in it (never while the shelf slides)
+function igdbOn(){const k=cfgInfo&&cfgInfo.config&&cfgInfo.config.keys;return !!(k&&String(k.igdbId||"").trim()&&String(k.igdbSecret||"").trim())}
+var INFO_ASKED=new Set(); // (var: a refill on start-up can come before this line)
+function dInfoMore(g,s){if(!INFO_ASKED||ANDROID||!g||g.kind!=="rom"||!api.moreInfo||!s||!g.file||!igdbOn())return;const i0=g.info||{},no=v=>v==null||v==="";
+  if(!no(i0.overview)&&!no(i0.genres)&&!no(i0.dev)&&!(no(i0.release)&&no(i0.year)))return;const k=s.id+"|"+g.file;if(INFO_ASKED.has(k))return;INFO_ASKED.add(k);
+  api.moreInfo({systemId:s.id,file:g.file,title:g.title}).then(x=>{if(!x||typeof x!=="object")return;const i=g.info||{},add={};
+    for(const f of ["overview","genres","dev","pub","rating","series"])if(!no(x[f])&&no(i[f]))add[f]=x[f];
+    if(x.release&&no(i.release)&&(no(i.year)||String(i.year).slice(0,4)===String(x.year)))add.release=x.release;if(x.year&&no(i.year)&&no(i.release))add.year=x.year;
+    if(!Object.keys(add).length)return;g.info=Object.assign({},i,add);
+    const land=()=>{if(window.BS_BUSY&&BS_BUSY())return void setTimeout(land,300);if(mode==="details"&&curGame()===g)fillDetails()};land()}).catch(()=>{INFO_ASKED.delete(k)})}
+function dShotsAdd(g){const sh=(g.info&&g.info.shots)||[],ds=$("dShots"),n0=ds.children.length;if(sh.length<=n0)return;
+  for(let k=n0;k<sh.length;k++){const d=document.createElement("button");d.type="button";d.className="d-shot"+(k===0?" on":"");const im=document.createElement("img");im.loading="lazy";im.decoding="async";im.alt="";im.src=sh[k];d.append(im);d.addEventListener("click",()=>{if(mode==="details")openShotView(k);else showShot(k)});ds.append(d)}
+  ds.hidden=false;$("dCover").closest(".d-hero").classList.add("shot");if(!n0)heroBgSoon(sh[0],g);$("dNoMedia").hidden=true;$("dTabMedia").classList.add("has");{const h=$("dvShotsH");if(h)h.hidden=false}{const q=$("dvIgdb");if(q&&sh.length>=6)q.hidden=true}}
 function openDetails(){if(mode!=="browse"||!curGame()||emptyShelf())return;uiCrumb("Details: "+curGame().title);
   // (beta.7) the shelf's own preview already playing for this game carries straight on behind Details (no restart)
   {const g=curGame(),k=String(g.id!=null?g.id:g.title);if(PV&&PV.bkey===k&&app.classList.contains("pv-on")){const v=$("pvBack");clearTimeout(PV.bt);PV.bkey="";PV.key=k;PV.r={type:"file",url:v.currentSrc||v.src};app.classList.add("pv-det")}}
   PV.openAt=performance.now(); // (beta.9: opening Details looks for the trailer at once; the rest delay is for moving between games in it)
-  mode="details";fillDetails();
+  mode="details";fillDetails();if(DV2){dvPose();applyRotation()} /* (beta.14: Details' small turn of the case) */
   // (the shelf's own preview carries on in Overview's box, from where it was, with this game's fan art behind the case)
   if(!ANDROID&&PV.key&&PV.r&&dTabNow()===MEDIA_TAB){const t0=$("pvBack").currentTime||0,dv=$("dVideo"),k0=PV.key;pvBoxStart(k0);dArtOn(curGame(),k0);const u0=dv.getAttribute("src");
     if(t0>0&&u0)dv.addEventListener("loadedmetadata",()=>{try{if(PV.key===k0&&dv.getAttribute("src")===u0&&t0<dv.duration-.5)dv.currentTime=t0}catch{}},{once:true})} /* (only for that same video: not a later game's) */$("details").scrollTop=0;app.classList.add("details-open");$("details").setAttribute("aria-hidden","false");play_("panel");padSet($("details"),$("dPlay"));renderHints()}
@@ -971,7 +1144,7 @@ function openDetails(){if(mode!=="browse"||!curGame()||emptyShelf())return;uiCru
 var PV={t:0,key:"",yt:"",st:0,bt:0,bkey:""}; // (var: renderHints / updateInfo can run before this line on start-up)
 const pvUi=k=>cfgInfo&&cfgInfo.config&&cfgInfo.config.ui?cfgInfo.config.ui[k]:undefined;
 const pvMode=()=>pvUi("previews")||"off";
-const pvDelay=()=>Math.max(.5,+pvUi("previewDelay")||1.5)*1000;
+const pvDelay=()=>Math.max(.5,+pvUi("previewDelay")||5)*1000;
 const pvCan=g=>!!(g&&api.previewFind&&(g.kind==="rom"||g.kind==="steam"));
 const pvReq=g=>({systemId:g.kind==="rom"?(shelfFor(g)||{}).id:null,file:g.kind==="rom"?g.file:null,title:g.fileTitle||g.title,id:g.id,youtube:g.info&&g.info.video||null});
 function pvAsk(g){pvNear(g);return api.previewFind(pvReq(g)).catch(()=>null)}
@@ -1025,14 +1198,15 @@ function boxAudio(){if(!BOX.a){const a=document.createElement("audio");a.id="dAu
 function boxApplyVol(){const v=$("dVideo"),vol=boxVol();if(BOX.a)BOX.a.volume=vol;if(BOX.own&&v)v.volume=vol}
 function dvSndPaint(){const d=$("details"),s=d&&d.querySelector(".dv-snd");if(!s||!DV2)return;const on=BOX.on&&!BOX.busy,vol=boxVol();
   s.classList.toggle("on",on);s.classList.toggle("busy",BOX.busy);const b=s.querySelector(".dv-vbar i");if(b)b.style.transform=`scaleX(${on?vol:0})`;
+  const kn=s.querySelector(".dv-vbar b");if(kn)kn.style.left=`${(on?vol:0)*100}%`; /* (beta.14) the bar's knob */
   const bar=s.querySelector(".dv-vbar");if(bar)bar.setAttribute("aria-valuenow",String(Math.round((on?vol:0)*100)));
-  const k=s.querySelector(".dv-vk"),st=glyphStyle(),kt=st==="ps"?"L2 R2":st==="nintendo"?"ZL ZR":"LT RT";if(k&&k.textContent!==kt)k.textContent=kt;
+  const k=s.querySelector(".dv-vk"),kt=Math.round((on?vol:0)*100)+"%";if(k&&k.textContent!==kt)k.textContent=kt; /* (beta.14: the level itself; ← → / LT RT are said on the box) */
   const l=document.getElementById("dvTrL");if(l)l.textContent=BOX.busy?"Getting the sound…":BOX.on?"Mute":"Turn sound on";
   const tr=$("dTrailer");if(tr){tr.setAttribute("aria-label",BOX.on?"Mute the trailer":"Turn the trailer's sound on");tr.title=(BOX.on?"Mute":"Sound on")+" (LT / RT: volume · Y: full screen)"}}
 function boxSoundOff(){BOX.on=false;BOX.busy=false;BOX.gen++;const v=$("dVideo");if(v)v.muted=true;if(BOX.a)BOX.a.pause();BOX.own=false;dvSndPaint()}
 async function boxSoundOn(){const v=$("dVideo"),src=v&&v.getAttribute("src");if(!src){BOX.on=true;BOX.busy=false;dvSndPaint();return} /* (beta.12: asked before the clip is in: on, and the clip's loadeddata fetches its sound) */
-  const my=++BOX.gen;BOX.on=true;BOX.busy=true;dvSndPaint();
-  let r=null;try{r=api.previewClipAudio?await api.previewClipAudio(src):{clip:false}}catch{r={clip:true,url:null}} /* (a failed ask: "couldn't get the sound", not a silent unmute) */
+  const my=++BOX.gen,ready=BOX.pre&&BOX.pre.src===src&&BOX.pre.r;BOX.on=true;BOX.busy=!ready;dvSndPaint(); /* (beta.14: already fetched while the clip played muted: no wait) */
+  let r=null;try{r=api.previewClipAudio?await api.previewClipAudio(src):{clip:false}}catch{r=ready||{clip:true,url:null}} /* (a failed ask: "couldn't get the sound", not a silent unmute; fetched ahead, main answers from what it has at once and the file is already loaded here) */
   if(my!==BOX.gen)return; /* (turned off, or asked again, meanwhile) */
   if(v.getAttribute("src")!==src){BOX.busy=false;dvSndPaint();return} /* (another clip, or none: still on, the next clip's loadeddata asks for its own sound) */
   BOX.busy=false;
@@ -1044,31 +1218,39 @@ async function boxSoundOn(){const v=$("dVideo"),src=v&&v.getAttribute("src");if(
 function boxSync(){const v=$("dVideo");if(!v||v._boxSync)return;v._boxSync=true;
   const a=()=>BOX.on&&!BOX.own&&BOX.a&&BOX.a.getAttribute("src")?BOX.a:null;
   v.addEventListener("play",()=>{if(mode==="shot"){v.pause();PV.held={k:PV.key,bk:PV.bkey,L:[v]};return} /* (it came in under the screenshot viewer: it starts when you're back) */
-    const x=a();if(x){try{x.currentTime=v.currentTime}catch{}x.play().catch(()=>{})}});
+    const x=a();if(x){try{x.currentTime=v.currentTime}catch{}x.play().catch(()=>{})}else if(!BOX.on)boxSoundAhead()}); /* (beta.14: a clip carried over from the shelf's preview never fires loadeddata here: its sound is fetched ahead as it plays) */
   v.addEventListener("pause",()=>{const x=a();if(x)x.pause()});
   v.addEventListener("timeupdate",()=>{const x=a();if(x&&x.readyState>=2&&Math.abs(x.currentTime-v.currentTime)>.3){try{x.currentTime=v.currentTime}catch{}}});
   v.addEventListener("emptied",()=>{if(BOX.a)BOX.a.pause()});
-  v.addEventListener("loadeddata",()=>{if(BOX.on||(BOX.user==null&&pvUi("previewSound")))boxSoundOn()})} /* (the next game's clip: its sound too, while sound is on; previews set to play with sound start with it) */
+  v.addEventListener("loadeddata",()=>{if(BOX.on||(BOX.user==null&&pvUi("previewSound")))boxSoundOn();else boxSoundAhead()})} /* (the next game's clip: its sound too, while sound is on; previews set to play with sound start with it) */
+/* (beta.14: the sound took a moment after turning it on) a clip whose sound is a file of its own (Boxshelf's YouTube
+   clips): that file is asked for and loaded, paused, as soon as the clip is in, so turning the sound on is instant */
+function boxSoundAhead(){const v=$("dVideo"),src=v&&v.getAttribute("src");if(!src||!api.previewClipAudio||(BOX.pre&&BOX.pre.src===src))return;
+  if(PV.r&&PV.r.steam)return; /* (a Steam trailer, like your own videos, has its sound in it: nothing to fetch) */const pre=BOX.pre={src,r:null};
+  Promise.resolve(api.previewClipAudio(src)).then(r=>{if(BOX.pre!==pre)return;pre.r=r||{clip:false};if(r&&r.clip&&r.url&&!BOX.on){const a=boxAudio();if(a.getAttribute("src")!==r.url){a.src=r.url;try{a.load()}catch{}}}}).catch(()=>{if(BOX.pre===pre)BOX.pre=null})}
 function boxVolSet(x,save){x=Math.max(0,Math.min(1,Math.round(x*20)/20));if(cfgInfo)cfgInfo.config.ui.trailerVol=x;boxApplyVol();dvSndPaint();
   clearTimeout(BOX.saveT);BOX.saveT=setTimeout(()=>uiSet("trailerVol",x),save?0:500)}
 /* the pill: the speaker turns the sound on and off; the bar is pressed or dragged for the volume (which turns it on) */
 function dvSndBuild(){const s=document.createElement("div");s.className="dv-snd";
-  s.innerHTML='<button type="button" class="dv-spk" tabindex="-1" aria-label="Sound on or off"><svg viewBox="0 0 24 24"><path class="b" d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z"/><path class="w" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/><path class="x" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button><span class="dv-vbar" role="slider" aria-label="Trailer volume" aria-valuemin="0" aria-valuemax="100"><i></i></span><span class="dv-vk"></span>';
+  s.innerHTML='<button type="button" class="dv-spk" tabindex="-1" aria-label="Sound on or off"><svg viewBox="0 0 24 24"><path class="b" d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z"/><path class="w" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/><path class="x" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button><span class="dv-vbar" role="slider" aria-label="Trailer volume" aria-valuemin="0" aria-valuemax="100"><i></i><b></b></span><span class="dv-vk"></span>';
   s.querySelector(".dv-spk").addEventListener("click",e=>{e.stopPropagation();setInput("pointer");if(BOX.on){BOX.user=false;boxSoundOff()}else{BOX.user=true;boxSoundOn()}});
   const bar=s.querySelector(".dv-vbar");let drag=false;const at=e=>{const r=bar.getBoundingClientRect();return (e.clientX-r.left)/Math.max(1,r.width)};
   bar.addEventListener("pointerdown",e=>{e.stopPropagation();e.preventDefault();setInput("pointer");drag=true;try{bar.setPointerCapture(e.pointerId)}catch{}boxVolSet(at(e));if(!BOX.on){BOX.user=true;boxSoundOn()}});
   bar.addEventListener("pointermove",e=>{if(drag)boxVolSet(at(e))});
   const up=e=>{if(!drag)return;drag=false;boxVolSet(at(e),true)};bar.addEventListener("pointerup",up);bar.addEventListener("pointercancel",()=>{drag=false});
   s.addEventListener("click",e=>e.stopPropagation()); /* (a click on the pill never reaches the box under it) */
+  /* (beta.14) the mouse wheel over the pill sets the volume too (over the rest of Details it still scrolls the page) */
+  s.addEventListener("wheel",e=>{e.preventDefault();e.stopPropagation();if(!e.deltaY||performance.now()-(s._wt||0)<90)return;s._wt=performance.now();setInput("pointer");boxVolStep(e.deltaY<0?1:-1)},{passive:false}); /* (a touchpad's stream of small steps: one step per 90 ms) */
   return s}
 function boxVolStep(d){if(!BOX.on){BOX.user=true;boxSoundOn();return}boxVolSet(boxVol()+d*.1);play_("tick",{dir:d})}
 function trailerA(){const v=$("dVideo"),playing=DV2&&PV&&PV.key&&v&&v.getAttribute("src");if(!playing){openTrailer();return} /* (nothing playing in the box yet: full screen, as before) */
   play_("tick");if(BOX.on){BOX.user=false;boxSoundOff()}else{BOX.user=true;boxSoundOn()}}
 /* the keyboard: - and + with the trailer box selected */
 addEventListener("keydown",e=>{if(!DV2||mode!=="details"||document.activeElement!==$("dTrailer"))return;const k=e.key;
+  if(k==="ArrowLeft"||k==="ArrowRight"){e.preventDefault();e.stopImmediatePropagation();setInput("kbd");boxVolStep(k==="ArrowRight"?1:-1);return} /* (beta.14) ← → as on the d-pad */
   if(k==="-"||k==="_"){e.preventDefault();e.stopImmediatePropagation();setInput("kbd");boxVolStep(-1)}else if(k==="="||k==="+"){e.preventDefault();e.stopImmediatePropagation();setInput("kbd");boxVolStep(1)}}); /* (stopped here: the app's own - / + volume used to change too) */
 function pvBoxStart(k){const r=PV.r;if(!r||PV.key!==k)return;const box=$("dMedia"),tag=$("dMediaTag");if(!DV2)$("dMediaIn").style.backgroundImage=$("dHeroBg").style.backgroundImage; // (this game's art under the picture as it fades in)
-  if(r.type==="file"){pvBgStop();pvBoxWait(k);tag.textContent=r.steam?"Steam trailer":r.yt?"Trailer":"Preview";pvVid($("dVideo"),r.url,k,()=>{box.classList.add("on","ready");aSndPaint();if(DV2&&$("dTrailer").hidden){$("dTrailer").hidden=false;dvSndPaint()}})} /* (beta.12: a clip found by search, with no trailer link, still gets the box's controls: A for its sound) */
+  if(r.type==="file"){pvBgStop();pvBoxWait(k);tag.textContent=r.steam?"Steam trailer":r.yt?"Trailer":"Preview";pvVid($("dVideo"),r.url,k,()=>{box.classList.add("on","ready");aSndPaint();if(DV2&&$("dTrailer").hidden){$("dTrailer").hidden=false;dvSndPaint()}if(DV2&&!BOX.on)boxSoundAhead()})} /* (beta.14: its sound fetched ahead, so turning it on is instant) */ /* (beta.12: a clip found by search, with no trailer link, still gets the box's controls: A for its sound) */
   // (beta.9, Windows) Overview never loads YouTube's own player by itself: it's a heavy web page laid over the app, and with the
   // trailer at the top of Overview it loaded on every Details open, lagged and took the controller away while it did. The
   // box waits for the console trailer clip instead (made in the background, a plain video); full screen still opens YouTube
@@ -1195,43 +1377,85 @@ setTimeout(()=>leaveHint(),13000);
 // for a newer version (GitHub), shown as plain text only.
 const WN=()=>Array.isArray(window.BS_WHATSNEW)?window.BS_WHATSNEW:[];
 const appVer=()=>cfgInfo&&cfgInfo.version||"";
-const wnEntry=v=>WN().find(e=>ANDROID?e.android===v:e.version===v)||null;
+/* (beta.14) a test build ("1.82.0-beta.14-test.4") has its release's notes; versions are put in order as main/updates.js does */
+const wnBase=v=>String(v||"").trim().replace(/^v/,"").replace(/[-.]test\.?\d+$/i,"");
+function wnCmp(a,b){const P=v=>{const m=/^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?/.exec(wnBase(v));return m?{n:[+m[1],+(m[2]||0),+(m[3]||0)],p:m[4]?m[4].split(".").map(x=>/^\d+$/.test(x)?+x:x):[]}:null};
+  const x=P(a),y=P(b);if(!x||!y)return 0;for(let i=0;i<3;i++)if(x.n[i]!==y.n[i])return x.n[i]-y.n[i];
+  if(!x.p.length||!y.p.length)return (x.p.length?-1:0)+(y.p.length?1:0);
+  for(let i=0;i<Math.max(x.p.length,y.p.length);i++){const p=x.p[i],q=y.p[i];if(p===undefined)return -1;if(q===undefined)return 1;if(p===q)continue;
+    if(typeof p==="number"&&typeof q==="number")return p-q;if(typeof p==="number")return -1;if(typeof q==="number")return 1;return p<q?-1:1}return 0}
+const wnVer=e=>ANDROID?e.android:e.version;
+const wnEntry=v=>WN().find(e=>wnVer(e)&&wnBase(wnVer(e))===wnBase(v))||null;
+// every version after the one last seen, up to this one, newest first (an update that skipped some gets theirs too)
+const wnSince=(from,to)=>WN().filter(e=>{const x=wnVer(e);return x&&wnCmp(x,to)<=0&&wnCmp(x,from)>0});
 // a release's Markdown, down to its bullet points as plain text
 function mdBullets(md){return String(md||"").split(/\r?\n/).map(l=>/^\s*[-*•]\s+(.+)$/.exec(l)).filter(Boolean).map(m=>m[1].replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/\*\*|__|`/g,"").replace(/<[^>]*>/g,"").trim()).filter(Boolean).map(s=>s.length>140?s.slice(0,137)+"…":s)}
 const NOTE={el:null,btns:[],i:0,queue:[],t:0};
 function noteShow(o){
   if(!o.tries&&(NOTE.title===o.title&&NOTE.el||NOTE.queue.some(q=>q.title===o.title)))return; /* the same note asked for again (another update check) while it waits or shows */
   if(NOTE.el||mode!=="browse"||(typeof qm!=="undefined"&&qm.open)/* (beta.8: never over the open quick menu) */||(window.BS_TOUR&&BS_TOUR.on())/* (beta.11: nor over the shelf tour; it waits its turn) */||sysBusy()||(window.BS_BUSY&&BS_BUSY())||document.querySelector("#setup.on, #settings.on")){o.tries=(o.tries||0)+1;if(o.tries<40){NOTE.queue.push(o);clearTimeout(NOTE.t);NOTE.t=setTimeout(noteNext,6000)}return}
-  const el=document.createElement("div");el.className="note-card"+(o.wide?" wide":"");el.setAttribute("role","dialog");el.setAttribute("aria-label",o.title);
+  const el=document.createElement("div");el.className="note-card"+(o.wide?" wide":"")+(o.cls?" "+o.cls:"");el.setAttribute("role","dialog");el.setAttribute("aria-label",o.title);
   const add=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls;e.textContent=text;el.append(e);return e};
   add("div","nc-kick",o.kick);add("div","nc-title",o.title);if(o.sub)add("div","nc-sub",o.sub);
   if(o.items&&o.items.length){const ul=document.createElement("ul");ul.className="nc-list";o.items.forEach(t=>{const li=document.createElement("li");li.textContent=t;ul.append(li)});el.append(ul)}
+  /* (beta.14) o.body: a part that scrolls (the patch notes): up / down, the right stick, the wheel or a finger */
+  NOTE.body=null;if(typeof o.body==="function"){const bd=document.createElement("div");bd.className="nc-body";o.body(bd);el.append(bd);NOTE.body=bd}
   const row=document.createElement("div");row.className="nc-btns";el.append(row);
-  NOTE.btns=[o.primary,o.secondary].filter(Boolean).map(([label,run],i)=>{const b=document.createElement("button");b.type="button";b.className="btn"+(i===0?" primary":"");b.textContent=label;b.addEventListener("click",()=>noteClose(run));row.append(b);return b});
+  /* (beta.14) a button's third part names its key ("ok" / "back"): its A / B (Enter / Esc) shows on it, as you're holding; o.scrollHint: "Scroll" beside them */
+  if(o.scrollHint){const hn=document.createElement("div");hn.className="nc-hint";hn.innerHTML='<span class="nc-k" data-key="scroll"></span><span class="nc-hl"></span>';row.append(hn)}
+  NOTE.btns=[o.primary,o.secondary].filter(Boolean).map(([label,run,key],i)=>{const b=document.createElement("button");b.type="button";b.className="btn"+(i===0?" primary":"")+(key==="back"?" nc-close":"");
+    if(key){b.innerHTML=`<span class="nc-k" data-key="${key}"></span><span class="nc-bl"></span>`;b.querySelector(".nc-bl").textContent=label}else b.textContent=label;b.addEventListener("click",()=>noteClose(run));row.append(b);return b});
   /* o.seen: the note is remembered as shown only now that it is (callers used to mark it first, so a note that waited
      too long, or a Boxshelf closed meanwhile, never showed at all) */
   if(typeof o.seen==="function")try{o.seen()}catch{}
-  NOTE.el=el;NOTE.title=o.title;NOTE.i=0;mode="note";app.classList.add("note-open");app.append(el);noteLight();play_("panel");renderHints();requestAnimationFrame(()=>el.classList.add("on"))}
+  NOTE.el=el;NOTE.title=o.title;NOTE.i=0;mode="note";app.classList.add("note-open");app.append(el);noteKeys();noteLight();play_("panel");renderHints();requestAnimationFrame(()=>el.classList.add("on"))}
+// the card's keys, for what you're holding: a controller's A / B (its own style), the keyboard's Enter / Esc, nothing for a
+// mouse or a finger (the buttons say it); again whenever you switch (renderHints)
+function noteKeys(){const el=NOTE.el;if(!el)return;const pad=showPad(),kb=!pad&&inputMode==="kbd"&&kbdEver; /* (keys only once one was pressed: Boxshelf starts out assuming a keyboard) */
+  el.querySelectorAll(".nc-k[data-key]").forEach(s=>{const k=s.dataset.key;s.innerHTML=pad?(k==="scroll"?'<span class="g">↑↓</span>':glyph(k==="ok"?"x":"o")):kb?`<span class="g">${k==="ok"?"Enter":k==="back"?"Esc":"↑ ↓"}</span>`:""});
+  const hl=el.querySelector(".nc-hl");if(hl)hl.textContent=pad||kb?"Scroll":"Scroll or swipe for more"}
 function noteNext(){if(NOTE.el)return;const o=NOTE.queue.shift();if(o)noteShow(o)}
 function noteLight(){NOTE.btns.forEach((b,i)=>b.classList.toggle("pad-focus",i===NOTE.i));const b=NOTE.btns[NOTE.i];if(b)try{b.focus({preventScroll:true})}catch{}}
 function noteMove(d){if(NOTE.btns.length<2)return;NOTE.i=(NOTE.i+d+NOTE.btns.length)%NOTE.btns.length;noteLight();play_("tick",{dir:d})}
 function notePick(){const b=NOTE.btns[NOTE.i];if(b)b.click()}
-function noteClose(run){const el=NOTE.el;if(!el)return;NOTE.el=null;NOTE.btns=[];el.classList.remove("on");setTimeout(()=>el.remove(),260);mode="browse";app.classList.remove("note-open");renderHints();if(typeof run==="function")setTimeout(run,60);else sfx.back();
+function noteScroll(dy,smooth){const b=NOTE.body;if(!b)return;try{b.scrollBy({top:dy,behavior:smooth&&!document.documentElement.classList.contains("reduce-motion")?"smooth":"auto"})}catch{b.scrollTop+=dy}}
+function noteClose(run){const el=NOTE.el;if(!el)return;NOTE.el=null;NOTE.btns=[];NOTE.body=null;el.classList.remove("on");setTimeout(()=>el.remove(),260);mode="browse";app.classList.remove("note-open");renderHints();if(typeof run==="function")setTimeout(run,60);else sfx.back();
   if(NOTE.queue.length){clearTimeout(NOTE.t);NOTE.t=setTimeout(noteNext,900)}}
 // a newer version on GitHub (main/updates.js): its highlights and the way to its notes, once per version
-function noteUpdate(r){if(!r||!r.newer||!r.latest)return;let seen="";try{seen=localStorage.getItem("updateSeen")||""}catch{}if(seen===r.latest)return;
-  const hl=mdBullets(r.notes).slice(0,3);
-  noteShow({seen:()=>{try{localStorage.setItem("updateSeen",r.latest)}catch{}},kick:"Update available",title:`Boxshelf ${r.latest} is out`,sub:hl.length?"":"A new version is ready to download.",items:hl,
-    primary:["See what's new",()=>{if(window.Setup)Setup.open({page:"whatsnew"})}],secondary:["Later",null]})}
+/* (beta.14) a Boxshelf that can update itself (main/updateflow.js) offers Update now first, then What's new */
+async function noteUpdate(r){if(!r||!r.newer||!r.latest)return;let seen="";try{seen=localStorage.getItem("updateSeen")||""}catch{}if(seen===r.latest)return;
+  const hl=mdBullets(r.notes).slice(0,3),notes=()=>{if(window.Setup)Setup.open({page:"whatsnew"})};let can=false;try{const i=api.updateInfo&&!ANDROID?await api.updateInfo():null;can=!!(i&&i.support)}catch{}
+  noteShow({seen:()=>{try{localStorage.setItem("updateSeen",r.latest)}catch{}},kick:"Update available",title:`Boxshelf ${r.latest} is out`,sub:hl.length?"":can?"Update now downloads it and restarts into it. Your setup stays as it is.":"A new version is ready to download.",items:hl,
+    primary:can?["Update now",()=>updNow()]:["See what's new",notes],secondary:can?["What's new",notes]:["Later",null]})}
+/* (beta.14) Update now from the card: it downloads in the background (Settings → System shows how far); once it's in, a card
+   offers Restart to update (main refuses during a game) */
+function updNow(){Promise.resolve(api.updateStart()).then(s=>{if(s&&s.state==="error")toast(s.error||"Couldn't start the update");else if(s&&s.state==="downloading")toast(`Downloading Boxshelf ${s.version}… Settings → System shows how far it is.`)}).catch(e=>toast(e.message||String(e)))}
+if(api&&api.onUpdateState&&!ANDROID)api.onUpdateState(s=>{if(!s)return;
+  if(s.state==="ready")noteShow({kick:"Update ready",title:`Boxshelf ${s.version} is ready`,sub:s.selfRestart===false?"Boxshelf closes and updates itself. Start it again from Steam afterwards. Your settings and games stay as they are.":"Boxshelf closes, updates itself and opens again. Your settings and games stay as they are.",
+    primary:[s.selfRestart===false?"Close to update":"Restart to update",()=>Promise.resolve(api.updateInstall()).catch(e=>toast(e.message||String(e)))],secondary:["Later",null]});
+  else if(s.state==="error"&&s.error&&!(window.Settings&&Settings.isOpen&&Settings.isOpen()))toast(s.error)});
 // the first start of a new version: its highlights, once (a fresh install just remembers the version)
 function wnCheck(n=0){if(!cfgInfo||!cfgInfo.config){if(n<20)setTimeout(()=>wnCheck(n+1),1500);return}const v=appVer(),ui=cfgInfo.config.ui;if(!v||ui.lastSeenVersion===v)return;
-  if(!/\d/.test(v))return; /* (a build without a version number, like the Android one's "Android") */const first=!cfgInfo.config.setupDone,e=wnEntry(v);if(first||!e){uiSet("lastSeenVersion",v);return}
-  noteShow({seen:()=>uiSet("lastSeenVersion",v),wide:true,kick:"Updated",title:`What's new in ${v}`,sub:e.title,items:(e.highlights||[]).slice(0,5),primary:["Got it",null],secondary:["All the notes",()=>{if(window.Setup)Setup.open({page:"whatsnew"})}]})}
+  if(!/\d/.test(v))return; /* (a build without a version number, like the Android one's "Android") */const first=!cfgInfo.config.setupDone;if(first){uiSet("lastSeenVersion",v);return}
+  /* (beta.14) the versions since the last one seen; none of them (the same release's next test build, or no last one): this one's */
+  const prev=ui.lastSeenVersion||"";let L=prev&&wnBase(prev)!==wnBase(v)?wnSince(prev,v):[];if(!L.length){const e=wnEntry(v);if(e)L=[e]}
+  if(!L.length){uiSet("lastSeenVersion",v);return}
+  /* (beta.14) a small card with one button, Read the patch notes (B / Esc / Back just closes it); the notes open in the same
+     card, sized to any screen (TV, laptop, the Thor, a phone) */
+  noteShow({seen:()=>uiSet("lastSeenVersion",v),wide:true,kick:"Updated",title:`Boxshelf ${wnBase(v)}`,primary:["Read the patch notes",()=>wnRead(L),"ok"],secondary:["Close",null,"back"]})}
+// the patch notes: each version since the last one seen (newest first), its headline, then what changed everywhere and on
+// this platform (the other platforms' sections left out); scrolls with up / down, the right stick, the wheel or a finger
+function wnRead(L){if(!L||!L.length)return;const os=window.bsPlatform&&bsPlatform.os||"windows",mine=os==="android"?/^android|\bandroid\b/i:os==="linux"?/^linux|\blinux\b/i:/^windows/i; /* (beta.14: a "Windows and Linux" heading is Linux's too) */
+  noteShow({wide:true,cls:"pnotes",kick:"Patch notes",title:`Boxshelf ${wnVer(L[0])}`+(L.length>1?` and ${L.length-1} earlier`:""),primary:["Close",null,"back"],scrollHint:true,body:bd=>{let h="";
+    for(const e of L){if(L.length>1)h+=`<div class="pn-ver">Boxshelf ${qsEsc(wnVer(e))}${e.date?" · "+qsEsc(e.date):""}</div>`;h+=`<div class="pn-lead">${qsEsc(e.title||"")}</div>`;
+      for(const s of e.sections||[]){const all=!/^(windows|android|linux)/i.test(s.h); /* (Everywhere, or an older version's New / Better / Fixed) */if(!(all||mine.test(s.h))||!(s.items||[]).length)continue;
+        if(!/^everywhere/i.test(s.h))h+=`<div class="pn-h">${qsEsc(s.h)}</div>`;h+=`<ul class="pn-list">${s.items.map(([t,m])=>`<li><b>${qsEsc(t)}</b>${m?`<span>${qsEsc(m)}</span>`:""}</li>`).join("")}</ul>`}}
+    bd.innerHTML=h}})}
 setTimeout(()=>wnCheck(),5000);
 // anything that takes over the screen (Settings, the quick menu, a game starting, the museum) ends both
 function pvGuard(){if(!PV)return;const held=(!!PV.held&&mode==="achv")||mode==="shot"; /* (beta.12: under the screenshot viewer nothing is stopped: a playing trailer is held, a coming one keeps coming) */ /* (beta.12) Achievements over Details holds the trailer (pvHold): a hints redraw meanwhile mustn't stop it for good */if(PV.key&&!held&&(mode!=="details"||document.querySelector("#setup.on, #settings.on")))pvStop();if(PV.bkey&&!held&&mode!=="browse")pvBackStop()}
 addEventListener("blur",()=>{if(PV.yt&&api.previewYtMove)api.previewYtMove(null,false)});addEventListener("focus",()=>{if(PV.yt&&api.previewYtMove&&mode!=="shot"){const rc=pvRect();api.previewYtMove(rc,!!rc)}});
-function closeDetails(silent){if(mode!=="details")return;dMenuClose(true);ASND.on=null;if(DV2)BOX.user=null;if(DV2&&(BOX.on||BOX.a)){boxSoundOff();if(BOX.a){BOX.a.removeAttribute("src");try{BOX.a.load()}catch{}}} /* (beta.12: the trailer box's sound lasts until Details closes) */pvStop();app.classList.remove("pv-on");padSet($("details"),null);mode="browse";app.classList.remove("details-open");$("details").setAttribute("aria-hidden","true");renderHints();if(!silent)sfx.back()}
+function closeDetails(silent){if(mode!=="details")return;dMenuClose(true);ASND.on=null;if(DV2){BOX.user=null;dv.fg=""} /* (beta.14: opened again, Details starts on Overview) */if(DV2&&(BOX.on||BOX.a)){boxSoundOff();if(BOX.a){BOX.a.removeAttribute("src");try{BOX.a.load()}catch{}}} /* (beta.12: the trailer box's sound lasts until Details closes) */pvStop();app.classList.remove("pv-on");padSet($("details"),null);mode="browse";if(DV2)applyRotation();app.classList.remove("details-open");$("details").setAttribute("aria-hidden","true");renderHints();if(!silent)sfx.back()}
 
 /* ---------- Switch 2: which build ---------- */
 // People keep several Eglantine forks (a game can run better in one than another): Play on a Switch 2 game asks which
@@ -1282,7 +1506,7 @@ function bpDone(exe){if(!bp)return;const b=bp;bp=null;mode=b.prev;b.el.classList
    D-pad move through the grid, A uses, B (Esc) closes; a click or tap uses a tile. The main side keeps the addresses:
    the page sends a game id and an option's key only */
 let cp=null,cpReturn=null;
-async function pcCoverOpen(g,term,batch){
+async function pcCoverOpen(g,term,batch){if(kidBlock())return;
   if(!api.pcCoverOptions||cp||bp||(mode!=="browse"&&mode!=="details"))return;
   const el=document.createElement("div");el.className="buildpick coverpick";
   const card=document.createElement("div");card.className="bp-card";card.setAttribute("role","dialog");card.setAttribute("aria-label","Choose a cover");
@@ -1359,6 +1583,17 @@ const wait=ms=>new Promise(r=>setTimeout(r,ms)); // let the screen fade to black
 // (beta.9) a short note of what the screen is doing, with its memory use: main keeps the last ten and writes them to the
 // log only if the screen crashes (no log noise otherwise). The Thor / the demo page have no api.crumb: nothing is sent
 function uiCrumb(t){try{if(!api.crumb)return;const m=performance.memory;api.crumb(String(t).slice(0,120)+(m?` · js ${Math.round(m.usedJSHeapSize/1048576)}/${Math.round(m.jsHeapSizeLimit/1048576)} MB`:"")+` · ${document.querySelectorAll("img").length} img`)}catch{}}
+/* (beta.14) the BIOS check: what Settings → a console → Set up for me knows (main emusetup:status: RetroArch's files for
+   the console, PCSX2's and DuckStation's BIOS folder), looked at once per console in the background (a few at start-up, then
+   when you press Play) and kept until Settings closes. Before a game whose console needs a missing BIOS: a card with Show
+   me how (that console's page) or Play anyway (not asked again this session). Never blocks a game that might still run */
+const BIOS_ST=new Map(),BIOS_OK=new Set();
+function biosPeek(id){if(ANDROID||!id||!api.emuSetupStatus||BIOS_ST.has(id))return;BIOS_ST.set(id,null);
+  Promise.resolve(api.emuSetupStatus(id)).then(st=>{const b=st&&st.supported&&st.bios;BIOS_ST.set(id,b?{ok:!!b.ok,need:b.need,emu:st.name||""}:{ok:true})}).catch(()=>BIOS_ST.set(id,{ok:true}))}
+function biosWarn(s){if(!s||!s.id)return false;biosPeek(s.id);const b=BIOS_ST.get(s.id);if(!b||b.ok||b.need==="opt"||BIOS_OK.has(s.id))return false;
+  noteShow({kick:"Before you play",title:`${b.emu||"The emulator"} needs a BIOS`,sub:`${s.name||"These"} games won't start without one. It comes from your own console: Show me how says where it goes.`,
+    primary:["Show me how",()=>{if(window.Setup)Setup.open({page:s.id})}],secondary:["Play anyway",()=>{BIOS_OK.add(s.id);play()}]});return true}
+setTimeout(()=>{if(ANDROID)return;let k=0;for(const sh of allShelves){if(!sh||sh.kind!=="console"||!hasGames(sh))continue;const id=sh.id;setTimeout(()=>biosPeek(id),(k++)*500)}},20000); // (a few seconds after start-up, one console at a time)
 function play(){
   {const g=curGame();uiCrumb("Play: "+(g?g.title:"?"))}
   const es=!rawItem()&&(mode==="browse"||mode==="details")&&!sysBusy()?emptyShelf():null;if(es){play_("panel");Setup.open({page:es.kind==="steam"?"steam":es.id});return}
@@ -1367,9 +1602,10 @@ function play(){
   if(raw.kind==="random"){if(raw.pick)playPick(raw);else shuffle();return}
   if(cur()===HOME){playPick({pick:{shelf:shelves.indexOf(shelfFor(raw)),game:raw}});return}
   const g=raw;
-  const s=cur().col?(g._sh||shelfFor(g)):cur(); // (beta.10) on a collection shelf: the game's own console (build picker, boot video and slide, its name)
+  const s=cur().col||shelfFor(g)!==cur()?(g._sh||shelfFor(g)):cur(); // (beta.10) on a collection shelf: the game's own console (build picker, boot video and slide, its name). (beta.14) A game added to another shelf (+ Add to…) too
   // Switch 2: which build first (before the boot slide starts); Back on the list leaves you on the shelf
   if(needsBuild(g,s)){pickBuild(g).then(exe=>{if(exe==null)return;nextBuild={id:g.id,exe};play()});return}
+  if(g.kind==="rom"&&biosWarn(s))return; // (beta.14) a BIOS this console can't start without is missing: a card first (Play anyway goes on)
   const boot=g.kind==="rom"&&s.bootOnLaunch&&!s.useIpl,vid=boot&&!!(themes[s.id]||{}).boot;
   // your boot video (Customize) plays first when this console has one and its switch is on; otherwise the boot slide
   // covers the emulator starting (it stays until the game's window is up, then fades to black), and with the slide off
@@ -1413,7 +1649,7 @@ function openInspect(){uiCrumb("Inspect");
     const from=slotPose(slots[sel]),hs=slots[sel];if(from&&hs&&hs.el){clearTimeout(hs.el._gl);hs.el.classList.add("glowfade","lift")}
     // the shelf box stays until the 3D case is drawn and ready to take its place; then both swap in the same frame
     const onStart=()=>{if(isp.tok!==tok||mode!=="inspect")return;if(hs&&hs.el){hs.el.classList.remove("unhold");hs.el.classList.add("held");isp.held=hs}app.classList.add("inspecting");el.classList.add("on")};
-    el.classList.add("gl");gl=Inspect3D.open({from,where:from?()=>slotPose(hs):null,standIn:from&&hs.img,onStart,sys:s.id,rc:style.rc||.04,ratio:style.ratio,depth:style.depth,caseColor:style.caseColor,caseSide:style.caseSide,spineInk:style.spineInk,edge:style.edge||0,wrap:!!style.wrap,title:g.title,kind:m.kind,form:m.form||"",size:m.size,
+    el.classList.add("gl");gl=Inspect3D.open({from,where:from?()=>slotPose(hs):null,standIn:from&&hs.img,standInSpine:from&&hs.el&&hs.el.querySelector(".spine-img"),onStart, /* (beta.14: the spine's stand-in too, no blank spine popping in) */sys:s.id,pack:style.pack||null,rc:style.rc||.04,ratio:style.ratio,depth:style.depth,caseColor:style.caseColor,caseSide:style.caseSide,spineInk:style.spineInk,edge:style.edge||0,wrap:!!style.wrap,title:g.title,kind:m.kind,form:m.form||"",size:m.size,
       // sized copies (still sharp up close): full-size scans cost ~70 MB of video memory per game and half a second to upload
       front:thumb(front,1536),back:g.art&&g.art.back?thumb(g.art.back,1536):null,spine:g.art&&g.art.spine?thumb(g.art.spine,1536):null,disc:g.art&&g.art.disc?thumb(g.art.disc,1024):null,manual:manualCover(g)?thumb(manualCover(g),2048):null,modelUrl:th.media||null,modelOpts:th.mediaOpts||null});
   }}catch(err){gl=false;console.warn("3D inspect failed",err);api.log&&api.log("3D inspect failed: "+(err&&err.stack||err))}
@@ -1835,7 +2071,7 @@ try{let lastLong=0;new PerformanceObserver(l=>{for(const e of l.getEntries()){if
 addEventListener("error",e=>{try{api.log&&api.log(`error: ${e.message} @${(e.filename||"").split("/").pop()}:${e.lineno}`)}catch{}});
 addEventListener("unhandledrejection",e=>{try{api.log&&api.log(`rejection: ${e.reason&&(e.reason.stack||e.reason.message)||e.reason}`)}catch{}});
 /* ---------- insert animation: case opens, disc goes into the drive ---------- */
-const MEDIA={gc:{kind:"disc",size:.62,drive:"top"},wii:{kind:"disc",size:.86,drive:"front"},wiiu:{kind:"disc",size:.84,drive:"front"},psp:{kind:"umd",size:.66,drive:"hatch"},sw:{kind:"cart",size:.5,drive:"slot"},sw2:{kind:"cart",size:.5,drive:"slot"},n3ds:{kind:"cart",size:.5,drive:"slot"},ps3:{kind:"disc",size:.78,drive:"front"},ps4:{kind:"disc",size:.78,drive:"front"},ps5:{kind:"disc",size:.78,drive:"front"},x360:{kind:"disc",size:.8,drive:"tray"},ps2:{kind:"disc",size:.8,drive:"tray"}};
+const MEDIA={gc:{kind:"disc",size:.593,drive:"top"},wii:{kind:"disc",size:.889,drive:"front"},wiiu:{kind:"disc",size:.889,drive:"front"},psp:{kind:"umd",size:.606,drive:"hatch"},sw:{kind:"cart",size:.5,drive:"slot"},sw2:{kind:"cart",size:.5,drive:"slot"},n3ds:{kind:"cart",size:.5,drive:"slot"},ps3:{kind:"disc",size:.889,drive:"front"},ps4:{kind:"disc",size:.889,drive:"front"},ps5:{kind:"disc",size:.889,drive:"front"},x360:{kind:"disc",size:.889,drive:"tray"},ps2:{kind:"disc",size:.889,drive:"tray"}}; // (beta.14) discs at real size: 120 mm in a 135 mm case is .889, a GameCube's 80 mm .593, a UMD's 60 mm in the 99 mm PSP case .606 (Inspect and the museum size cards and cartridges in mm, inspect3d.js CASES)
 if(window.BS_SYSTEMS_EXTRA)Object.assign(MEDIA,BS_SYSTEMS_EXTRA.media||{});
 // (beta.11) what a console's games come on, in words: DOS games on a floppy disk, cartridges, the PSP's UMD, or a disc
 function mediaWord(id){const m=MEDIA[id]||{};return m.form==="floppy"?"Floppy disk":m.kind==="cart"?"Cartridge":id==="psp"?"UMD":"Disc"}
@@ -2129,14 +2365,19 @@ function iconNext(){
     Covers.iconFront(j.style,j.g,j.g.art.icon).then(url=>{if(url){j.g.art.front=url;j.g.art.madeFromIcon=true;const i=cur()&&cur().items.indexOf(j.g);if(i>=0&&slots[i]&&slots[i].img)slots[i].img.src=url}}).finally(()=>setTimeout(iconNext,60))};
   window.requestIdleCallback?requestIdleCallback(go,{timeout:1500}):setTimeout(go,50)}
 /* ---------- RetroAchievements ---------- */
-const RA={on:false,systems:[],shelf:{},game:new Map(),profile:null};
+const RA={on:false,systems:[],shelf:{},game:new Map(),profile:null,x360:false,ps3:false};
+/* (beta.14) Xbox 360 games show Xenia's achievements, PS3 games RPCS3's trophies, in the same row and list (no account) */
+const achLocal=s=>!!s&&((s.id==="x360"&&RA.x360)||(s.id==="ps3"&&RA.ps3));
+const achSrc=s=>s&&s.id==="x360"?"Xenia":s&&s.id==="ps3"?"RPCS3":"RetroAchievements";
+const achNone=s=>s&&(s.id==="x360"||s.id==="ps3")?`${achSrc(s)} has none for this game yet: they show once you've played it in ${achSrc(s)}.`:"RetroAchievements has no set for this game (or its name didn't match one).";
+const achPts=p=>p&&p.unit==="G"?`${p.pointsEarned} / ${p.points} G`:p&&p.unit==="trophy"?p.grades:`${p.pointsEarned} / ${p.points} points`;
 async function raInit(){
-  try{const e=await api.raEnabled();RA.on=!!(e&&e.enabled);RA.systems=e&&e.systems||[]}catch{RA.on=false}
+  try{const e=await api.raEnabled();RA.on=!!(e&&e.enabled);RA.systems=e&&e.systems||[];RA.x360=!!(e&&e.x360);RA.ps3=!!(e&&e.ps3)}catch{RA.on=false}
   const pts=$("raPts");if(!RA.on){pts.hidden=true;return}
   try{RA.profile=await api.raProfile();if(RA.profile){pts.innerHTML="";if(RA.profile.pic){const im=new Image();im.src=RA.profile.pic;im.alt="";pts.append(im)}const b=document.createElement("b");b.textContent=RA.profile.points.toLocaleString()+" pts";pts.append(b,document.createTextNode(" · "+RA.profile.user));pts.hidden=false}}catch{}
   raShelfLoad();
 }
-function raHas(s){return RA.on&&s&&RA.systems.includes(s.id)}
+function raHas(s){return !!s&&((RA.on&&RA.systems.includes(s.id))||achLocal(s))}
 async function raShelfLoad(){
   const busy=raShelfLoad.busy||(raShelfLoad.busy=new Set()),s=cur();if(!raHas(s)||RA.shelf[s.id]||busy.has(s.id))return; // busy: the quick menu, a shelf switch and refresh() can all ask at once; one request is enough
   busy.add(s.id);try{RA.shelf[s.id]=await api.raShelf(s.id,s.games.filter(g=>g.kind==="rom").map(g=>g.title))||{};if(cur()===s)updateInfo()}catch(e){console.warn("RA shelf",e)}finally{busy.delete(s.id)}
@@ -2144,20 +2385,20 @@ async function raShelfLoad(){
 function raFor(g){const s=shelfFor(g);if(!raHas(s)||!g||g.kind!=="rom")return null;const m=RA.shelf[s.id];return m?m[g.title]||null:null}
 // The row is there for every game on a shelf RetroAchievements covers: loading, the error (with Try again), no set, or progress
 function raRow(state,title,sub,btn){const box=$("dAch");box.hidden=false;box.dataset.state=state;$("dAchTitle").textContent=title;$("dAchSub").textContent=sub;
-  const b=$("dAchBtn");b.hidden=!btn;if(btn)b.textContent=btn;if(state!=="ok"){$("dRing").style.setProperty("--p",0);$("dRingTxt").textContent=state==="load"?"…":state==="err"?"!":"–"}if(mode==="details")renderHints()}
+  const b=$("dAchBtn");b.hidden=!btn;if(btn)b.textContent=btn;if(state!=="ok"){$("dRing").style.setProperty("--p",0);$("dRingTxt").textContent=state==="load"?"…":state==="err"?"!":"–"}if(mode==="details"){renderHints();if(DV2)dvAchPaint(curGame())}}
 async function raDetails(g,force){
   const box=$("dAch");box.hidden=true;const s=shelfFor(g);if(!raHas(s)||!g||g.kind!=="rom")return;
   const key=s.id+"|"+g.title;let p=force?undefined:RA.game.get(key);
-  if(p===undefined){raRow("load","Achievements","Loading from RetroAchievements…");
-    try{p=await api.raProgress(s.id,g.title,!!force);RA.game.set(key,p||false)}catch(e){console.warn("RA",e);if(curGame()===g)raRow("err","Achievements didn't load",e&&e.message||"RetroAchievements didn't answer.","Try again");return}}
+  if(p===undefined){raRow("load","Achievements",`Loading from ${achSrc(s)}…`);
+    try{p=await api.raProgress(s.id,g.title,!!force,g.titleId,g.file);RA.game.set(key,p||false)}catch(e){console.warn("RA",e);if(curGame()===g)raRow("err","Achievements didn't load",e&&e.message||`${achSrc(s)} didn't answer.`,"Try again");return}}
   if(curGame()!==g)return;
-  if(!p){raRow("none","Achievements","RetroAchievements has no set for this game (or its name didn't match one).");return}
+  if(!p){raRow("none",s.id==="ps3"?"Trophies":"Achievements",achNone(s));return}
   box.dataset.state="ok";$("dAchBtn").hidden=false;$("dAchBtn").textContent="See all";
   const pct=p.total?Math.round(100*p.earned/p.total):0;
   $("dRing").style.setProperty("--p",pct);$("dRingTxt").textContent=pct+"%";
-  $("dAchTitle").textContent=p.mastered==="mastered"?"Mastered":p.mastered==="completed"?"Completed":"Achievements";
-  $("dAchSub").textContent=`${p.earned} of ${p.total} unlocked · ${p.pointsEarned} / ${p.points} points`;
-  box.hidden=false;if(mode==="details")renderHints();
+  $("dAchTitle").textContent=p.mastered==="mastered"?"Mastered":p.mastered==="platinum"?"Platinum":p.mastered==="completed"?"Completed":p.unit==="trophy"?"Trophies":"Achievements";
+  $("dAchSub").textContent=`${p.earned} of ${p.total} unlocked · ${achPts(p)}`;
+  box.hidden=false;if(mode==="details"){renderHints();if(DV2)dvAchPaint(g)}
 }
 // what the row's button / Y does in each state: retry after an error, the full list once it's in; nothing while it loads
 // or when there's no set (Y used to start a second download then, or fetch the "no set" answer again)
@@ -2168,10 +2409,11 @@ const ACH_TABS=[["all","All"],["got","Unlocked"],["locked","Locked"]];
 /* (beta.12) the list is a wall of badges with a card beside it for the one you're on (full title and description, points,
    rarity, when it was unlocked, story / missable). Each badge's rim says how rare it is (the share of players who have it) */
 const ACH_SORTS=[["order","Order"],["rarity","Rarity"],["points","Points"]];
-const achTier=r=>r==null?null:r<3?["ultra","Ultra rare"]:r<10?["rare","Rare"]:r<40?["uncommon","Uncommon"]:["common","Common"];
-const achType=t=>{t=String(t||"").toLowerCase();return t==="progression"?["story","Story"]:t==="win_condition"?["win","Beats the game"]:t==="missable"?["miss","Missable"]:null};
-function achDate(s){if(!s)return "";const d=new Date(String(s).replace(" ","T"));return isNaN(d)?String(s).slice(0,10):d.toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})}
-function achSorted(list){const L=list.slice();if(ach.sort==="rarity")L.sort((a,b)=>(a.rarity??101)-(b.rarity??101));else if(ach.sort==="points")L.sort((a,b)=>b.points-a.points);return L}
+/* (beta.14) tiers, types, dates, sorting and the wall's sections live in achgroup.js, shared with the in-game Home menu */
+const achTier=r=>AchGroup.tier(r);
+const achType=t=>AchGroup.type(t);
+const achDate=s=>AchGroup.date(s);
+const achSorted=list=>AchGroup.sorted(list,ach.sort);
 function achSortStep(){const i=ACH_SORTS.findIndex(s=>s[0]===ach.sort);ach.sort=ACH_SORTS[(i+1)%ACH_SORTS.length][0];const keep=ach.items[ach.sel];achList();
   const j=keep?ach.items.indexOf(keep):-1;ach.sel=j<0?0:j;achSelect();achHints();play_("tick")} /* (the one you were on stays selected, wherever it moved to) */
 /* the card: what the badge wall can't say */
@@ -2185,14 +2427,14 @@ function achCard(){const c=$("achCard"),a=ach.items[ach.sel];if(!c)return;if(!a)
   const tg=c.querySelector(".ach-tags");tg.innerHTML="";if(type){const s=document.createElement("span");s.className="ach-tag "+type[0];s.textContent=type[1];tg.append(s)}}
 async function openAchievements(){
   const g=curGame(),s=shelfFor(g);if(!raHas(s)||!g||g.kind!=="rom"||ach.open||ach.busy)return;
-  let p=RA.game.get(s.id+"|"+g.title);if(p===undefined){toast("Loading achievements…");ach.busy=true;try{p=await api.raProgress(s.id,g.title,true);RA.game.set(s.id+"|"+g.title,p||false)}catch(e){toast(e&&e.message||"RetroAchievements didn't answer");if(mode==="details"&&curGame()===g)raRow("err","Achievements didn't load",e&&e.message||"RetroAchievements didn't answer.","Try again");return}finally{ach.busy=false}
+  let p=RA.game.get(s.id+"|"+g.title);if(p===undefined){toast("Loading achievements…");ach.busy=true;try{p=await api.raProgress(s.id,g.title,true,g.titleId,g.file);RA.game.set(s.id+"|"+g.title,p||false)}catch(e){toast(e&&e.message||`${achSrc(s)} didn't answer`);if(mode==="details"&&curGame()===g)raRow("err","Achievements didn't load",e&&e.message||`${achSrc(s)} didn't answer.`,"Try again");return}finally{ach.busy=false}
     if(mode==="details"&&curGame()===g)raDetails(g)} // the Details row catches up with what just came in
-  if(!p){toast(`RetroAchievements has no set for ${g.title} yet`);return}
+  if(!p){toast(s.id==="x360"||s.id==="ps3"?`${achSrc(s)} has nothing for ${g.title} yet`:`RetroAchievements has no set for ${g.title} yet`);return}
   if(curGame()!==g||(mode!=="browse"&&mode!=="details")||qm.open||sysBusy())return;
   ach.open=true;pvHold();ach.p=p;ach.all=p.achievements;ach.filter="all";
   const ic=$("achIcon");if(p.icon){ic.src=p.icon;ic.hidden=false}else ic.hidden=true;
   $("achTitle").textContent=p.title;$("achBar").style.width=(p.total?100*p.earned/p.total:0)+"%";
-  $("achSub").textContent=`${p.earned} of ${p.total} unlocked · ${p.total-p.earned} still locked · ${p.pointsEarned} / ${p.points} points${p.mastered?" · "+p.mastered:""}`;
+  $("achSub").textContent=`${p.earned} of ${p.total} unlocked · ${p.total-p.earned} still locked · ${achPts(p)}${p.mastered?" · "+p.mastered:""}`;
   achList(true);
   const el=$("achv");el.classList.add("on");el.setAttribute("aria-hidden","false");mode="achv";achHints();sfx.flip();achSelect();
 }
@@ -2203,17 +2445,12 @@ function achHints(){const pad=showPad(),h=$("achHints");h.innerHTML="";
 // the list for the chosen tab; opening lands on the first locked one (the next to go for)
 /* (beta.12) the badge's own picture: a locked one is dimmed here (RetroAchievements' "_lock" copy is already grey, and
    dimming that again made it muddy) */
-const achImg=a=>String(a.badge||"").replace(/_lock(\.png)$/i,"$1");
+/* (beta.14) an achievement with no picture of its own (Xenia doesn't keep them): a drawn trophy, gold once unlocked */
+const ACH_TROPHY=on=>AchGroup.TROPHY(on);
+const achImg=a=>AchGroup.img(a);
 /* the wall in sections: All has a trophy shelf of what you've unlocked (newest first) over the rest; Order splits the rest
-   into Story, Missable and everything else, Rarity into its tiers */
-function achSections(list){const f=ach.filter,S=[];
-  if(f==="all"){S.push({key:"shelf",label:"Your trophies",shelf:true,items:list.filter(a=>a.earned).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))});list=list.filter(a=>!a.earned)}
-  const L=achSorted(list),kind=a=>{const t=achType(a.type);return t?t[0]:""},rest=f==="all"?"Still to unlock":f==="got"?"Unlocked":"Locked";
-  if(ach.sort==="rarity")[["ultra","Ultra rare"],["rare","Rare"],["uncommon","Uncommon"],["common","Common"],["none","No rarity yet"]].forEach(([k,l])=>{const it=L.filter(a=>(achTier(a.rarity)||["none"])[0]===k);if(it.length)S.push({key:k,label:l,items:it})});
-  else if(ach.sort==="order"){const st=L.filter(a=>kind(a)==="story"||kind(a)==="win"),mi=L.filter(a=>kind(a)==="miss"),ot=L.filter(a=>!st.includes(a)&&!mi.includes(a));
-    if(st.length)S.push({key:"story",label:"Story",items:st});if(mi.length)S.push({key:"miss",label:"Missable",items:mi});if(ot.length)S.push({key:"rest",label:st.length||mi.length?"Everything else":rest,items:ot})}
-  else if(L.length)S.push({key:"rest",label:rest,items:L});
-  return S}
+   into Story, Missable and everything else, Rarity into its tiers (achgroup.js, shared with the Home menu) */
+const achSections=list=>AchGroup.sections(list,ach.filter,ach.sort);
 function achTile(a,i){const t=document.createElement("div"),tier=achTier(a.rarity),type=achType(a.type);t.className="ach"+(a.earned?"":" locked")+(type&&type[0]==="miss"?" miss":"");t.dataset.i=i;if(tier)t.dataset.tier=tier[0];
   t.title=a.title;t.setAttribute("role","button");t.setAttribute("aria-label",`${a.title}, ${a.points} points, ${a.earned?"unlocked":"locked"}${tier?", "+tier[1].toLowerCase():""}`);
   const im=new Image();im.src=achImg(a);im.alt="";im.loading="lazy";im.decoding="async";t.append(im);
@@ -2252,6 +2489,7 @@ function showUnlocks(list){
   RA.game.clear();RA.shelf={};raShelfLoad(); // all shelves: the game may not be on cur() (a Surprise pick from another shelf)
 }
 api.onRaUnlocks&&api.onRaUnlocks(showUnlocks);
+api.onLogoInstalled&&api.onLogoInstalled(async r=>{if(!r)return;toast(`New logo for ${r.name} from ${r.file}. Restore previous brings the old one back`);if(czPick&&czPick.id===r.sysId)czPick=null;await reloadThemes()});
 api.onModelInstalled&&api.onModelInstalled(async r=>{toast(`Installed ${r.file} as the ${r.name} console model`);await reloadThemes();if(mode==="browse"&&INSERT_3D)testModel(r.sysId);
   if(musAdd.wait&&musAdd.wait===r.sysId){musAdd.wait="";musAfterModel(r.sysId)}}); // (beta.11) asked for from the museum: back there with Fit on shelf // (Test shows the start-up animation, which is off: the museum shows the model)
 // a note about new manuals waits for the shelf if it arrives during a game or a panel (it used to be dropped)
@@ -2293,10 +2531,11 @@ let custSel=null,czPick=null; // czPick: the open "Find a logo" picker { id, sta
 // the picker, drawn under the Logo row: logo cards side by side (dark backing, as the shelf shows them), clearest wordmarks first,
 // each with its source and licence; a small line under them when ScreenScraper could add more
 const CZ_SRC={commons:"Commons"};
-function czPickHtml(name){const p=czPick,B=(a,l,pr)=>`<button class="chip${pr?" primary":""}" type="button" data-a="${a}">${l}</button>`;
-  if(p.state==="load")return `<div class="cz-pick"><div class="cz-pnote">Looking for ${qsEsc(name)} logos…</div></div>`;
-  if(p.state==="err"||!p.list.length)return `<div class="cz-pick"><div class="cz-pnote">${qsEsc(p.state==="err"?p.msg:p.offline?"Couldn't reach Wikimedia Commons. Check the internet connection and try again.":`No logos found for ${name} right now.`)}</div><div class="cz-btns">${B("findlogo","Try again",1)}${B("closepick","Close")}</div></div>`;
-  return `<div class="cz-pick"><div class="cz-pcards">${p.list.map(c=>`<button class="cz-lcard" type="button" data-a="uselogo" data-k="${qsEsc(c.key)}"${p.busy?" disabled":""}><span class="cz-lim${c.dark?" dark":""}"><img alt="" src="${qsEsc(c.preview)}"></span><span class="cz-lname">${qsEsc(p.busy===c.key?"Saving…":c.label)}</span><span class="cz-lsrc">${qsEsc([CZ_SRC[c.source]||c.source,c.licence,c.by&&c.by!==c.source?"by "+c.by:""].filter(Boolean).join(" · "))}</span></button>`).join("")}</div><div class="cz-pnote">Official logos from Wikimedia Commons, free to use.</div><div class="cz-btns">${B("closepick","Close")}</div></div>`}
+function czPickHtml(name){const p=czPick,B=(a,l,pr)=>`<button class="chip${pr?" primary":""}" type="button" data-a="${a}">${l}</button>`,web=typeof api.findLogoWeb==="function"?B("weblogo","Search the web"):"";
+  if(p.state==="load"||(!p.list.length&&p.more==="load"))return `<div class="cz-pick"><div class="cz-pnote">Looking for ${qsEsc(name)} logos…</div></div>`;
+  if(!p.list.length)return `<div class="cz-pick"><div class="cz-pnote">${qsEsc(p.state==="err"?p.msg:(p.offline||p.moreOffline)?"Couldn't reach Wikimedia Commons. Check the internet connection and try again.":`No free ${name} logos on Wikimedia Commons.${web?" Search the web finds more.":""}`)}</div><div class="cz-btns">${B("findlogo","Try again",!web)}${web?B("weblogo","Search the web",1):""}${B("closepick","Close")}</div></div>`;
+  const note=p.more==="load"?"Searching Wikimedia Commons for more…":p.more==="err"?"Couldn't search Wikimedia Commons for more right now.":`Free logos from Wikimedia Commons, each with its licence.${web?" Not the one? Search the web.":""}`;
+  return `<div class="cz-pick"><div class="cz-pcards">${p.list.map(c=>`<button class="cz-lcard" type="button" data-a="uselogo" data-k="${qsEsc(c.key)}"${p.busy?" disabled":""}><span class="cz-lim${c.dark?" dark":""}"><img alt="" src="${qsEsc(c.preview)}"></span><span class="cz-lname">${qsEsc(p.busy===c.key?"Saving…":c.label)}</span><span class="cz-lsrc">${qsEsc([CZ_SRC[c.source]||c.source,c.licence,c.by&&c.by!==c.source?"by "+c.by:""].filter(Boolean).join(" · "))}</span></button>`).join("")}</div><div class="cz-pnote">${qsEsc(note)}</div><div class="cz-btns">${web}${B("closepick","Close")}</div></div>`}
 // a preview that won't draw: its card goes (error events don't bubble, so this listens on the way down)
 document.addEventListener("error",e=>{const t=e.target;if(t&&t.matches&&t.matches(".cz-lim img")){const c=t.closest(".cz-lcard");if(c)c.hidden=true}},true);
 // a mostly dark logo (black wordmark) gets a light glow on the preview, as it does on the shelf
@@ -2307,7 +2546,17 @@ async function czFindLogo(id,name){if(!api.findLogos)return;const p=czPick={id,s
   let r;try{r=await api.findLogos(id)}catch(e){r={ok:false,error:e.message}}
   if(czPick!==p||mode!=="customize"||custSel!==id)return; /* closed, or another console's tab, while it was looking */
   if(r&&r.ok){let L=r.list||[];await Promise.all(L.map(async c=>{c.dark=await czDark(c.preview)}));L=L.filter(c=>c.dark!==null);if(czPick!==p||mode!=="customize"||custSel!==id)return;p.state="ok";p.list=L;p.offline=!!r.offline}else{p.state="err";p.msg=(r&&r.error)||"Couldn't look for logos"}
-  play_(p.list.length?"open":"error");renderCustomize();czPickFocus()}
+  /* (beta.14) then more from a Commons search, added under the hand-picked ones (focus stays where it was) */
+  if(p.state==="ok")p.more="load";
+  if(p.list.length||p.state!=="ok"){play_(p.list.length?"open":"error");renderCustomize();czPickFocus()}else{renderCustomize();czPickFocus('[data-a="findlogo"]')}
+  if(p.state!=="ok")return;
+  let m;try{m=await api.findLogos(id,true)}catch(e){m={ok:false,error:e.message}}
+  if(czPick!==p||mode!=="customize"||custSel!==id)return;
+  let M=[];if(m&&m.ok){M=m.list||[];await Promise.all(M.map(async c=>{c.dark=await czDark(c.preview)}));M=M.filter(c=>c.dark!==null);if(czPick!==p||mode!=="customize"||custSel!==id)return}
+  const was=$("setRows").querySelector(".cz-pick .pad-focus"),wk=was&&was.dataset.k,wa=was&&was.dataset.a,first=!p.list.length;
+  p.list=p.list.concat(M);p.more=m&&m.ok?"done":"err";p.moreOffline=!!(m&&m.offline);
+  renderCustomize();
+  if(first){play_(p.list.length?"open":"error");czPickFocus()}else czPickFocus(wk?`.cz-lcard[data-k="${CSS.escape(wk)}"]`:wa?`.cz-pick [data-a="${CSS.escape(wa)}"]`:undefined)}
 async function czUseLogo(id,name,key){const p=czPick;if(!p||p.busy||p.id!==id)return;p.busy=key;renderCustomize();czPickFocus(`.cz-lcard[data-k="${CSS.escape(key)}"]`);
   let r;try{r=await api.useLogo(id,key)}catch(e){r={ok:false,error:e.message}}
   if(czPick!==p)return;p.busy=null;
@@ -2315,6 +2564,8 @@ async function czUseLogo(id,name,key){const p=czPick;if(!p||p.busy||p.id!==id)re
   else{play_("error");toast((r&&r.error)||"Couldn't use that logo");renderCustomize();czPickFocus(`.cz-lcard[data-k="${CSS.escape(key)}"]`)}}
 function czClosePick(){if(!czPick)return false;czPick=null;play_("tick",{dir:-1});renderCustomize();czPickFocus('[data-a="findlogo"]');return true}
 function renderCustomize(){
+  /* (beta.14) every console shelf you have gets a Customize tab (logo, Find a logo, 3D model…), not only the first twelve */
+  if(!ANDROID)for(const s of shelves)if(s&&s.kind==="console"&&!THEME_IDS.some(x=>x[0]===s.id))THEME_IDS.splice(THEME_IDS.findIndex(x=>x[0]==="pc"),0,[s.id,s.name,true]);
   const box=$("setRows");box.innerHTML="";
   if(!custSel||!THEME_IDS.some(x=>x[0]===custSel))custSel=(cur()&&THEME_IDS.some(x=>x[0]===cur().id))?cur().id:THEME_IDS[0][0];
   const tabs=document.createElement("div");tabs.className="cz-tabs";
@@ -2331,7 +2582,7 @@ function renderCustomize(){
     const R=(title,state,btns,note)=>!btns?"":`<div class="cz-row"><div class="cz-l"><b>${title}</b><span>${state}</span>${note?`<small>${note}</small>`:""}</div><div class="cz-btns">${btns}</div></div>`;
     const media=mediaWord(id),autoBoot=!sc||sc.bootOnLaunch!==false;
     row.innerHTML=`<div class="set-head"><div class="set-thumb"></div><div class="set-name"></div></div>`+
-      R("Logo",t.logo?"Your image":"Built-in wordmark",B("logo",t.logo?"Replace":"Add image",!t.logo)+(isConsole&&api.findLogos?B("findlogo","Find a logo"):"")+(t.logoPrev?B("restorelogo","Restore previous"):"")+(t.logo?B("rmlogo","Remove"):""),isConsole&&api.findLogos&&!(czPick&&czPick.id===id)?"Find a logo: official logos from Wikimedia Commons, free to use":"")+
+      R("Logo",t.logo?"Your image":"Built-in wordmark",B("logo",t.logo?"Replace":"Add image",!t.logo)+(isConsole&&api.findLogos?B("findlogo","Find a logo"):"")+(t.logoPrev?B("restorelogo","Restore previous"):"")+(t.logo?B("rmlogo","Remove"):""),isConsole&&api.findLogos&&!(czPick&&czPick.id===id)?(api.findLogoWeb?"Find a logo: free logos from Wikimedia Commons, or search the web":"Find a logo: free logos from Wikimedia Commons"):"")+
       (czPick&&czPick.id===id?czPickHtml(name):"")+
       (isConsole?R("3D console",t.model?"Your 3D model":"Built-in",B("model",t.model?"Replace":"Add model",!t.model)+B("findmodel","Find a model")+(t.model?B("fit","Fit on shelf")+(INSERT_3D?B("testmodel","Test"):"")+B("rmmodel","Remove"):""),INSERT_3D?"Shown in the start-up animation and on its museum shelf":"Stands on its museum shelf (Fit on shelf takes you there)")+
         // console.png only fed the 3D start-up animation (switched off): the row stays only to remove one you added
@@ -2352,6 +2603,7 @@ function renderCustomize(){
         else if(act==="findlogo"){czFindLogo(id,name)}
         else if(act==="uselogo"){czUseLogo(id,name,a.dataset.k)}
         else if(act==="closepick"){czClosePick()}
+        else if(act==="weblogo"){const r=await api.findLogoWeb(id);toast(r&&r.ok?`Save a ${name} logo to Downloads (a PNG with a see-through background looks best). Boxshelf uses the first picture that lands there in the next 15 minutes.`:(r&&r.error)||"Couldn't start")}
         else if(act==="restorelogo"){await api.restoreLogo(id);play_("open");toast(`Earlier logo back for ${name}`);await reloadThemes();czPickFocus('[data-a="restorelogo"],[data-a="logo"]')}
         else if(act==="ctl"){const f=await api.pick({kind:"file",title:`Choose a ${name} controller model (.glb)`,filters:[{name:"3D models",extensions:["glb","gltf"]}]});if(f){await api.setTheme(id,"controller",f);await api.saveConsoleFit(id,{controller:"file"}).catch(()=>{});toast(`Controller set for ${name}. It lies on the museum shelf in front of the name plate`);reloadThemes()}}
         else if(act==="testmodel"){testModel(id)}
@@ -2377,7 +2629,10 @@ const qm={open:false,r:1,sub:null,sr:0,sc:0,ac:0,rows:[],pv:null,outs:null};
 const ARTC={el:null,on:false,paused:false,stopping:false,done:0,total:0,t:0}; // (beta.10) the background box art run (artCardOn, under misc)
 const QM_THEMES=[["spectrum","Spectrum"],["classic","Classic"],["keys","Keys"],["arcade","Arcade"],["aurora","Aurora"],["midnight","Midnight"],["artwork","Artwork"],["blur","Blur"]];
 QM_THEMES.push(...XTHEMES.map(t=>[t.id,t.name])); // (the extra themes, after the original six)
-const QM_SOUNDS=[["aero","Aero"],["melody","Melody"],["musicbox","Music box"],["off","Off"]]; // (beta.11) Off: people didn't find the switch in Settings
+const QM_SOUNDS=[["aero","Aero"],["melody","Melody"],["musicbox","Music box"],["disc","Disc-era"],["handheld","Handheld"],["living","Living room"],["off","Off"]]; // (beta.11) Off: people didn't find the switch in Settings
+// (beta.14) your custom sounds (Settings → Sound → Custom sounds) join the list, before Off
+function qsSoundsSync(packs){for(let i=QM_SOUNDS.length-1;i>=0;i--)if(/^(pack:|kenney-)/.test(QM_SOUNDS[i][0]))QM_SOUNDS.splice(i,1);
+  const add=(packs||[]).filter(p=>p&&p.id).map(p=>[p.kenney?p.id:"pack:"+p.id,String(p.name||p.id)]);QM_SOUNDS.splice(QM_SOUNDS.length-1,0,...add)}
 const qsSndNow=ui=>ui.sound===false?"off":ui.soundTheme||"aero";
 const QM_MUSIC=[["drift","Drift"],["night","Night"],["glow","Glow"],["off","Off"]];
 const QM_MVOL=[["0.2","Quiet"],["0.4","Soft"],["0.7","Full"]];
@@ -2420,22 +2675,49 @@ function qsAchNone(g){let s=null;try{s=shelfFor(g)}catch{}if(!s||g.kind!=="rom"|
   return RA.game.get(s.id+"|"+g.title)===false?`RetroAchievements has no set for ${g.title} yet`:"None unlocked yet · A opens the set"}
 /* (beta.11) this game's set fetched the moment the quick menu opens, so Trophies opens at once (main keeps it 10 minutes;
    a second ask while it's on its way shares the same request) */
-function raPrefetch(g){if(!RA.on||!g||g.kind!=="rom")return;let s=null;try{s=shelfFor(g)}catch{}if(!raHas(s))return;const k=s.id+"|"+g.title;if(RA.game.has(k))return;
-  Promise.resolve(api.raProgress(s.id,g.title,false)).then(p=>{if(!RA.game.has(k))RA.game.set(k,p||false)}).catch(()=>{})}
+function raPrefetch(g){if(!g||g.kind!=="rom")return;let s=null;try{s=shelfFor(g)}catch{}if(!raHas(s))return;const k=s.id+"|"+g.title;if(RA.game.has(k))return;
+  Promise.resolve(api.raProgress(s.id,g.title,false,g.titleId,g.file)).then(p=>{if(!RA.game.has(k))RA.game.set(k,p||false)}).catch(()=>{})}
 function qsThemeNow(){const t=qsUi().theme;return THEMES[t]?t:themeId()}
-function qsSwatch(id){try{const g=curGame()||{hue:220};return THEMES[id].tint(shelfHue(g),g,shelfPos())}catch{return "linear-gradient(135deg,#222,#555)"}}
+/* (beta.14) the screen mode (Seamless play, Windows only): never chosen yet, what "Start in fullscreen" said (as seamless.js) */
+function qsScrOn(){return !ANDROID&&!!(window.bsPlatform&&bsPlatform.has&&bsPlatform.has("winMode"))&&qsUi().seamless!==false&&!!api.setScreenMode}
+function qsScr(){const u=qsUi(),m=u.screenMode;return m==="window"||m==="full"?m:u.startFullscreen===false?"window":"full"}
+// F11: the window switches in main.js, which keeps the mode; this copy follows so the quick menu and Settings show it
+function bsF11(){Promise.resolve(api.toggleFullscreen()).then(f=>{if(qsScrOn()&&typeof f==="boolean")qsUi().screenMode=f?"full":"window";if(qm.open)qsSoft()}).catch(()=>{})}
+/* (beta.14) the quick menu's twelve: the featured and new themes, two of your own (else Artwork and Blur), and the one in
+   use if it isn't among them */
+/* (beta.14: every theme in the quick menu too) all of them, in Settings' order: the originals, the extra ones, your own */
+function qsThemeTiles(){return QM_THEMES.filter(t=>THEMES[t[0]]).map(t=>[t[0],THEMES[t[0]].name])}
+// keeping a theme from the quick menu: an evenings-only one remembers the theme it replaces for the day; a theme pack's
+// own sounds and music come with it
+function qsThemeKeep(v){const ui=qsUi(),prev=qsThemeNow(),c=THEMES[v]&&THEMES[v].custom,pc=THEMES[prev]&&THEMES[prev].custom;
+  if(c&&c.when==="evening"&&prev!==v&&!(pc&&pc.when==="evening"))ui.themeDay=prev;ui.theme=v;if(c&&(c.sound||c.music))window.Shelf._themes.pack({sound:c.sound,music:c.music})}
+// LB / RB (PgUp / PgDn) with the quick menu open: the next theme of the twelve, kept at once (the backdrop's colour now,
+// the whole theme once you stop for 150 ms, as the tiles do)
+function qsThemeStep(d){if(!qm.open||kidOn())return;const L=qsThemeTiles();if(!L.length)return;let i=L.findIndex(x=>x[0]===qsThemeNow());i=((i<0?0:i+d)%L.length+L.length)%L.length;const v=L[i][0];
+  clearTimeout(qsThemeT);qsThemeKeep(v);themeOverride=null;qm.pv=null;qsTintNow(v);qsThemeT=setTimeout(()=>{qsThemeT=0;applyTheme();updateBg()},150);qmSave();play_("tick",{dir:d});toast(`Theme: ${THEMES[v].name}`);qsSoft();
+  const x=qm.sub!=null&&qm.rows[qm.sub];if(x&&x.r.id==="cust"&&qm.sr===0&&x.lines&&x.lines[0]){const c=x.lines[0].findIndex(b=>b.dataset.v===v);if(c>=0){qm.sc=c;qsPaint()}}}
+/* (beta.14) a tile wears its theme's small hand-made swatch (as in Settings), not the whole backdrop: with every theme in the
+   menu that was 60 KB of gradients and pictures painted at once as Look & sound opened (frames of 50-80 ms) */
+const QS_SW=new Map(XTHEMES.filter(t=>typeof t.swatch==="string"&&t.swatch).map(t=>[t.id,t.swatch]));
+function qsSwatch(id){if(QS_SW.has(id))return QS_SW.get(id);try{const g=curGame()||{hue:220};return THEMES[id].tint(shelfHue(g),g,shelfPos())}catch{return "linear-gradient(135deg,#222,#555)"}}
 // the rows; `lines` opens in place into lines of chips
 function qsRows(){const ui=qsUi(),r=qsAch(),g=qsGame(),out=[];
-  if(g)out.push({id:"acts"});
+  /* (beta.14, Windows / Linux) the game's buttons: + Add to… (in place of ♡) opens in place under them: Favourites, My shelves
+     and the console shelves (see addLines). It replaced the custom games' Move to shelf… row */
+  if(g)out.push(addCan(g)?{id:"acts",lines:()=>{const x=qsGame();return x?addLines(x):[]}}:{id:"acts"});
   /* (beta.12) Find a game (find.js): search every shelf by title; the first row on every platform */
   if(window.BS_FIND)out.push({id:"find",icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',lbl:"Find a game",val:()=>"Search every shelf",go:1});
   // Android: the Art Studio one press away (the quick menu needs a shortcut); Windows keeps its Box art button only
   if(ANDROID&&g&&g.kind==="rom"&&g.file&&api.artStudio)out.push({id:"studio",icon:QS_I.image,lbl:"Art Studio",val:()=>(shelfFor(g).name||"This console")+" · every game",go:1});
   out.push({id:"vol",icon:QS_I.vol,lbl:"Volume"});
-  out.push({id:"cust",icon:QS_I.brush,lbl:"Customize",val:()=>`${qsName(QM_THEMES,qsThemeNow())} · ${qsSndNow(ui)==="off"?"Sounds off":qsName(QM_SOUNDS,qsSndNow(ui))}`,lines:()=>[
-    {k:"theme",l:"Theme",sw:1,opts:QM_THEMES,cur:qsThemeNow()},{k:"snd",l:"Sounds",opts:QM_SOUNDS,cur:qsSndNow(ui)},
+  /* (beta.14) Look & sound: every theme four to a row (Windows: whether they keep moving while you scroll), then every
+     sound and the music; LB / RB step the theme from anywhere in the menu */
+  out.push({id:"cust",icon:QS_I.brush,lbl:"Look & sound",val:()=>`${qsName(QM_THEMES,qsThemeNow())} · ${qsSndNow(ui)==="off"?"Sounds off":qsName(QM_SOUNDS,qsSndNow(ui))}`,lines:()=>[
+    {k:"theme",l:"Theme · "+(showPad()?`${padWord("L1")} / ${padWord("R1")}`:"PgUp / PgDn")+" to change",sw:1,cls:"g4",opts:qsThemeTiles(),cur:qsThemeNow()},
+    {k:"fxkeep",l:"Moving themes while you scroll",opts:[["on","Keep moving"],["off","Pause"]],cur:fxKeepOn()?"on":"off"},
+    {k:"snd",l:"Sound",opts:QM_SOUNDS,cur:qsSndNow(ui)},
     ...(qsSndNow(ui)==="melody"&&window.Sound&&Sound.song?[{k:"song",l:"Song",opts:[["next",`${(Sound.song()||{}).name||"This song"} · Next ›`]]}]:[]),
-    {k:"music",l:"Menu music",opts:QM_MUSIC,cur:mmPick()},...(mmPick()!=="off"?[{k:"mvol",l:"Music volume",opts:QM_MVOL,cur:qsMvolNow()}]:[]),
+    {k:"music",l:"Music",opts:QM_MUSIC,cur:mmPick()},...(mmPick()!=="off"?[{k:"mvol",l:"Music volume",opts:QM_MVOL,cur:qsMvolNow()}]:[]),
     {k:"boot",l:"Boot sound",opts:QM_BOOTS,cur:ui.bootSound||"chime"},{k:"intro",l:"Startup",opts:QM_INTROS,cur:introStyle()}]});
   // the shelf's own look (its logo, 3D console, boot video): straight into Customize on this shelf (it replaced the link that sat at the foot of Customize's chips)
   out.push({id:"cz3d",icon:QS_I.cube,lbl:"3D & logos",val:qsCzVal,go:1});
@@ -2449,8 +2731,13 @@ function qsRows(){const ui=qsUi(),r=qsAch(),g=qsGame(),out=[];
   if(ARTC.on&&!ARTC.stopping)out.push({id:"artrun",icon:QS_I.image,lbl:"Box art download",val:artCardText,lines:()=>[{k:"artrun",opts:[...(api.pauseCovers?[ARTC.paused?["resume","Resume"]:["pause","Pause"]]:[]),...(api.cancelCovers?[["cancel","Cancel"]]:[])],big:1}]});
   out.push({sep:1});
   if(api.updateCheck&&!ANDROID)out.push({id:"upd",icon:QS_I.info,lbl:"Updates",val:qsUpdVal}); // (beta.4) check for a newer beta from here
+  /* (beta.14) Windows with Seamless play: Full screen or Window, as Settings → Screen & TV and F11 */
+  if(qsScrOn())out.push({id:"scr",icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12" rx="1.8"/><path d="M9 20h6M12 16.5V20"/></svg>',lbl:"Screen",val:()=>qsScr()==="window"?"Window":"Full screen",
+    lines:()=>[{k:"scr",l:"Screen mode · F11 switches too",opts:[["full","Full screen"],["window","Window"]],cur:qsScr()}]});
   out.push({id:"set",icon:QS_I.gear,lbl:"Settings",val:()=>"",go:1});
   out.push({id:"pow",icon:QS_I.power,lbl:"Power",val:()=>"",lines:()=>[{k:"pow",opts:(api.powerOptions&&api.powerOptions())||[["quit","Exit Boxshelf"],["sleep","Sleep"],["restart","Restart PC",1],["shutdown","Shut down",1]],big:1}]});
+  /* (beta.14) Kid mode: no Art Studio, looks, 3D & logos or updates, and Power only sleeps (Settings stays: it asks for the PIN) */
+  if(kidOn())return out.filter(x=>!x.id||!/^(studio|cust|cz3d|upd|scr)$/.test(x.id)).map(x=>x.id==="pow"?{...x,lines:()=>[{k:"pow",opts:[["sleep","Sleep"]],big:1}]}:x);
   return out}
 // Android (0.3.2): Museum, Art Studio and Trophies as the top three, a divider, then Customize (theme, background,
 // startup), Assets (the shelf's logo, 3D console, boot video), Sounds (with the volume) and Sort & filter. Same rows and
@@ -2458,7 +2745,7 @@ function qsRows(){const ui=qsUi(),r=qsAch(),g=qsGame(),out=[];
 function qsAndroidOrder(out,ui){const by=id=>out.find(x=>x.id===id),cust=by("cust"),cz=by("cz3d"),acts=out.filter(x=>x.id==="acts");
   if(cust){const all=cust.lines;cust.lines=()=>all().filter(l=>!/^(snd|song|music|mvol|boot)$/.test(l.k));cust.val=()=>qsName(QM_THEMES,qsThemeNow());
     out.push({id:"snds",icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/></svg>',lbl:"Sounds",val:()=>qsName(QM_SOUNDS,ui.soundTheme||"aero")+" · Music: "+qsName(QM_MUSIC,mmPick()),lines:()=>all().filter(l=>/^(snd|song|music|mvol|boot)$/.test(l.k))})}
-  if(cz)cz.lbl="Assets";
+  if(cz)cz.lbl="Assets";if(cust)cust.lbl="Customize"; /* (beta.14: the sounds live in their own row here, so this one keeps its name) */
   const order=["find","mus","studio","ach",null,"cust","cz3d","snds","vol","sort"],rows=[...acts];
   for(const id of order){if(id===null){rows.push({sep:1});continue}const x=by(id);if(x)rows.push(x)}
   out.length=0;out.push(...rows)}
@@ -2470,10 +2757,11 @@ function qsRender(){const L=qsEl.querySelector(".qm-list");[...L.children].forEa
   qsRows().forEach(r=>{
     if(r.sep){L.appendChild(Object.assign(document.createElement("div"),{className:"qm-sep"}));return}
     if(r.id==="acts"){const a=document.createElement("div");a.className="qm-acts";const fav=isFav(g),canArt=(g.kind==="rom"&&!!(api.artStudio||api.chooseArt))||(g.kind==="steam"&&!!api.pcCoverOptions); /* (beta.10) Steam and custom games too: their cover picker */
-      [["fav",fav?"Favorited":"Favorite",QS_I.heart],["det","Details",QS_I.info],...(canArt?[["art","Box art",QS_I.image]]:[]),["hide","Hide",QS_I.hide]].forEach(([k,l,ic],i)=>{
+      [r.lines?["add","Add to…",QS_PLUS]:["fav",fav?"Favorited":"Favorite",QS_I.heart],["det","Details",QS_I.info],...(canArt&&!kidOn()?[["art","Box art",QS_I.image]]:[]),...(kidOn()?[]:[["hide","Hide",QS_I.hide]])].forEach( /* (beta.14: not in Kid mode) */([k,l,ic],i)=>{
         const b=document.createElement("button");b.type="button";b.className="qm-act"+(k==="fav"&&fav?" faved":"");b.dataset.k=k;b.innerHTML=ic+`<span>${qsEsc(l)}</span>`;
-        b.addEventListener("pointerenter",()=>{if(qm.sub!=null)return;qm.r=0;qm.ac=i;qsPaint()});b.addEventListener("click",()=>{setInput("pointer");if(qm.sub!=null)qsCollapse(true);qm.r=0;qm.ac=i;qsPaint();qsAct(k)});a.appendChild(b)});
-      L.appendChild(a);qm.rows.push({r,el:a});return}
+        b.addEventListener("pointerenter",()=>{if(qm.sub!=null)return;qm.r=0;qm.ac=i;qsPaint()});b.addEventListener("click",()=>{setInput("pointer");const was=qm.sub;if(qm.sub!=null)qsCollapse(true);qm.r=0;qm.ac=i;qsPaint();if(k==="add"&&was===0)return; /* (a second click on Add to… closes it) */qsAct(k)});a.appendChild(b)});
+      L.appendChild(a);let sub=null;if(r.lines){sub=document.createElement("div");sub.className="qm-sub";L.appendChild(sub)} /* (beta.14) Add to… opens here, under the buttons */
+      qm.rows.push({r,el:a,sub});return}
     const e=document.createElement("div");e.className="qm-row";e.setAttribute("role","menuitem");
     if(r.id==="vol"){const v=Math.round(curVol()*100);e.innerHTML=`${v?QS_I.vol:QS_I.mute}<span class="qm-lbl">${r.lbl}</span><span class="qm-vbar"><i style="width:${v}%"></i><b style="left:${v}%"></b></span><span class="qm-num">${v?v+"%":"Muted"}</span>`;
       e.querySelector(".qm-vbar").addEventListener("pointerdown",ev=>{const rc=ev.currentTarget.getBoundingClientRect();setVol((ev.clientX-rc.left)/rc.width);qsSoft()})}
@@ -2495,8 +2783,8 @@ function qsFill(x,instant){const inn=document.createElement("div");inn.className
     if(ln.note){d.innerHTML=`<div class="qm-note">${qsEsc(ln.note)}</div>`;inn.appendChild(d);return}
     if(ln.info){const r=qsAch(),g=qsGame(),p=r&&r.total?Math.round(r.earned/r.total*100):0,pr=RA.profile;
       d.innerHTML=`<div class="qm-trow"><div class="qm-ring" style="--p:${p}"><b>${pr&&pr.pic?`<img alt="" src="${qsEsc(pr.pic)}">`:"🏆"}</b></div><div style="min-width:0"><div class="qm-tt">${r&&r.total?(r.mastered==="mastered"?"★ Mastered · ":"")+`${r.earned} of ${r.total} unlocked`:g?qsAchNone(g):"Your trophies"}</div><div class="qm-ts">${qsEsc(pr?`${pr.user} · ${pr.points.toLocaleString()} points`:"Signed in")}</div></div></div>`;inn.appendChild(d);return}
-    if(ln.l)d.innerHTML=`<div class="qm-ll">${qsEsc(ln.l)}</div>`;const o=document.createElement("div");o.className="qm-opts";const arr=[];
-    ln.opts.forEach(([v,l,hold])=>{const b=document.createElement("button");b.type="button";b.className="qm-opt"+(ln.sw?" sw":"")+(ln.big?" big":"")+(hold?" danger":"")+(ln.cur===v?" cur":"");b.dataset.k=ln.k;b.dataset.v=v;b.title=l;if(hold)b.dataset.hold="1";
+    if(ln.l)d.innerHTML=`<div class="qm-ll">${qsEsc(ln.l)}</div>`;const o=document.createElement("div");o.className="qm-opts"+(ln.cls?" "+ln.cls:"");const arr=[];
+    ln.opts.forEach(([v,l,hold])=>{const b=document.createElement("button");b.type="button";b.className="qm-opt"+(ln.sw?" sw":"")+(ln.big?" big":"")+(hold?" danger":"")+((Array.isArray(ln.cur)?ln.cur.includes(v):ln.cur===v)?" cur":""); /* (beta.14: a line of toggles, Add to…, has several on) */b.dataset.k=ln.k;b.dataset.v=v;b.title=l;if(hold)b.dataset.hold="1";
       b.innerHTML=ln.sw?`<i style="background:${qsEsc(qsSwatch(v))}"></i><span class="qm-swl">${qsEsc(l)}</span>`:(hold?'<i class="qm-hb"></i>':"")+`<span>${qsEsc(l)}</span>`; // (1.81: theme tiles carry their names, as in Settings)
       b.addEventListener("pointerenter",()=>{const p=qsPos(b);if(p){qm.sr=p[0];qm.sc=p[1];qsPaint();qsPreview()}});
       b.addEventListener("click",()=>{setInput("pointer");const p=qsPos(b);if(p&&!b.dataset.hold){qm.sr=p[0];qm.sc=p[1];qsChoose()}});
@@ -2515,7 +2803,7 @@ function qsPaint(){if(!qsEl)return;const hl=qsEl.querySelector(".qm-hl");
   const f=qsFocusEl();
   if(ANDROID&&!qm.open)return; // closing (or built while closed): the highlight is placed when it opens, nothing to measure now
   if(qm.sub!=null){if(f){f.classList.add("on");const sw=f.classList.contains("sw")&&f.closest(".qm-line").querySelector(".qm-swname");if(sw)sw.textContent=f.title+(f.classList.contains("cur")?" · current":"")}
-    hl.classList.add("soft");hl.style.opacity="1";hl.style.transform=`translateY(${qm.rows[qm.sub].el.offsetTop}px)`}
+    hl.classList.add("soft");hl.style.opacity=qm.rows[qm.sub].r.id==="acts"?"0":"1";hl.style.transform=`translateY(${qm.rows[qm.sub].el.offsetTop}px)`} /* (beta.14: Add to…, open under the game's buttons: no row band) */
   else{const x=qm.rows[qm.r];if(x&&x.r.id!=="acts"){hl.classList.remove("soft");hl.style.opacity="1";hl.style.transform=`translateY(${x.el.offsetTop}px)`}else hl.style.opacity="0"}
   if(f)qsKeepInView(f);qsHints()}
 function qsKeepInView(el){const sc=qsEl.querySelector(".qm-scroll");if(!sc.contains(el))return;const r=el.getBoundingClientRect(),b=sc.getBoundingClientRect(),m=36;
@@ -2523,7 +2811,8 @@ function qsKeepInView(el){const sc=qsEl.querySelector(".qm-scroll");if(!sc.conta
 function qsHints(){if(!qsEl)return;const pad=showPad(),G=(p,k)=>pad?glyph(p):`<span class="g">${k}</span>`,out=[];
   if(qm.sub!=null){const f=qsFocusEl(),k=f&&f.dataset.k;out.push([G("x","Enter"),f&&f.dataset.hold?"Hold":k==="theme"||k==="bg"?"Keep":"Select"],[G("o","Esc"),"Back"])}
   else{const x=qm.rows[qm.r],id=x&&x.r.id;out.push([pad?glyph("↕"):`<span class="g">↑↓</span>`,"Move"]);if(id==="vol")out.push([pad?glyph("↔"):`<span class="g">←→</span>`,"Volume"]);
-    out.push([G("x","Enter"),x&&x.r.lines?"Open":"Select"],[G("o","Esc"),"Close"])}
+    out.push([G("x","Enter"),x&&x.r.lines&&x.r.id!=="acts"?"Open":"Select"],[G("o","Esc"),"Close"])}
+  {const cu=qm.sub!=null?qm.rows[qm.sub]:qm.rows[qm.r];if(cu&&cu.r.id==="cust"&&!kidOn())out.splice(out.length-1,0,[pad?glyph("L1")+glyph("R1"):'<span class="g">PgUp</span><span class="g">PgDn</span>',"Theme"])} /* (beta.14) LB / RB step the theme */
   qsEl.querySelector(".qm-hints").innerHTML=out.map(([k,l])=>`<span class="hint">${k}<span>${qsEsc(l)}</span></span>`).join("")}
 // (beta.10) the quick menu drawn once, unseen, while nothing else is going on: its first drawing by the graphics card
 // (the panel is hidden until opened) froze the first open for ~130 ms. Rows built for the game in front, shown at 0.4%
@@ -2573,7 +2862,11 @@ function qsMoveH(d){qsHoldStop();
   const x=qm.rows[qm.r];if(!x)return;
   if(x.r.id==="acts"){const n=x.el.children.length,nc=qm.ac+d;if(nc<0||nc>=n){qsBump(x.el.children[qm.ac]);return}qm.ac=nc;play_("tick",{dir:d});qsPaint();return}
   if(x.r.id==="vol"){setVol(curVol()+d*.05);play_("tick",{dir:d});qsSoft();return}
-  if(d>0)qsPick();else qsBump(x.el)}
+  /* (beta.14) → only opens a section in place (Theme, Sounds…); a row that leaves the menu (Settings, the museum, Find…) or does
+     something (the update check) waits for A, so moving along the menu never drops you into Settings by accident */
+  if(d>0&&x.r.lines&&!qsLeaves(x.r))qsPick();else qsBump(x.el)}
+function qsLeaves(r){if(/^(upd|set|mus|find|studio|cz3d)$/.test(r.id))return true;
+  if(r.id==="ach"&&RA.on){const g=qsGame(),s=g&&shelfFor(g);return !!(g&&g.kind==="rom"&&raHas(s)&&RA.game.get(s.id+"|"+g.title)!==false)}return false}
 // (beta.4) Quick menu → Updates: A checks the beta page now (not the 6-hour copy); once a newer beta is found, A opens its
 // download page in the browser. Windows only (the update check is the Windows build's)
 let qsUpd={state:"",latest:"",cur:"",url:""};
@@ -2607,7 +2900,9 @@ function qsCollapse(quiet){if(qm.sub==null)return;qsHoldStop();qsUnpreview();con
 let qsThemeT=0;
 function qsTintNow(v){const g=curGame(),t=THEMES[v],L=document.querySelector("#bgA.on .tint,#bgB.on .tint");if(!g||!t||!L)return;try{L.style.background=t.tint(shelfHue(g),g,shelfPos())}catch{}}
 function qsPreview(){const f=qm.sub!=null&&qsFocusEl(),k=f&&f.dataset.k;
-  if(k==="theme"){if(qm.pv&&qm.pv.k==="bg"){bgOverride=null}qm.pv={k};const v=f.dataset.v;if(themeOverride!==v){themeOverride=v;qsTintNow(v);clearTimeout(qsThemeT);
+  if(k==="theme"){if(qm.pv&&qm.pv.k==="bg"){bgOverride=null}const v=f.dataset.v;
+    if(themeOverride==null&&v===qsThemeNow()){qm.pv=null;return} /* (beta.14) landing on the theme you have (as Look & sound opens): nothing to preview, so the whole theme isn't applied again */
+    qm.pv={k};if(themeOverride!==v){themeOverride=v;qsTintNow(v);clearTimeout(qsThemeT);
       qsThemeT=setTimeout(()=>{qsThemeT=0;if(qm.pv&&qm.pv.k==="theme"&&themeOverride===v){applyTheme();updateBg()}},150)}}
   else if(k==="bg"){if(qm.pv&&qm.pv.k==="theme"){clearTimeout(qsThemeT);qsThemeT=0;themeOverride=null;applyTheme()}qm.pv={k};if(bgOverride!==f.dataset.v){bgOverride=f.dataset.v;updateBg()}}
   else qsUnpreview()}
@@ -2615,28 +2910,74 @@ function qsUnpreview(){clearTimeout(qsThemeT);qsThemeT=0;if(!qm.pv)return;const 
 function qsChoose(){const f=qsFocusEl();if(!f)return;const k=f.dataset.k,v=f.dataset.v,ui=qsUi();
   if(f.dataset.hold){qsHoldStart(f);return}
   if(k==="artrun"){artCmd(v);return} // (beta.10) the background box art run
+  if(k==="addto"){addPick(qsGame(),v);return} /* (beta.14) + Add to… */
   if(k==="go"){qmClose(true);play_("open");if(v==="achg")openAchievements();else if(v==="rasetup")Setup.open({page:"ra"});return}
   if(k==="pow"){qmClose(true);if(v==="quit")api.quit("quick menu: Power → Exit");else if(api.power)api.power(v);return} // Windows: sleep (restart / shut down are held); Android: its own options
   if(k==="song"){if(window.Sound&&Sound.nextSong){Sound.nextSong("shelf");play_("tick",{dir:1})}qsSoft();return}
-  if(k==="theme"){clearTimeout(qsThemeT);qsThemeT=0;ui.theme=v;themeOverride=null;qm.pv=null;applyTheme();updateBg();play_("open")}
+  if(k==="themes"){qmClose(true);if(window.BS_THEMES)BS_THEMES.open({from:"qm"});return} /* (beta.14) the Themes page */
+  if(k==="scr"){if(v!==qsScr()){ui.screenMode=v;play_("open");Promise.resolve(api.setScreenMode(v)).catch(e=>toast((e&&e.message)||"Couldn't switch the screen mode"))}qsSoft();return} /* (beta.14) main.js keeps it and switches the window */
+  if(k==="theme"){clearTimeout(qsThemeT);qsThemeT=0;qsThemeKeep(v);themeOverride=null;qm.pv=null;applyTheme();updateBg();play_("open")}
   else if(k==="bg"){ui.background=v;bgOverride=null;qm.pv=null;updateBg();play_("open")}
   else if(k==="snd"){if(v==="off"){ui.sound=false;soundOn=false;if(window.Sound)Sound.set({enabled:false})}else{ui.sound=true;soundOn=true;ui.soundTheme=v;if(window.Sound){Sound.set({enabled:true,theme:v});Sound.play("open")}}musTvVol()} /* (beta.11) Off: the interface sounds (Settings → Sound → Interface sounds) */
   else if(k==="music"){ui.music=v;mmTrack=null;ambient(mmWant);play_(v==="off"?"back":"open")}
   else if(k==="mvol"){ui.musicLevel=+v;mmLevel=null;ambient(mmWant);play_("tick",{dir:1})}
   else if(k==="boot"){ui.bootSound=v;if(window.Sound){Sound.set({boot:v});Sound.play("boot")}}
+  else if(k==="fxkeep"){ui.themeKeepMoving=v==="on";play_("tick",{dir:1})} /* (beta.14, Windows) Settings → Look → Keep themes moving while you scroll */
   else if(k==="intro"){ui.bootIntro=v;try{localStorage.setItem("bootIntro",v)}catch{}play_("tick",{dir:1});toast(v==="off"?"Boxshelf will start without the logo":"Shows the next time Boxshelf starts")}
   else if(k==="sort"||k==="filter"){pickSort(k==="sort"?0:1,v);qsSoft();return}
   if(k!=="sort"&&k!=="filter")qmSave();qsSoft()}
 function qsAct(k){const g=qsGame();if(!g)return;
   if(k==="fav"){toggleFav().then(()=>qsSoft());return}
+  if(k==="add"){const x=qm.rows[0];if(!x||x.r.id!=="acts"||!x.sub)return;if(qm.sub===0){qsCollapse();return}if(qm.sub!=null)qsCollapse(true); /* (beta.14) + Add to…: its list opens under the buttons */
+    qm.r=0;qm.sub=0;qm.sr=0;qm.sc=0;qsFill(x,false);play_("tick",{dir:1});qsPaint();return}
   if(k==="det"){qmClose(true);openDetails();return}
   if(k==="hide"){qmClose(true);hideGame(g);return}
   if(k==="art"){qmClose(true);if(g.kind==="steam"&&api.pcCoverOptions)pcCoverOpen(g);else if(api.artStudio&&g.kind==="rom"&&g.file)artStudioFor(g);else qsChooseArt(g)}} /* (beta.10: a PC game: its cover picker, to choose a front) */ /* Box art: straight to this game in the Art Studio picker (My picture… is there for a file of your own) */
 // Box art: pick an image for this game's front cover (the old one is kept in a "replaced" folder beside the art)
 // One game's Art Studio. The Android build brings its own handheld-sized studio (web-extras/android-studio.js: a row per
 // part, big pictures, the bottom screen as a touch companion); everywhere else it's the Settings picker, as before.
-function artStudioFor(g){const sh=shelfFor(g);play_("panel");if(window.BS_STUDIO&&BS_STUDIO.open({systemId:sh.id,file:g.file,title:g.title,id:g.id,game:g}))return;Setup.open({page:"artgame",systemId:sh.id,file:g.file,title:g.title})}
-async function qsChooseArt(g){if(g&&g.kind==="steam"&&api.pcCoverOptions){pcCoverOpen(g);return} /* (beta.5) PC games: the cover picker */if(!api.chooseArt)return;try{const r=await api.chooseArt(g.id);if(r&&r.ok){play_("toast");toast(`New box art for ${g.title}`)}}catch(e){toast(String(e&&e.message||e))}}
+function artStudioFor(g){if(kidBlock())return;const sh=shelfFor(g);play_("panel");if(window.BS_STUDIO&&BS_STUDIO.open({systemId:sh.id,file:g.file,title:g.title,id:g.id,game:g}))return;Setup.open({page:"artgame",systemId:sh.id,file:g.file,title:g.title})}
+/* (beta.14, Windows / Linux, not in Kid mode) + Add to…, for any game (a ROM, a Steam or store game, one added by hand): one
+   list of toggles that opens in place, from the quick menu's game buttons or Details' ··· (addFromDetails).
+   Favourites (the ♡ it replaced); My shelves (cfg.ui.collections, the ones you pick games for) and + New shelf… (Settings'
+   My shelves page for this game, its New shelf row being typed into, so the controller gets the on-screen keyboard); the
+   console shelves you have, then PC and Custom (cfg.ui.shelfAdds, see addsInto: the game shows there and on its own shelf,
+   and still starts as it does on its own). Its own shelf is ticked and stays so. Each choice is saved at once; the shelves
+   are made again from the last scan (no rescan) */
+const QS_PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+function addCan(g){return !ANDROID&&!kidOn()&&!!g&&isGame(g)&&!!cfgInfo&&!!api.saveConfig}
+function addOwn(g){const s=shelfFor(g);return s&&s.kind!=="home"?s:null}
+function addTargets(){const out=[],seen=new Set();for(const s of allShelves){if(!s||s.kind!=="console"||seen.has(s.id))continue;seen.add(s.id);out.push([s.id,String(s.name||s.id)])}
+  return [...out,["pc","PC"],["custom","Custom"]]}
+function addLines(g){const ui=cfgInfo.config.ui,gid=String(g.id),fav=isFav(g),own=addOwn(g),M=addsMap()||{},tk=(on,l)=>(on?"✓ ":"")+l;
+  const cols=(Array.isArray(ui.collections)?ui.collections:[]).filter(c=>c&&c.id&&Array.isArray(c.ids)&&!(c.rule&&c.rule.kind)); /* (a shelf that fills itself isn't picked for) */
+  const colOn=cols.filter(c=>c.ids.map(String).includes(gid)).map(c=>"col:"+c.id),T=addTargets();
+  const shOn=T.filter(([id])=>(own&&own.id===id)||(Array.isArray(M[id])&&M[id].map(String).includes(gid))).map(([id])=>"sh:"+id);
+  return [{k:"addto",l:"Favourites",opts:[["fav",fav?"✓ Favourites":"♡ Favourites"]],cur:fav?["fav"]:[]},
+    {k:"addto",l:"My shelves",opts:[...cols.map(c=>["col:"+c.id,tk(colOn.includes("col:"+c.id),String(c.name||"Shelf"))]),["colnew","+ New shelf…"]],cur:colOn},
+    {k:"addto",l:"Console shelves · it stays on its own too",opts:T.map(([id,n])=>["sh:"+id,tk(shOn.includes("sh:"+id),own&&own.id===id?n+" · its own":n)]),cur:shOn}]}
+let addBusy=false;
+async function addPick(g,v){if(!addCan(g)||addBusy||!v)return;const ui=cfgInfo.config.ui,gid=String(g.id);
+  if(v==="fav"){await toggleFav();qsSoft();return}
+  if(v==="colnew"){if(!window.Setup)return;qmClose(true);play_("panel");Setup.open({page:"collections",id:g.id,title:g.title,newShelf:true});return}
+  if(v.startsWith("col:")){const c=(Array.isArray(ui.collections)?ui.collections:[]).find(x=>x&&"col:"+x.id===v);if(!c||!Array.isArray(c.ids))return;
+    const i=c.ids.map(String).indexOf(gid),on=i<0;if(on)c.ids.push(gid);else c.ids.splice(i,1);
+    play_(on?"toast":"back");toast(on?`Added to ${c.name}`:`Removed from ${c.name}`);try{await api.saveConfig(cfgInfo.config)}catch{}reHome();qsSoft();return}
+  if(!v.startsWith("sh:"))return;const id=v.slice(3),own=addOwn(g),name=(addTargets().find(x=>x[0]===id)||[id,id])[1];
+  if(own&&own.id===id){play_("error");toast(`${name} is its own shelf: it always shows there`);return}
+  if(!/^[a-z0-9_-]{1,24}$/.test(id))return;
+  const M=addsMap()||(ui.shelfAdds={}),L=Array.isArray(M[id])?M[id]:(M[id]=[]),i=L.map(String).indexOf(gid),on=i<0;
+  if(on){if(L.length>=2000){toast(`${name} can't take more games`);return}L.push(gid)}else{L.splice(i,1);if(!L.length)delete M[id]}
+  play_(on?"toast":"back");toast(on?`Added to ${name}`:`Removed from ${name}`);
+  // taken off the shelf you're looking at it on: the shelf lands on its neighbour (as hiding a game does), the menu closes
+  const s=cur(),here=!on&&s&&s.id===id&&s._adds&&s._adds.has(rawItem());if(here){const it=s.items,k=it.indexOf(rawItem()),nb=it[k+1]||it[k-1];if(nb)sel=it.indexOf(nb);qmClose(true)}
+  addBusy=true;try{await api.saveConfig(cfgInfo.config)}catch{}
+  try{if(lastLib){if(mode==="browse"||mode==="details")await refresh(true,lastLib);else pendingLib=lastLib}}finally{addBusy=false}
+  if(qm.open)qsSoft()}
+// Details' ··· → Add to…: the quick menu opens straight at the list (B goes back to Details, as it does from the menu)
+function addFromDetails(){const g=curGame();if(!addCan(g)||mode!=="details")return;qmOpen();if(!qm.open)return;const x=qm.rows[0];if(!x||x.r.id!=="acts"||!x.sub)return;
+  const i=[...x.el.children].findIndex(b=>b.dataset.k==="add");if(i<0)return;qm.r=0;qm.ac=i;qsAct("add")}
+async function qsChooseArt(g){if(kidBlock())return;if(g&&g.kind==="steam"&&api.pcCoverOptions){pcCoverOpen(g);return} /* (beta.5) PC games: the cover picker */if(!api.chooseArt)return;try{const r=await api.chooseArt(g.id);if(r&&r.ok){play_("toast");toast(`New box art for ${g.title}`)}}catch(e){toast(String(e&&e.message||e))}}
 let qsHr=0;
 function qsHoldStart(b){if(qsHr)return;const t0=performance.now(),bar=b.querySelector(".qm-hb");
   const step=t=>{const k=Math.min(1,Math.max(0,(t-t0)/1000));if(bar)bar.style.width=k*100+"%";if(k>=1){qsHr=0;const kind=b.dataset.v;qmClose(true);toast(kind==="shutdown"?"Shutting down…":"Restarting…");if(api.power)api.power(kind);return}qsHr=requestAnimationFrame(step)};qsHr=requestAnimationFrame(step)}
@@ -2655,7 +2996,7 @@ function paintMenuGlyph(){const g=$("menuGlyph");if(!g)return;const h=showPad()?
 $("menuBtn").addEventListener("click",e=>{e.stopPropagation();setInput("pointer");qm.open?qmClose():qmOpen()});
 addEventListener("keydown",e=>{if(!qm.open||(window.BS_TOUR&&BS_TOUR.on()))return;if(mode!=="browse"&&mode!=="details"){qmClose(true);return} /* something else took over (Settings, a launch): the menu goes, the key is theirs */const k=e.key;const eat=()=>{e.preventDefault();e.stopImmediatePropagation()};setInput("kbd");
   if(k==="ArrowLeft"||k==="ArrowRight"){eat();qmSide(k==="ArrowRight"?1:-1)}else if(k==="ArrowDown"||k==="ArrowUp"){eat();qmMove(k==="ArrowDown"?1:-1)}
-  else if(k==="Enter"||k===" "){eat();if(!e.repeat)qmPick()}else if(k==="Escape"||k==="Backspace"){eat();qmBack()}else if(k==="Tab"){eat();qmClose()}else if(k.length===1||/^F\d/.test(k)||/^(PageUp|PageDown|Home|End)$/.test(k))qmClose()},true); // a shortcut (M, G, S…) closes the Quick Shelf and does its thing
+  else if(k==="Enter"||k===" "){eat();if(!e.repeat)qmPick()}else if(k==="Escape"||k==="Backspace"){eat();qmBack()}else if(k==="Tab"){eat();qmClose()}else if(k==="PageUp"||k==="PageDown"){eat();qsThemeStep(k==="PageDown"?1:-1)} /* (beta.14) the theme, as LB / RB */else if(k.length===1||/^F\d/.test(k)||/^(PageUp|PageDown|Home|End)$/.test(k))qmClose()},true); // a shortcut (M, G, S…) closes the Quick Shelf and does its thing
 addEventListener("keyup",e=>{if(e.key==="Enter"||e.key===" ")qsHoldStop()},true);
 addEventListener("pointerup",()=>{if(qsHr)qsHoldStop()},true);addEventListener("pointercancel",()=>{if(qsHr)qsHoldStop()},true); // letting go of the mouse early cancels a held Restart / Shut down
 let qmEatClick=0;addEventListener("pointerdown",e=>{if(qm.open&&!e.target.closest("#quickMenu,#menuBtn,#toast,#bsTour")){qmEatClick=performance.now();qmClose()}},true);
@@ -3109,8 +3450,8 @@ function musFindKey(k){const IA=window.BoxshelfIA;if(k==="back"){if(IA&&IA.back&
   if(k==="ok"){const a=document.activeElement;if(a&&musFind.el.contains(a)){if(a.tagName==="INPUT"){if(inputMode==="pad"&&IA&&IA.osk){IA.osk();play_("panel");renderMusHints();return}a.blur();return}a.click();if(IA&&IA.typing)setTimeout(renderMusHints,0)}return}musFindStep(k)}
 let Shelf_setMusLight=null;
 function museumData(){
-  return allShelves.filter(sh=>(sh.kind==="console"||sh.kind==="steam")&&sh.items.some(isGame)).map(sh=>({id:sh.id,name:sh.name,style:STYLE[sh.id]||STYLE.media,
-    games:sh.items.filter(isGame).map(g=>{const h=HIST[g.id],i=g.info||{};return {id:g.id,title:g.title,front:()=>{const u=g.art&&g.art.front;if(!u)return Covers.frontAsync(stOf(g),g);return /^bsfile:/.test(u)?u+(u.includes("?")?"&":"?")+"t=768":u} /* generated covers: a Promise, encoded off the main thread */,spine:g.art&&g.art.spine||null,year:yearOf(g)||null,
+  return allShelves.filter(sh=>(sh.kind==="console"||sh.kind==="steam")&&ownItems(sh).some(isGame)).map(sh=>({id:sh.id,name:sh.name,style:STYLE[sh.id]||STYLE.media,
+    games:ownItems(sh).filter(isGame).map(g=>{ /* (beta.14: a game added to another shelf stays in its own console's room only) */const h=HIST[g.id],i=g.info||{};return {id:g.id,title:g.title,front:()=>{const u=g.art&&g.art.front;if(!u)return Covers.frontAsync(stOf(g),g);return /^bsfile:/.test(u)?u+(u.includes("?")?"&":"?")+"t=768":u} /* generated covers: a Promise, encoded off the main thread */,spine:g.art&&g.art.spine||null,year:yearOf(g)||null,
       dev:i.dev||null,pub:i.pub||null,genre:genreOf(g),rating:i.rating?+i.rating:null,metacritic:i.metacritic||null,group:groupOf(g),
       hours:h&&h.count?fmtPlay(h.ms)+" played":null,plays:h&&h.count||0,added:g.added||0,manual:!!(g.art&&g.art.manual&&g.art.manual.length),manualPage:g.art&&g.art.manual&&g.art.manual[0]||null,manualPages:g.art&&g.art.manual||[],back:g.art&&g.art.back?(/^bsfile:/.test(g.art.back)?g.art.back+(g.art.back.includes("?")?"&":"?")+"t=1024":g.art.back):null,disc:g.art&&g.art.disc||null,boxFull:!!(g.art&&g.art.front&&g.art.back&&g.art.spine),players:i.players||null,esrb:i.esrb||null,media:(MEDIA[sh.id]||{}).kind||"disc",mediaSize:(MEDIA[sh.id]||{}).size||0,last:h&&h.last?fmtDay(h.last/1000):null,fav:isFav(g),_g:g,_sh:sh}}),
     console:{model:themes[sh.id]&&themes[sh.id].model||BUILTIN_MODEL[sh.id]||null,opts:modelOpts(sh.id),controller:themes[sh.id]&&themes[sh.id].controller||null}}));
@@ -3277,10 +3618,10 @@ function tvBand(d){const i=TV_BANDS.indexOf(tvCh());musSetOpt("tvCh",TV_BANDS[(i
 
 const tvCover=g=>{const u=g.art&&g.art.front;return typeof u==="string"&&u?(/^bsfile:/.test(u)?u+(u.includes("?")?"&":"?")+"t=512":u):null};
 // every game with a trailer, shelf by shelf (the guide lists them all; the channel shuffles them, this shelf's first)
-function tvTrailerAll(){const L=[];allShelves.forEach(sh=>{if(sh.kind!=="console")return;(sh.items||[]).forEach(g=>{if(isGame(g)&&g.info&&g.info.video){const key="tr:"+sh.id+"|"+String(g.file||g.id||"").toLowerCase(),y=yearOf(g);
+function tvTrailerAll(){const L=[];allShelves.forEach(sh=>{if(sh.kind!=="console")return;ownItems(sh).forEach(g=>{if(isGame(g)&&g.info&&g.info.video){const key="tr:"+sh.id+"|"+String(g.file||g.id||"").toLowerCase(),y=yearOf(g);
   L.push({key,sh,g,card:{kind:"trailer",title:g.title,sub:[sh.name,y].filter(Boolean).join(" · "),line:"Trailer · "+okWord()+" to watch",img:tvCover(g)},meta:{key,game:g.title,title:g.title+" trailer",sysId:sh.id,rom:String(g.file||"").toLowerCase(),video:g.info.video,trailer:true,year:y}})}})});return L}
 function tvTrailerCards(){const sys=((Museum.current()||{}).row||{}).id,L=tvTrailerAll();return [...tvMix(L.filter(x=>x.sh.id===sys)),...tvMix(L.filter(x=>x.sh.id!==sys))].slice(0,60)}
-function tvRecentCards(n){const L=[],seen=new Set();allShelves.forEach(sh=>{if(sh.kind!=="console"&&sh.kind!=="steam")return;(sh.items||[]).forEach(g=>{const h=isGame(g)&&HIST[g.id];if(h&&h.count&&h.last&&!seen.has(g.id)){seen.add(g.id);L.push({sh,g,h})}})});
+function tvRecentCards(n){const L=[],seen=new Set();allShelves.forEach(sh=>{if(sh.kind!=="console"&&sh.kind!=="steam")return;ownItems(sh).forEach(g=>{const h=isGame(g)&&HIST[g.id];if(h&&h.count&&h.last&&!seen.has(g.id)){seen.add(g.id);L.push({sh,g,h})}})});
   L.sort((a,b)=>b.h.last-a.h.last);return L.slice(0,n||20).map(({sh,g,h})=>{const key="rp:"+g.id,line=["Played "+fmtDay(h.last/1000),h.ms?fmtPlay(h.ms):"",h.count>1?h.count+" sessions":""].filter(Boolean).join(" · ");return {key,sh,g,card:{kind:"recent",title:g.title,sub:sh.name,line,img:tvCover(g)},meta:{key,game:g.title,title:g.title,sysId:sh.id,rom:String(g.file||"").toLowerCase(),recent:true,line}}})}
 // a game in your hands: does it have an ad? (asked once per game, shown as Y)
 function tvRefreshHeld(){const g=musHand().game,key=g&&g._g&&g._sh?g._sh.id+"|"+g._g.file:null;if(key===tvS.heldFor)return;tvS.heldFor=key;tvS.heldAd=null;if(!key||!musStyle().tv||!api.tvAdFor)return;api.tvAdFor(g._sh.id,g._g.file).then(a=>{if(tvS.heldFor===key){tvS.heldAd=a||null;renderMusHints()}}).catch(()=>{})}
@@ -3576,7 +3917,7 @@ function updateSkipText(){const el=document.querySelector(".b-skip");if(el)el.te
 let kbdEver=false;
 const showPad=()=>inputMode==="pad"||(!!padSeen&&(inputMode!=="kbd"||!kbdEver));
 function renderHints(){pvGuard();bsCtxSoon();
-  try{paintMenuGlyph();if(qm.open)qsHints();if(mode==="achv")achHints();if(mode==="customize")custSwitchText();if(mode==="shot")svPaint()}catch{} // the quick menu's own hint bar follows a switch between pad and keyboard too
+  try{paintMenuGlyph();if(NOTE.el)noteKeys();if(qm.open)qsHints();if(mode==="achv")achHints();if(mode==="customize")custSwitchText();if(mode==="shot")svPaint()}catch{} // the quick menu's own hint bar follows a switch between pad and keyboard too
   const usePad=showPad();const g=curGame();if(DV2&&mode==="details")dvCapGlyph(usePad);
   const es=!g&&!!emptyShelf();const sig=usePad+"|"+glyphStyle()+"|"+(g&&g.kind)+"|"+!!(g&&g.pick)+"|"+es+"|"+(mode==="details")+"|"+(mode==="details"?detailsYLab().join():"");if(sig===renderHints.sig&&$("hints").childElementCount)return;renderHints.sig=sig; // only rebuilt when something it shows changed
   const h=$("hints");h.innerHTML="";
@@ -3618,6 +3959,37 @@ window.BS_padInfo=padInfo;
 const padSee={list:[],ver:0};let padSeeVer=-1,padSeeT=0;
 function padSeeAsk(){if(!api.padsPresent)return;clearTimeout(padSeeT);padSeeT=setTimeout(()=>api.padsPresent().then(l=>{l=Array.isArray(l)?l:[];if(JSON.stringify(l)!==JSON.stringify(padSee.list)){padSee.list=l;padSee.ver++}}).catch(()=>{}),1200)}
 addEventListener("gamepadconnected",padSeeAsk);addEventListener("gamepaddisconnected",padSeeAsk);if(!ANDROID)padSeeAsk();
+/* (beta.14, issue #1) Some DualSense pads over Bluetooth never reach Chromium, though Windows has them and emulators read them.
+   When the shelf sees no controller at all but a PlayStation pad is connected, the controller helper reads it directly
+   (main.js pads:fallback) and its buttons drive a stand-in pad here, so every screen works as with a real one. Checked a
+   few seconds after start, when a pad comes or goes, and when the window comes back to the front.
+   Chromium only lists a pad once it has been pressed, so a pad that works fine looks the same until then: the helper
+   first only listens. At its first press, if Chromium saw that press too, the pad works and listening stops; only when
+   Chromium still has nothing does the stand-in pad appear and take the press (no press is ever counted twice). */
+const psFb={on:false,pad:null,rel:{},at:0,q:[],wait:0};
+if(!ANDROID&&api.padFallback&&navigator.getGamepads){
+  const gpReal=navigator.getGamepads.bind(navigator),realPads=()=>{let L=[];try{L=[...(gpReal()||[])]}catch{}return L.filter(p=>p&&p.connected)};
+  try{Object.defineProperty(navigator,"getGamepads",{configurable:true,value:()=>{let L=[];try{L=[...(gpReal()||[])]}catch{}if(psFb.pad){if(L[psFb.pad.index]&&L[psFb.pad.index]!==psFb.pad)psFb.pad.index=Math.max(L.length,psFb.pad.index+1);L[psFb.pad.index]=psFb.pad}return L}})}catch{}
+  const fbOff=()=>{const p=psFb.pad;psFb.on=false;psFb.pad=null;clearTimeout(psFb.wait);psFb.wait=0;psFb.q=[];api.padFallback(false).catch(()=>{});if(p)dispatchEvent(Object.assign(new Event("gamepaddisconnected"),{gamepad:p}))};
+  const fbOn=()=>{psFb.on=true;api.padFallback(true).catch(()=>{})}; /* (listening only: the stand-in pad comes at a press Chromium didn't see) */
+  const fbPad=()=>{let L=[];try{L=[...(gpReal()||[])]}catch{}let i=L.findIndex(p=>!p);if(i<0)i=L.length;
+    psFb.pad={id:"PlayStation controller, read directly (Vendor: 054c Product: 0ce6)",index:i,connected:true,mapping:"standard",timestamp:performance.now(),axes:[0,0,0,0],buttons:Array.from({length:17},()=>({pressed:false,touched:false,value:0})),bsDirect:true};
+    dispatchEvent(Object.assign(new Event("gamepadconnected"),{gamepad:psFb.pad}))};
+  const fbCheck=()=>{if(window.BS_BUSY&&BS_BUSY()){setTimeout(fbCheck,800);return}if(realPads().length){if(psFb.on)fbOff();return}const ps=padSee.list.some(p=>p&&p.style==="ps");if(ps&&!psFb.on)fbOn();else if(!ps&&psFb.on)fbOff()};
+  const fbSoon=ms=>{clearTimeout(psFb.t);psFb.t=setTimeout(fbCheck,ms)};
+  setTimeout(()=>{padSeeAsk();fbSoon(2500)},6000);
+  addEventListener("gamepadconnected",e=>{if(!(e.gamepad&&e.gamepad.bsDirect))fbSoon(600)});addEventListener("gamepaddisconnected",e=>{if(!(e.gamepad&&e.gamepad.bsDirect))fbSoon(2600)});
+  addEventListener("focus",()=>{if(realPads().length||Date.now()-psFb.at<30000)return;psFb.at=Date.now();padSeeAsk();fbSoon(2600)});
+  const BI={a:0,b:1,start:9,up:12,down:13,left:14,right:15};
+  const fbApply=r=>{const p=psFb.pad,i=r&&BI[r.b];if(!p||i==null)return;const set=d=>{p.buttons[i]={pressed:d,touched:d,value:d?1:0};p.timestamp=performance.now()};
+    set(!!r.d);clearTimeout(psFb.rel[i]);if(r.d&&i>=12)psFb.rel[i]=setTimeout(()=>set(false),260); /* (the helper's stick reports up / down pressed and never let go: a direction lets go by itself) */
+    if(r.d&&slowPoll){clearTimeout(bgPoll);slowPoll=false;requestAnimationFrame(poll)}};
+  api.onPadFallbackButton&&api.onPadFallbackButton(r=>{if(!psFb.on||!r||BI[r.b]==null)return;if(psFb.pad){fbApply(r);return}
+    /* listening: the first presses wait a moment for Chromium; a pad it lists by then works by itself (the press was its) */
+    psFb.q.push(r);if(psFb.q.length>12)psFb.q.shift();if(psFb.wait)return;
+    psFb.wait=setTimeout(()=>{psFb.wait=0;const q=psFb.q;psFb.q=[];if(!psFb.on)return;if(realPads().length){fbOff();return}
+      fbPad();q.forEach((x,k)=>setTimeout(()=>fbApply(x),40+k*60))},250)});
+}
 function padSeeReal(){const L=padSee.list;if(!L.length||L.some(x=>x.style==="xbox"))return null;const kinds=[...new Set(L.map(x=>x.style))];return kinds.length===1?L.find(x=>x.style===kinds[0]):null}
 function padStyleOf(id){const i=padInfo(id);if(!i.virtual)return i.style;const r=padSeeReal();return r?r.style:"xbox"}
 function padSeeName(id){if(!padInfo(id).virtual)return "";const r=padSeeReal();if(!r)return "";const n=(PAD_MODELS[r.vendor]||{})[r.product]||(PAD_MODELS[r.vendor]||{})["*"]||"Controller";return n+" (through Steam / DS4Windows)"}
@@ -3672,11 +4044,13 @@ addEventListener("keydown",e=>{
     if(dir){if(!padNav(pn,dir)&&(k==="ArrowUp"||k==="ArrowDown"))panelScroll(pn,k==="ArrowDown"?1:-1)}
     else if(k==="q"||k==="Q"||k==="PageUp"){if(!e.repeat)custStep(-1)}else if(k==="e"||k==="E"||k==="PageDown"){if(!e.repeat)custStep(1)}
     else if(k==="Enter"||k===" "){if(!e.repeat&&!padActivate(pn)&&document.activeElement&&pn.contains(document.activeElement))document.activeElement.click()}
-    else if(k==="Escape"||k==="Backspace"||k==="t"||k==="T"){if(!e.repeat&&!((k==="Escape"||k==="Backspace")&&czClosePick()))closeCustomize()}else if(k==="F11")api.toggleFullscreen();else return;e.preventDefault();return}
-  if(mode==="note"){e.preventDefault();setInput("kbd");const k=e.key;if(e.repeat)return;if(k==="ArrowLeft"||k==="ArrowUp"||(k==="Tab"&&e.shiftKey))noteMove(-1);else if(k==="ArrowRight"||k==="ArrowDown"||k==="Tab")noteMove(1);else if(k==="Enter"||k===" ")notePick();else if(k==="Escape"||k==="Backspace")noteClose();return} // (beta.7) the note card
+    else if(k==="Escape"||k==="Backspace"||k==="t"||k==="T"){if(!e.repeat&&!((k==="Escape"||k==="Backspace")&&czClosePick()))closeCustomize()}else if(k==="F11")bsF11();else return;e.preventDefault();return}
+  if(mode==="note"){e.preventDefault();setInput("kbd");noteKeys();const k=e.key;
+    if(NOTE.body&&/^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End)$/.test(k)){const pg=NOTE.body.clientHeight*.85;noteScroll(k==="ArrowUp"?-80:k==="ArrowDown"?80:k==="PageUp"?-pg:k==="PageDown"?pg:k==="Home"?-1e6:1e6,/^Page/.test(k));return} /* (beta.14) the patch notes scroll */
+    if(e.repeat)return;if(k==="ArrowLeft"||k==="ArrowUp"||(k==="Tab"&&e.shiftKey))noteMove(-1);else if(k==="ArrowRight"||k==="ArrowDown"||k==="Tab")noteMove(1);else if(k==="Enter"||k===" ")notePick();else if(k==="Escape"||k==="Backspace")noteClose();return} // (beta.7) the note card
   if(mode==="achv"){const k=e.key;setInput("kbd");if(k==="q"||k==="Q"||(k==="Tab"&&e.shiftKey)){e.preventDefault();achTab(-1)}else if(k==="e"||k==="E"||k==="Tab"){e.preventDefault();achTab(1)}else if(k==="s"||k==="S"){if(!e.repeat)achSortStep()}else if(k==="ArrowDown")achMove(1);else if(k==="ArrowUp")achMove(-1);else if(k==="ArrowRight")achSide(1);else if(k==="ArrowLeft")achSide(-1);else if(k==="Escape"||k==="Backspace"||k==="Enter"){if(!e.repeat)closeAchievements()}else return;e.preventDefault();return}
   // (beta.7) Details' More menu: up / down walk it, Enter picks (Esc closes it, through back())
-  if(mode==="details"&&!$("dMenu").hidden){const dir={ArrowUp:"up",ArrowDown:"down",ArrowLeft:"up",ArrowRight:"down"}[e.key];if(dir){e.preventDefault();setInput("kbd");padNav($("dMenu"),dir);return}if(e.key==="Enter"||e.key===" "){e.preventDefault();if(!e.repeat&&!padActivate($("dMenu"))&&document.activeElement&&$("dMenu").contains(document.activeElement))document.activeElement.click();return}}
+  if(mode==="details"&&!$("dMenu").hidden){const dir=(DV2?{ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right"}:{ArrowUp:"up",ArrowDown:"down",ArrowLeft:"up",ArrowRight:"down"})[e.key]; /* (beta.14, Windows: More is a row of pills) */if(dir){e.preventDefault();setInput("kbd");padNav($("dMenu"),dir);return}if(e.key==="Enter"||e.key===" "){e.preventDefault();if(!e.repeat&&!padActivate($("dMenu"))&&document.activeElement&&$("dMenu").contains(document.activeElement))document.activeElement.click();return}}
   const k=e.key;let handled=true;setInput("kbd");
   // Scroll speed "relaxed": held arrow keys repeat no faster than this (the keyboard's own repeat rate sets the rest)
   if((k==="ArrowRight"||k==="ArrowLeft")&&e.repeat&&scrollCfg.kbd){const now=performance.now();if(now-kbdMoveAt<scrollCfg.kbd){e.preventDefault();return}kbdMoveAt=now}
@@ -3698,7 +4072,7 @@ addEventListener("keydown",e=>{
   else if(k==="Home"||k==="p"||k==="P"){if(e.repeat){}else if((mode==="browse"||mode==="details")&&api.openShelfMenu&&cfgInfo&&cfgInfo.config.ui.homeMenu!==false)api.openShelfMenu();else if(k==="Home"&&(mode==="browse"||mode==="details"))go(0)}
   else if(k==="s"||k==="S"){if(!e.repeat&&(mode==="browse"||mode==="details"))Setup.open()}
   else if(k==="t"||k==="T"){if(!e.repeat)toggleCustomize()}
-  else if(k==="F11"){api.toggleFullscreen()}
+  else if(k==="F11"){bsF11()}
   else if(k==="Enter"){
     // On the shelf, Enter always plays (even if a button still has focus from a click).
     const inPanel=e.target&&e.target.closest&&e.target.closest(".details button,.settings button,.settings input");
@@ -3958,7 +4332,7 @@ addEventListener("pointerup",()=>{if(wmHand.el)wmHand.el.classList.remove("press
 function pollBody(t){
   let gp=activePad();
   padStatus(gp);if(mode==="homemenu")return;
-  if(window.BS_PICK&&BS_PICK.isOpen()){if(gp)for(let i=0;i<gp.buttons.length;i++)prevBtn[i]=!!(gp.buttons[i]&&gp.buttons[i].pressed);return} /* (beta.12) Linux Game Mode's file browser has the controller; what's held when it closes isn't a new press */
+  if((window.BS_PICK&&BS_PICK.isOpen())||(window.BS_THEMES&&BS_THEMES.isOpen())){if(gp)for(let i=0;i<gp.buttons.length;i++)prevBtn[i]=!!(gp.buttons[i]&&gp.buttons[i].pressed);return} /* (beta.12) Linux Game Mode's file browser has the controller; what's held when it closes isn't a new press */
   /* the dimmed screen first, for every screen below: a press lifts it (and does nothing else) under the tour and the Android
      build's own screens too; they used to take the pad before it, so the screen stayed dark there */
   if(gp&&document.hasFocus()&&dimPad(viewOf(gp),t))return;
@@ -4009,7 +4383,8 @@ function pollBody(t){
       edge(gp,0,()=>bpChoose());edge(gp,1,()=>bpDone(""));return;
     }
     if(mode==="shot"){if(h&&!prevBtn.h){setInput("pad");svStep(h)}prevBtn.h=!!h;prevBtn.v=!!v;edge(gp,4,()=>{setInput("pad");svStep(-1)});edge(gp,5,()=>{setInput("pad");svStep(1)});edge(gp,1,()=>{setInput("pad");svClose()});edge(gp,0,()=>{setInput("pad");svClose()});return} /* (beta.12) the screenshot viewer: left / right and LB / RB go through them, B (or A) back to Details */
-    if(mode==="note"){if(h&&!prevBtn.h){setInput("pad");noteMove(h)}prevBtn.h=!!h;prevBtn.v=!!v;edge(gp,0,()=>notePick());edge(gp,1,()=>noteClose());return} // (beta.7) the shelf's note card: A picks, B closes, left / right
+    if(mode==="note"){if(NOTE.body){const ry=Math.abs(ax[3]||0)>.25?ax[3]:0,sy=v+ry*1.4;if(sy){setInput("pad");noteScroll(sy*16)}} /* (beta.14) the patch notes: up / down or the right stick scroll, every frame while held */
+      if(h&&!prevBtn.h){setInput("pad");noteMove(h)}prevBtn.h=!!h;prevBtn.v=!!v;edge(gp,0,()=>notePick());edge(gp,1,()=>noteClose());return} // (beta.7) the shelf's note card: A picks, B closes, left / right
     if(mode==="sort"){
       if(h&&!prevBtn.h){setInput("pad");sortStep(h)}if(v&&!prevBtn.v){setInput("pad");spRow=1-spRow;play_("tick",{dir:v});renderSort()}prevBtn.v=!!v;prevBtn.h=!!h;
       edge(gp,0,()=>closeSort());edge(gp,1,()=>closeSort());edge(gp,9,()=>closeSort());edge(gp,4,()=>{closeSort();letter(-1)});edge(gp,5,()=>{closeSort();letter(1)});return;
@@ -4021,7 +4396,7 @@ function pollBody(t){
     }
     const padActive=gp.buttons.some(b=>b&&b.pressed)||ax.some(a=>Math.abs(a)>.2);
     if(mode==="museum"){if(padActive)setInput("pad");museumPad(gp,t,B,ax);return}
-    if(qm.open&&(mode==="browse"||mode==="details")){if(padActive)setInput("pad");const v=(B(13)||ax[1]>.6)?1:(B(12)||ax[1]<-.6)?-1:0,h=(B(15)||ax[0]>.6)?1:(B(14)||ax[0]<-.6)?-1:0;if(v){if(!prevBtn.qv){qmMove(v);prevBtn.qvT=t+380}else if(t>prevBtn.qvT){qmMove(v);prevBtn.qvT=t+120}}prevBtn.qv=!!v;if(h){if(!prevBtn.qh){qmSide(h);prevBtn.qhT=t+380}else if(t>prevBtn.qhT){qmSide(h);prevBtn.qhT=t+110}}prevBtn.qh=!!h;if(prevBtn[0]&&!B(0))qsHoldStop(); /* only letting go of A ends a hold A began: checking "A not down" every frame cancelled a held Enter / mouse press whenever a pad was plugged in */edge(gp,0,()=>qmPick());edge(gp,1,()=>qmBack());edge(gp,9,()=>qmClose());edge(gp,8,()=>qmClose());return}
+    if(qm.open&&(mode==="browse"||mode==="details")){if(padActive)setInput("pad");const v=(B(13)||ax[1]>.6)?1:(B(12)||ax[1]<-.6)?-1:0,h=(B(15)||ax[0]>.6)?1:(B(14)||ax[0]<-.6)?-1:0;if(v){if(!prevBtn.qv){qmMove(v);prevBtn.qvT=t+380}else if(t>prevBtn.qvT){qmMove(v);prevBtn.qvT=t+120}}prevBtn.qv=!!v;if(h){if(!prevBtn.qh){qmSide(h);prevBtn.qhT=t+380}else if(t>prevBtn.qhT){qmSide(h);prevBtn.qhT=t+110}}prevBtn.qh=!!h;if(prevBtn[0]&&!B(0))qsHoldStop(); /* only letting go of A ends a hold A began: checking "A not down" every frame cancelled a held Enter / mouse press whenever a pad was plugged in */edge(gp,0,()=>qmPick());edge(gp,1,()=>qmBack());edge(gp,9,()=>qmClose());edge(gp,8,()=>qmClose());edge(gp,4,()=>qsThemeStep(-1));edge(gp,5,()=>qsThemeStep(1)); /* (beta.14) LB / RB: the theme */return}
     if(mode==="inspect"){
       if(padActive)setInput("pad");
       const lx=ax[0]||0,ly=ax[1]||0,rx2=ax[2]||0,ry2=ax[3]||0;
@@ -4058,7 +4433,9 @@ function pollBody(t){
         let hh=h,vv=v;if(hh&&vv){if(Math.abs(ax[0]||0)>=Math.abs(ax[1]||0))vv=0;else hh=0}
         const pd=hh?(hh>0?"right":"left"):vv?(vv>0?"down":"up"):null;
         // up / down with nothing further that way: page through the text instead (the top of Details has no buttons)
-        const step=d=>{if(!padNav(panel,d)&&(d==="up"||d==="down"))panelScroll(panel,d==="down"?1:-1)};
+        /* (beta.14) on the trailer box ← → set its volume (turning its sound on first); up / down leave it as before */
+        const step=d=>{if(DV2&&mode==="details"&&panel.id==="details"&&(d==="left"||d==="right")&&document.activeElement===$("dTrailer")&&$("dTrailer").classList.contains("pad-focus")){boxVolStep(d==="right"?1:-1);return}
+          if(!padNav(panel,d)&&(d==="up"||d==="down"))panelScroll(panel,d==="down"?1:-1)};
         if(pd){setInput("pad");if(pd!==prevBtn.pd){prevBtn.pd=pd;prevBtn.pdT=t+380;step(pd)}else if(t>prevBtn.pdT){prevBtn.pdT=t+130;step(pd)}}else prevBtn.pd=null;
         // right stick: scroll the panel freely, faster the further it's pushed
         {const ry=ax[3]||0;if(Math.abs(ry)>.22){setInput("pad");panel.scrollTop+=ry*Math.abs(ry)*26*padF}}if(mode==="customize"){edge(gp,4,()=>custStep(-1));edge(gp,5,()=>custStep(1))}}
@@ -4099,7 +4476,9 @@ function pollBody(t){
 }
 
 /* ---------- controller focus inside a panel ---------- */
-function padItems(root){return [...root.querySelectorAll("button,input[type=checkbox],select,a[href],summary")].filter(e=>!e.disabled&&!e.hidden&&e.offsetParent&&e.getClientRects().length)}
+/* (beta.14) the trailer's own speaker and volume bar are the mouse's: the d-pad lands on the trailer box (its sound is A, the
+   volume ← →), so the tiny speaker in the corner no longer catches the step down from the buttons above */
+function padItems(root){return [...root.querySelectorAll("button,input[type=checkbox],select,a[href],summary")].filter(e=>!e.disabled&&!e.hidden&&e.offsetParent&&e.getClientRects().length&&!e.closest(".dv-snd"))}
 // bring a control into view by scrolling only the panels that scroll (scrollIntoView also scrolled the whole app
 // sideways while a panel was still sliding in, which knocked the Details panel half off its place)
 // safety net: if anything still scrolls the app, put it straight back
@@ -4123,7 +4502,6 @@ function dGlide(el){if(ANDROID)return;const bar=$("details").querySelector(".d-a
 function padSet(root,el){root.querySelectorAll(".pad-focus").forEach(e=>e.classList.remove("pad-focus"));if(!el){if(root.id==="details")dGlide(null);return}el.classList.add("pad-focus");try{el.focus({preventScroll:true})}catch{}if(root.id==="details")dGlide(el); // (after the focus moves: the button left behind closes first)
   // the Details buttons sit in a bar pinned to the bottom: always in view, so moving onto them never scrolls the text
   if(el.closest(".d-actions")&&!(DV2&&root.id==="details"))return; /* (beta.12, Windows: the buttons are part of the page, which scrolls back to them) */
-  if(DV2&&root.id==="details")dvFocused(el);
   // scroll only the panel itself (scrollIntoView also scrolled the whole app sideways and dragged a hidden panel into view);
   // what's under the pinned button bar counts as out of view
   const sc=el.closest(".settings,.details,.d-scroll")||root;
@@ -4266,7 +4644,7 @@ addEventListener("keydown",e=>{if(mode!=="shot")return;const k=e.key;e.preventDe
 function openTrailer(){const g=curGame();if(!g||!g.info||!g.info.video)return;play_("open");
   pvHold();addEventListener("focus",()=>setTimeout(pvResume,300),{once:true}); /* (Details' own trailer waits while the full one plays; back to the app, it carries on) */api.openTrailer(g.info.video).then(r=>{if(r&&r.external)toast("Trailer opened in your browser")}).catch(e=>{toast(e.message);pvResume()})}
 $("dTrailer").addEventListener("click",()=>trailerA());{const b=$("dSound");if(b)b.addEventListener("click",()=>aSndToggle())} /* (beta.12, Android: the trailer's sound, on / off) */ /* (beta.12: on Windows / Linux the box's own sound; full screen on Y or when nothing plays there yet) */
-$("dMore").addEventListener("click",()=>{const d=$("dDesc"),m=$("dMore");const c=d.classList.toggle("clamp");m.textContent=c?"Read more":"Show less"});
+$("dMore").addEventListener("click",()=>{const d=$("dDesc"),m=$("dMore");const c=d.classList.toggle("clamp");m.textContent=c?(DV2?"More":"Read more"):(DV2?"Less":"Show less")}); /* (beta.14, Windows: More / Less, as in the mockup) */
 $("dPlay").addEventListener("click",play);$("dInspect").addEventListener("click",openInspect);$("dManual").addEventListener("click",()=>{openInspect();setTimeout(()=>{if(mode==="inspect"){ispAdvance();setTimeout(openReader,700)}},150)});$("dEmu").addEventListener("click",openEmulator);$("dClose").addEventListener("click",()=>closeDetails());
 $("launch").addEventListener("click",()=>{if($("lNote").classList.contains("on"))back()});
 $("themeBtn").addEventListener("click",toggleCustomize);$("setClose").addEventListener("click",closeCustomize);
@@ -4338,7 +4716,7 @@ async function refresh(keepPlace,lib){
   // (1.82) the settings file was locked when Boxshelf started (antivirus, a sync tool): running on defaults, nothing saved
   if(cfgInfo&&cfgInfo.settingsBlocked&&!refresh.blockedSaid){refresh.blockedSaid=1;pendingNote="Boxshelf couldn't read your settings (another program had the file open). Restart Boxshelf to load them; changes made now aren't saved."}
   // (1.76) the old Background → Game artwork choice is now the Artwork theme (Windows' config.js does the same on load)
-  if(cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.background==="art"){cfgInfo.config.ui.theme="artwork";cfgInfo.config.ui.background="blur";api.saveConfig(cfgInfo.config).catch(()=>{})} /* a setting changed while the config was being re-read: keep it (its save is still on the way) */soundOn=cfgInfo.config.ui.sound!==false;if(window.Sound)Sound.set({enabled:soundOn,boot:cfgInfo.config.ui.bootSound||"chime",theme:cfgInfo.config.ui.soundTheme||"aero",volume:cfgInfo.config.ui.volume==null?.7:cfgInfo.config.ui.volume});if(window.Sound&&Sound.loadSongs&&!songsLoaded){songsLoaded=true;Sound.loadSongs(api,cfgInfo.config.ui.builtInSongs)}(window.Perf&&Perf.set(cfgInfo.config.ui.performance||"auto"),applyEffects());paintVol();themeOverride=null;themeCls();if(api.customThemes&&!loadCustomThemes.done){loadCustomThemes.done=1;loadCustomThemes()}buttonsPref=cfgInfo.config.ui.buttons||"auto";applyUiAll();updateSkipText();fresh=lib||await api.scan()}catch(err){toast(err.message);fresh=[]}
+  if(cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.background==="art"){cfgInfo.config.ui.theme="artwork";cfgInfo.config.ui.background="blur";api.saveConfig(cfgInfo.config).catch(()=>{})} /* a setting changed while the config was being re-read: keep it (its save is still on the way) */soundOn=cfgInfo.config.ui.sound!==false;if(window.Sound)Sound.set({enabled:soundOn,boot:cfgInfo.config.ui.bootSound||"chime",theme:cfgInfo.config.ui.soundTheme||"aero",volume:cfgInfo.config.ui.volume==null?.7:cfgInfo.config.ui.volume,byShelf:cfgInfo.config.ui.soundByShelf||{},...(cfgInfo.config.ui.instrument&&typeof cfgInfo.config.ui.instrument==="object"?{instrument:cfgInfo.config.ui.instrument}:{})});sndPacksInit();if(window.Sound&&Sound.loadSongs&&!songsLoaded){songsLoaded=true;Sound.loadSongs(api,cfgInfo.config.ui.builtInSongs)}(window.Perf&&Perf.set(cfgInfo.config.ui.performance||"auto"),applyEffects());paintVol();themeOverride=null;themeCls();if(api.customThemes&&!loadCustomThemes.done){loadCustomThemes.done=1;loadCustomThemes()}buttonsPref=cfgInfo.config.ui.buttons||"auto";applyUiAll();updateSkipText();fresh=lib||await api.scan()}catch(err){toast(err.message);fresh=[]}
   if(Array.isArray(fresh))lastLib=fresh;
   // a scan can take a few seconds: if you've moved on meanwhile (playing, museum, Inspect, mid-switch), apply it later
   if(keepPlace&&((mode!=="browse"&&mode!=="details")||sysBusy()||(window.BS_BUSY&&BS_BUSY()))){pendingLib=fresh;return} // (beta.10) mid-slide too: never rebuilt under a scroll
@@ -4358,8 +4736,18 @@ async function refresh(keepPlace,lib){
   // they are (rebuilding it made every case and cover load in again, a visible stutter right after startup)
   /* (beta.12) a game with an icon (Quiver's, a PC game's) counts its chosen cover too: only the cover made from its icon is
      left out (it was drawn here). A cover picked for it used to change nothing in this signature, so its case kept the old one */
-  const slotSig=l=>l.map(g=>g.id+"|"+g.title+"|"+(g.art&&((g.art.icon?"i:"+g.art.icon+"|":"")+(g.art.madeFromIcon?"":g.art.front||""))||"")+"|"+(g.art&&g.art.spine||"")+"|"+(isFav(g)?1:0)).join("\n");
+  const slotSig=l=>l.map(g=>g.id+"|"+g.title+"|"+(g.art&&((g.art.icon?"i:"+g.art.icon+"|":"")+(g.art.madeFromIcon?"":g.art.front||""))||"")+"|"+(g.art&&g.art.spine||"")+"|"+(g.art&&g.art.back||"")+"|"+(isFav(g)?1:0)).join("\n"); /* (beta.14: the back too — a back picked in Art Studio never reached the case, which kept the old one while Inspect showed the new) */
+  /* (beta.14) only pictures changed for games already on the shelf (box art arriving while you rest): the cases stay and just
+     those swap their front, spine or back in place, as artUpdated / artPlaced do (Android: decoded first, one per frame).
+     Rebuilding took every case down and loaded every cover again. A picture taken away, or any other change, still rebuilds */
+  const artOf=g=>{const a=(g&&g.art)||{};return [a.madeFromIcon?"":a.front||"",a.spine||"",a.back||""]},baseSig=l=>l.map(g=>g.id+"|"+g.title+"|"+g.kind+"|"+(g.art&&g.art.icon||"")+"|"+(isFav(g)?1:0)+"|"+!!(g.romm&&g.romm.cloud)).join("\n");
+  const artSwap=keepPlace&&slots.length&&cur()&&cur().items.length===slots.length&&sel===slots.findIndex(x=>x.g.id===prevItem)&&baseSig(cur().items)===baseSig(slots.map(x=>x.g))&&cur().items.every((g,i)=>{const a=artOf(g),b=artOf(slots[i].g);return a.every((u,k)=>u===b[k]||!!u)});
   if(keepPlace&&slots.length&&cur()&&cur().items.length===slots.length&&slotSig(cur().items)===slotSig(slots.map(x=>x.g))&&sel===slots.findIndex(x=>x.g.id===prevItem)){cur().items.forEach((g,i)=>{const o=slots[i].g;if(o.kind==="random"&&g.kind==="random"){cur().items[i]=o;return} /* keep the Shuffle tile's own object: it holds the pick being shown (and its fold-away timer) */if(o.art&&o.art.madeFromIcon&&o.art.front&&g.art&&!g.art.front){g.art.front=o.art.front;g.art.madeFromIcon=true}slots[i].g=g});renderTabs();updateInfo();bootMark("kept-shelf")}
+  else if(artSwap){let selNew=false;cur().items.forEach((g,i)=>{const s=slots[i],o=s.g;if(o.kind==="random"&&g.kind==="random"){cur().items[i]=o;return}const a=artOf(g),b=artOf(o);if(o.art&&o.art.madeFromIcon&&o.art.front&&g.art&&!g.art.front){g.art.front=o.art.front;g.art.madeFromIcon=true}s.g=g;if(!s.el)return;
+      if(a[1]!==b[1])(ANDROID?spineSwap:spineOn)(s,ANDROID?thumb(g.art.spine,bh*OS):g.art.spine);
+      if(a[2]!==b[2]&&s.back){s.back.innerHTML="";s.backDrawn=false;if(i===sel)ensureBack(true)}
+      if(a[0]!==b[0]){coverQ=coverQ.filter(q=>q.s!==s);if(ANDROID)artSwapQueue(s);else setFront(s,g,g.art.front);if(i===sel)selNew=true}});
+    renderTabs();updateInfo();if(selNew){updateBg();landSel()}bootMark("art-swapped")}
   else{flipped=false;spin=0;spinT=0;cancelAnimationFrame(spinRaf);spinRaf=0;build()}preloadModel();iconCovers();raShelfLoad();tuneTo(cur());ambient(true);loadHistory();
   if(qm.open)qsSoft(); // the start-up background rescan landed under an open quick menu: its game card and rows follow (and a theme preview comes back)
 }
@@ -4472,7 +4860,15 @@ async function setHidden(id,on){if(!cfgInfo||id==null)return false;id=String(id)
   // an open Settings screen would swap the object it is editing)
   if(lastLib){if(mode==="browse"||mode==="details")await refresh(true,lastLib);else pendingLib=lastLib}
   return true}
-function hideGame(g){if(!g||!isGame(g))return;const id=String(g.id),title=g.title;closeDetails(true);play_("back");rumble(0,.25,60);
+/* (beta.14) Kid mode (Settings → System → Kid mode): only the shelves ticked there show; hiding, renaming, box art, Exit and
+   Settings need the PIN (Settings asks for it itself). ui.kid = { on, pin (a hash), hidden: [shelf ids] } */
+const kidOn=()=>{const k=cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.kid;return !!(k&&k.on&&k.pin)};
+function kidBlock(){if(!kidOn())return false;play_("error");toast("Kid mode is on: a grown-up can change this in Settings");return true}
+function kidShelves(list){const on=kidOn();document.body.classList.toggle("kid-on",on);if(!on)return list;
+  const hid=new Set(((cfgInfo.config.ui.kid.hidden)||[]).map(String));if(!hid.size)return list;
+  const okG=g=>{const s=allShelves[g._shelf];return !s||!hid.has(String(s.id))};
+  return list.filter(s=>{if(!s||hid.has(String(s.id)))return false;if(s.kind!=="home")return true;const its=(s.items||[]).filter(okG);s.items=its;s.games=its;return its.length>0})}
+function hideGame(g){if(!g||!isGame(g)||kidBlock())return;const id=String(g.id),title=g.title;closeDetails(true);play_("back");rumble(0,.25,60);
   setHidden(id,true).then(()=>{const fn=()=>{if(undoHide!==fn)return;toastEnd();setHidden(id,false).then(()=>{toast(`${title} is back on the shelf`);play_("toast")})};
     // (beta.10) through the toast queue: it waits for nothing (your own action), and a toast from the background waits for it
     const pad=showPad(),el=$("toast");toastShow({msg:`Hidden: ${title}  `,kind:"undo"});undoHide=fn;const b=document.createElement("button");b.type="button";b.className="t-undo";b.innerHTML=pad?`${glyph("sq")}<span>Undo</span>`:`<span class="g">U</span><span>Undo</span>`;b.addEventListener("click",e=>{e.stopPropagation();fn()});el.append(b);
@@ -4503,22 +4899,28 @@ async function chooseGameEmu(g){if(!g||g.kind!=="rom"||!api.gameEmulator)return;
 // the Details panel's "Hide from shelf" button (made here: index.html belongs to the Settings work)
 (function(){const c=$("dActEnd");if(!c||$("dHide"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dHide";b.textContent="Hide from shelf";b.title="Hide this game from every shelf (undo it in Settings → Hidden games)";b.addEventListener("click",()=>hideGame(curGame()));c.before(b)})();
 // (beta.7) Details → Collections: this game on shelves of your own (a page in Settings: a switch per collection, or a new one)
-(function(){const c=$("dActEnd");if(!c||$("dCols"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dCols";b.textContent="Collections";b.title="Put this game on shelves of your own";b.addEventListener("click",()=>{const g=curGame();if(!g||!isGame(g)||!window.Setup)return;closeDetails(true);Setup.open({page:"collections",id:g.id,title:g.title})});c.before(b)})();
+(function(){const c=$("dActEnd");if(!c||$("dCols"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dCols";b.textContent="My shelves";b.title="Put this game on shelves of your own (Settings → Library → My shelves makes and names them)";b.addEventListener("click",()=>{const g=curGame();if(!g||!isGame(g)||!window.Setup)return;closeDetails(true);Setup.open({page:"collections",id:g.id,title:g.title})});c.before(b)})();
+// (beta.14, Windows / Linux) Details → ··· → Add to…: the quick menu's Add to… list (Favourites, My shelves, any console shelf)
+(function(){const c=$("dActEnd");if(!c||$("dAddTo")||ANDROID)return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dAddTo";b.hidden=true;b.textContent="Add to…";b.title="Put this game on another shelf too (it stays on its own), on one of My shelves or in Favourites";b.addEventListener("click",()=>addFromDetails());c.before(b)})();
+// (beta.14, Windows / Linux) Details → Change trailer: where this game's trailer comes from (a page in Settings: the trailers
+// found for it, a YouTube link of your own, or none; main/trailers.js). Shown by dvFill for a console game while previews are on
+(function(){const c=$("dActEnd");if(ANDROID||!c||$("dTrailerPick"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dTrailerPick";b.textContent="Change trailer";b.hidden=true;b.title="Pick this game's trailer: a gameplay clip, an official trailer, a YouTube link of your own, or none";
+  b.addEventListener("click",()=>{const g=curGame(),s=g&&shelfFor(g);if(!g||g.kind!=="rom"||!g.file||!s||!window.Setup||!api.trailerChoices)return;closeDetails(true);play_("panel");Setup.open({page:"trailer",systemId:s.id,file:g.file,title:g.fileTitle||g.title,name:g.title,youtube:(g.info&&g.info.video)||null})});c.before(b)})();
 
-/* ---------- (beta.12, Windows / Linux) Details, redesigned around the case ----------
+/* ---------- (beta.14, Windows / Linux) Details: a solid panel beside the case, in tabs (the approved mockup) ----------
    The shelf fades away behind the game's own art (tinted with its console's shelf colour); the chosen 3D case stays where
-   it was and turns a little toward the page, which opens in the space the other cases left (details2.css). One page in
-   sections: LB / RB (Q / E) jump a section and the bar at the top shows where you are; the D-pad goes row to row (padNav)
-   and the page keeps the row clear of the hint bar (padSet). The panel's own elements (their ids) are moved into the
-   sections, so fillDetails, the previews and every button work as before. New here: Favourite, Your play (from the
-   sessions main keeps in history.json), Status, Your copy's objects and the placard. The Thor keeps its own Details. */
-const DV_SECS=[["overview","Overview"],["media","Screenshots"],["about","About"],["play","Your play"],["ach","Achievements"],["copy","Your copy"],["info","Info"]];
+   it was and turns a little toward the panel, which is solid (nothing behind it shows through). The header: "<console> ›
+   Details", the title, one line of facts, the chips (Status, which steps on when pressed; the rating; achievements; the
+   age rating), then Play, ♡ and ··· (More: every other action, as a row of pills). Tabs in Settings' pill style (LB / RB,
+   Q / E, a click or a tap): Overview (the trailer's box, the description, an achievements card; the facts as a list),
+   Achievements, Media (screenshots, the box art) and Your copy (the file, its emulator, Set up for me, the manual, the box
+   art, rename, My shelves, hide, the launch command). The panel's own elements (their ids) are moved into place, so
+   fillDetails, the previews and every button work as before. The Thor keeps its own Details. */
+const DV_SECS=[["overview","Overview"],["ach","Achievements"],["media","Media"],["copy","Your copy"]];
 const DV_STATUS=[["notstarted","Not started"],["playing","Playing"],["finished","Finished"],["abandoned","Abandoned"]];
-const DV_ICO={art:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 15l3-3 5 5"/></svg>',
-  book:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/></svg>',
-  pad:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="11" rx="4"/><path d="M8 11v3M6.5 12.5h3M15 12h.01M17 13.5h.01"/></svg>',
-  heart:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>'};
-const dv={secs:{},nav:null,cur:"",lock:0,raf:0,back:null,poster:null,obj:{},gid:""};
+const DV_ICO={heart:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>',
+  trophy:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M10.5 14h3v3h-3zM8.5 20h7"/></svg>'};
+const dv={secs:{},nav:null,cur:"overview",back:null,poster:null,obj:{},crow:{},gid:"",fg:"",achF:"all",es:new Map(),st:null,achChip:null};
 const dvMk=(tag,cls,html)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e};
 const statusOf=g=>{const o=g&&cfgInfo&&cfgInfo.config.games&&cfgInfo.config.games[g.id];return o&&o.status||""};
 const dvUrl=u=>`url("${String(u).replace(/"/g,"%22")}")`;
@@ -4530,54 +4932,69 @@ function dvBuild(){
   // behind the case: the game's art with the shelf's tint (the other cases fade out); under it, Inspect for the mouse
   const bk=dvMk("div","dv-back",'<img alt="" decoding="async"><i></i>');bk.id="dvBack";bk.setAttribute("aria-hidden","true");$("scene").before(bk);
   const cap=dvMk("button","dv-cap",'<span class="dv-capg" id="dvCapG"></span><span>Inspect the case</span>');cap.type="button";cap.id="dvCap";cap.addEventListener("click",()=>{if(mode==="details")openInspect()});$("scene").after(cap);
-  const hero=d.querySelector(".d-hero"),acts=d.querySelector(".d-actions");
-  // the section bar: a click (or a tap) jumps there; the controller uses the bumpers
-  const nav=dvMk("div","dv-nav");nav.id="dvNav";nav.setAttribute("role","tablist");nav.setAttribute("aria-label","Sections");const navT=dvMk("div","dv-navt");
-  nav.append(dvMk("span","dv-bump dv-lb"),navT,dvMk("span","dv-bump dv-rb"));dv.nav=nav;
-  const sec=(k,label)=>{const s=k==="overview"?hero:dvMk("section");s.classList.add("dv-sec");s.dataset.s=k;if(label){const h=dvMk("div","dv-sh");h.textContent=label;s.append(h)}dv.secs[k]=s;
-    const t=dvMk("div","dv-t");t.setAttribute("role","tab");t.dataset.s=k;t.textContent=DV_SECS.find(x=>x[0]===k)[1];t.addEventListener("click",()=>{setInput("pointer");dvGo(k)});navT.append(t);return s};
-  // Overview: the title, Play and its row (Favourite is new), then the trailer's box beside "Your play"
-  const ov=sec("overview");
-  const fav=dvMk("button","btn d-ico dv-fav",DV_ICO.heart+"<span>Favourite</span>");fav.type="button";fav.id="dFav";fav.title="Favourite (H)";fav.setAttribute("aria-pressed","false");
-  fav.addEventListener("click",()=>{Promise.resolve(toggleFav()).then(dvFavPaint,dvFavPaint)});($("dBoxArtPc")||$("dMoreBtn")).before(fav);
-  const tr=$("dTrailer");tr.innerHTML='<span class="dv-vfull"><span class="dv-trg" id="dvTrG"></span><span id="dvTrL">Pause</span></span>';tr.setAttribute("aria-label","Pause the trailer");tr.title="Pause (Y: full screen)"; /* (beta.12: A pauses / plays it here; Y is full screen) */
+  const hero=d.querySelector(".d-hero"),acts=d.querySelector(".d-actions"),menu=$("dMenu");hero.classList.add("dv-head");
+  // the header: one line of facts under the title; the Status chip (pressed, it steps on to the next one); the achievements chip
+  const facts=dvMk("div","dv-facts");facts.id="dvFacts";$("dChips").before(facts);
+  const st=dvMk("button","chipx dv-stat","<span></span>");st.type="button";st.id="dvStatus";st.addEventListener("click",()=>dvCycleStatus(curGame()));dv.st=st;
+  const ac=dvMk("span","chipx dv-achc",DV_ICO.trophy+"<span></span>");ac.hidden=true;dv.achChip=ac;
+  // the buttons: Play, then ♡ and ··· (round); Read the manual, Inspect the case and a PC game's Box art go into More, in
+  // the mockup's order (the rest after them)
+  const fav=dvMk("button","btn d-ico dv-round dv-fav",DV_ICO.heart);fav.type="button";fav.id="dFav";fav.setAttribute("aria-pressed","false");
+  fav.addEventListener("click",()=>{Promise.resolve(toggleFav()).then(dvFavPaint,dvFavPaint)});
+  const mb=$("dMoreBtn");mb.classList.add("dv-round");mb.setAttribute("aria-label","More");mb.title="More: the manual, the case, the emulator, box art, rename, My shelves, hide";mb.before(fav);
+  {const ae=$("dActEnd");if(ae)["dManual","dInspect","dGameEmu","dBoxArt","dBoxArtPc","dRename","dAddTo","dCols","dHide","dChooseManual","dEmu","dTrailerPick"].forEach(id=>{const b=$(id);if(b)ae.before(b)})}
+  hero.append(acts,menu);
+  const tr=$("dTrailer");tr.innerHTML='<span class="dv-vfull"><span class="dv-trg" id="dvTrG"></span><span id="dvTrL">Pause</span><span class="dv-tr2" id="dvTr2"></span></span>'; /* (beta.14: dvTr2, the volume and full-screen keys beside it) */tr.setAttribute("aria-label","Pause the trailer");tr.title="Pause (Y: full screen)"; /* (beta.12: A pauses / plays it here; Y is full screen) */
   const vid=dvMk("div","dv-vid");vid.id="dvVid";const none=dvMk("span","dv-none");none.id="dvNone";vid.append($("dMedia"),none,tr,dvSndBuild());boxSync(); /* (beta.12: the speaker and volume bar; the box's sound follows its picture) */
-  const p1=dvMk("div","dv-p1",'<div class="dv-sh">Your play</div>');p1.append($("dStats"));
-  const duo=dvMk("div","dv-duo");duo.id="dvDuo";duo.append(vid,p1);
-  ov.append(acts,$("dMenu"),duo);
-  const media=sec("media","Screenshots");media.append($("dShots"));
-  const about=sec("about"),sa=$("dSecAbout");sa.classList.add("dv-sh");about.append(sa,$("dDesc"),$("dMore"));
-  // Your play: the numbers, the last eight weeks, and the Status the player sets
-  const play=sec("play","Your play");
-  const tiles=dvMk("div","dv-tiles");tiles.id="dvTiles";
-  const weeks=dvMk("div","dv-weeks",'<div class="dv-chart"><div class="dv-bars" id="dvBars"></div><div class="dv-wk"><span>8 weeks ago</span><span>This week</span></div></div><div class="dv-kv dv-r"><span>Hours by week</span><b id="dvWk"></b><small>this week</small></div>');weeks.id="dvWeeks";
-  const st=dvMk("div","dv-status",'<div class="dv-tx"><b>Status</b><small>Yours to set, for this game.</small></div><div class="dv-seg" role="radiogroup" aria-label="Status"></div>');st.id="dvStatus";
-  DV_STATUS.forEach(([k,l])=>{const b=dvMk("button","dv-opt");b.type="button";b.dataset.v=k;b.textContent=l;b.setAttribute("role","radio");b.setAttribute("aria-checked","false");b.addEventListener("click",()=>dvSetStatus(curGame(),k));st.lastElementChild.append(b)});
-  play.append(tiles,weeks,st);
-  const ach=sec("ach","Achievements");{const em=dvMk("em");em.textContent=" · RetroAchievements";ach.firstChild.append(em)}
+  // the tabs: a click (or a tap) shows one; the controller has the bumpers, the keyboard Q / E (their glyphs click too)
+  const nav=dvMk("div","dv-nav");nav.id="dvNav";const navT=dvMk("div","dv-navt");navT.setAttribute("role","tablist");navT.setAttribute("aria-label","Details sections");nav.append(navT);dv.nav=nav;
+  const bump=(cls,dir)=>{const b=dvMk("span","dv-bump "+cls);b.setAttribute("aria-hidden","true");b.addEventListener("click",()=>{setInput("pointer");dvJump(dir)});return b};
+  navT.append(bump("dv-lb",-1));
+  const sec=k=>{const s=dvMk("section","dv-sec");s.dataset.s=k;s.setAttribute("role","tabpanel");dv.secs[k]=s;
+    const t=dvMk("div","dv-t");t.setAttribute("role","tab");t.dataset.s=k;t.textContent=DV_SECS.find(x=>x[0]===k)[1];t.addEventListener("click",()=>{setInput("pointer");if(dv.cur!==k)play_("tick",{dir:1});dvGo(k)});navT.append(t);return s};
+  const col=()=>dvMk("div","dv-col");
+  // Overview: the trailer's box, the description (three lines, More / Less) and an achievements card; the facts beside them
+  const ov=sec("overview"),oL=col(),oR=col();
+  const am=dvMk("button","dv-achsum",'<span class="dv-ash"><b>Achievements</b><span></span></span><span class="dv-bar"><i></i></span><small></small>');am.type="button";am.id="dvAchSum";am.hidden=true;
+  am.addEventListener("click",()=>{if(mode!=="details")return;play_("tick",{dir:1});dvGo("ach")});
+  oL.append(vid,$("dDesc"),$("dMore"),am);oR.append($("dGrid"));ov.append(oL,oR);
+  // Achievements: the list (All / Unlocked / Locked) beside the summary (the ring, See all) and where they unlock
+  const ach=sec("ach"),aL=col(),aR=col();aL.id="dvAchL";
+  const flt=dvMk("div","dv-pills");flt.id="dvAchF";
+  [["all","All"],["got","Unlocked"],["locked","Locked"]].forEach(([k,l])=>{const b=dvMk("button","dv-pill");b.type="button";b.dataset.f=k;b.textContent=l;b.addEventListener("click",()=>{if(dv.achF===k)return;dv.achF=k;play_("tick",{dir:1});dvAchList(curGame())});flt.append(b)});
+  const list=dvMk("div","dv-alist");list.id="dvAchList";aL.append(flt,list);
+  const kv=dvMk("div","dv-kvs");kv.id="dvAchKv";
   const off=dvMk("p","dv-how");off.id="dvAchOff";off.textContent="Not connected. Sign in to RetroAchievements in Settings · Accounts & services, and this game's achievements show here.";
-  ach.append($("dAch"),off);
-  // Your copy: the box, spine, disc and manual as objects, with what's on file; the rows press the panel's own buttons
-  const copy=sec("copy","Your copy");{const em=dvMk("em");em.id="dvCopySum";copy.firstChild.append(em)}
+  aR.append($("dAch"),kv,off);ach.append(aL,aR);
+  // Media: the screenshots, then the box art as it is on file (Change in Art Studio)
+  const media=sec("media"),sh=dvMk("div","dv-sh");sh.id="dvShotsH";sh.textContent="Screenshots";
   const tray=dvMk("div","dv-tray");tray.id="dvTray";
-  [["box","Box"],["spine","Spine"],["disc","Disc"],["manual","Manual"]].forEach(([k,l])=>{const o=dvMk("div","dv-obj",`<div class="dv-art"><i class="dv-${k}"></i></div><b></b><small></small>`);o.dataset.o=k;o.querySelector("b").textContent=l;tray.append(o);dv.obj[k]=o});
-  const rows=dvMk("div","dv-rows");
-  const row=(id,ico,title,sub,target)=>{const b=dvMk("button","dv-row",`<span class="dv-ic">${ico}</span><span class="dv-tx"><b></b><small></small></span><span class="dv-val"></span><span class="dv-chev" aria-hidden="true">›</span>`);b.type="button";b.id=id;
-    b.querySelector("b").textContent=title;b.querySelector("small").textContent=sub;b.addEventListener("click",()=>{const t=target();if(t&&!t.hidden)t.click()});rows.append(b)};
-  row("dvArt",DV_ICO.art,"Box art","Front, back, spine and disc in the Art Studio.",()=>$("dBoxArt"));
-  row("dvMan",DV_ICO.book,"Find a manual…","Search online, or add your own scan.",()=>$("dChooseManual"));
-  row("dvEmu",DV_ICO.pad,"Emulator for this game","",()=>$("dGameEmu"));
-  copy.append(tray,rows,$("dArt"));
-  // Info: a museum placard, then how it plays and the launch command at the bottom
-  const info=sec("info"),si=$("dSecInfo");si.classList.add("dv-sh");
-  const plac=dvMk("div","dv-plac",'<div class="dv-pl" id="dvPl"></div><h4 class="dv-ph" id="dvPh"></h4>');plac.append($("dGrid"));
-  info.append(si,plac,$("dHow"),d.querySelector(".d-adv"));
-  const foot=dvMk("div","dv-foot");foot.setAttribute("aria-hidden","true"); /* (the page fades out under the hint bar) */
-  hero.before(nav);hero.after(media,about,play,ach,copy,info);d.after(foot);
-  // the bar follows the page (one look a frame while it scrolls, nothing at rest)
-  d.addEventListener("scroll",()=>{if(!dv.raf)dv.raf=requestAnimationFrame(()=>{dv.raf=0;dvWhere()})},{passive:true});
-  // the trailer's box scrolled out of sight pauses its video; back in sight it plays on
+  [["front","Front"],["back","Back"],["spine","Spine"],["disc","Disc"],["manual","Manual"]].forEach(([k,l])=>{const o=dvMk("div","dv-obj",`<div class="dv-art"><i class="dv-${k}"></i></div><b></b><small></small>`);o.dataset.o=k;o.querySelector("b").textContent=l;tray.append(o);dv.obj[k]=o});
+  const chg=dvMk("button","dv-btn");chg.type="button";chg.id="dvArtBtn";chg.textContent="Change in Art Studio";chg.addEventListener("click",()=>dvPress("dBoxArt"));tray.append(chg);
+  const artH=dvMk("div","dv-sh");artH.textContent="Box art";const artBox=dvMk("div","dv-artbox");artBox.id="dvArtBox";artBox.append(artH,tray);
+  /* (beta.14) a game short of screenshots, IGDB not connected: one quiet line to its Settings page */
+  const igq=dvMk("button","dv-quiet");igq.type="button";igq.id="dvIgdb";igq.hidden=true;igq.textContent="More screenshots: connect IGDB (free)";
+  igq.addEventListener("click",()=>{if(mode!=="details"||!window.Setup)return;closeDetails(true);play_("panel");Setup.open({page:"igdb"})});
+  media.append(sh,$("dShots"),igq,artBox);
+  // Your copy: what's on file (each with its button), then rename, My shelves, hide and the launch command
+  const copy=sec("copy"),cL=col(),cR=col(),rows=dvMk("div","dv-kvs");rows.id="dvCopyRows";
+  const row=(k,label,btn,act)=>{const r=dvMk("div","dv-kv",'<span class="k"></span><span class="v"><span class="t"></span></span>');r.dataset.k=k;r.querySelector(".k").textContent=label;
+    if(btn){const b=dvMk("button","dv-mini");b.type="button";b.id="dvC-"+k;b.textContent=btn;b.addEventListener("click",act);r.lastChild.append(b)}rows.append(r);dv.crow[k]=r};
+  row("file","File");row("size","Size");row("ver","Version");
+  row("emu","Emulator","Change",()=>dvPress("dGameEmu"));
+  row("setup","Set up for me","Set up",()=>{const g=curGame(),s=g&&shelfFor(g);if(!s||!window.Setup||mode!=="details")return;closeDetails(true);play_("panel");Setup.open({page:s.id})});
+  row("man","Manual","Open",()=>dvPress(hasManual(curGame())?"dManual":"dChooseManual"));
+  row("art","Box art","Change",()=>dvPress("dBoxArt"));
+  dv.crow.setup.hidden=true;cL.append(rows,$("dHow"));
+  [["dvRen","Rename on the shelf","dRename"],["dvAdd","Add to another shelf…","dAddTo"],["dvCol","Add to one of My shelves","dCols"],["dvHide","Hide from the shelf","dHide"]].forEach(([id,l,t])=>{const b=dvMk("button","dv-act");b.type="button";b.id=id;b.textContent=l;b.dataset.for=t;b.addEventListener("click",()=>dvPress(t));cR.append(b)});
+  cR.append(d.querySelector(".d-adv"));copy.append(cL,cR);
+  navT.append(bump("dv-rb",1));
+  const foot=dvMk("div","dv-foot");foot.setAttribute("aria-hidden","true"); /* (the panel fades out under the hint bar) */
+  hero.after(nav);nav.after(ov,ach,media,copy);d.after(foot);dvShow("overview");
+  // the trailer's box out of sight (another tab, or scrolled away) pauses its video; back in sight it plays on
   if(window.IntersectionObserver)new IntersectionObserver(es=>{const v=$("dVideo");if(!v.getAttribute("src")||mode!=="details"||PV.held)return;for(const e of es){if(e.isIntersecting){if(v.paused)v.play().catch(()=>{})}else if(!v.paused)v.pause()}},{root:d,threshold:.2}).observe($("dMedia"));
+  // a clip that comes in while another tab is showing waits there (the box's coming into sight starts it)
+  $("dVideo").addEventListener("play",()=>{if(mode==="details"&&dv.cur!=="overview")$("dVideo").pause()});
 }
 // a screenshot picked: it becomes the trailer box's picture (under the video, if one is playing)
 function dvShot(u){const pu=u?thumb(u,512):"";if(!pu||dv.poster===pu)return;dv.poster=pu;$("dvVid").classList.remove("dv-empty");dvPic(pu,x=>{if(dv.poster===x)$("dMediaIn").style.backgroundImage=dvUrl(x)})}
@@ -4585,83 +5002,138 @@ function dvList(){return DV_SECS.map(x=>dv.secs[x[0]]).filter(s=>s&&!s.hidden)}
 function dvNavH(){return dv.nav?dv.nav.offsetHeight:0}
 // the lowest a row may sit: above the hint bar where that bar lies over the page
 function dvClearBottom(pr){const h=$("hints");if(!h||h.hidden)return pr.bottom;const r=h.getBoundingClientRect();return r.height&&r.top<pr.bottom&&r.right>pr.left?Math.min(pr.bottom,r.top-10):pr.bottom}
-const dvSecOf=el=>{const s=el&&el.closest&&el.closest(".dv-sec");return s?s.dataset.s:""};
-function dvMark(k){if(!k||dv.cur===k||!dv.nav)return;dv.cur=k;dv.nav.querySelectorAll(".dv-t").forEach(t=>{const on=t.dataset.s===k;t.classList.toggle("cur",on);t.setAttribute("aria-selected",String(on))})}
-function dvFocused(el){if(performance.now()<dv.lock)return;dv.hold=null;dvMark(dvSecOf(el))}
-// where you are: the section of the item you're on while it's in view, else the one at the top of the page
-function dvWhere(){if(mode!=="details"||performance.now()<dv.lock)return;const d=$("details"),L=dvList();if(!L.length)return;
-  /* a section jumped to stays the one shown while the page rests there (even when its first item is further down) */
-  if(dv.hold){if(Math.abs(d.scrollTop-dv.hold.T)<24){dvMark(dv.hold.k);return}dv.hold=null}
-  const pr=d.getBoundingClientRect(),top=pr.top+dvNavH(),bot=dvClearBottom(pr),f=d.querySelector(".pad-focus");
-  if(f){const r=f.getBoundingClientRect();if(r.height&&r.top>=top-2&&r.bottom<=bot+2){dvMark(dvSecOf(f));return}}
-  if(d.scrollTop+d.clientHeight>=d.scrollHeight-4){dvMark(L[L.length-1].dataset.s);return}
-  const y=d.scrollTop+dvNavH()+d.clientHeight*.15;let k=L[0].dataset.s;for(const s of L)if(s.offsetTop<=y)k=s.dataset.s;dvMark(k)}
-// a section: the page glides to it and the controller lands on its first item (or the next one below, if it has none)
-function dvGo(k){const d=$("details"),s=dv.secs[k];if(!s||s.hidden||mode!=="details")return;dMenuClose(true);
-  const T=k==="overview"?0:Math.max(0,Math.min(d.scrollHeight-d.clientHeight,s.offsetTop-dvNavH()-6));
-  d._gT=T;d._gAt=performance.now();if(Math.abs(d.scrollTop-T)>.5)d.scrollTo({top:T,behavior:document.body.classList.contains("reduce-motion")?"auto":"smooth"});
-  dv.lock=0;dvMark(k);dv.lock=performance.now()+800;dv.hold={k,T};
-  let it=k==="overview"?$("dPlay"):padItems(s)[0];
-  if(!it){const L=padItems(d);it=L.find(e=>s.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_FOLLOWING)||null}
-  if(it)padSet(d,it)}
+// one of the panel's own buttons, pressed for a row or a pill that stands for it (only while it's offered)
+function dvPress(id){const b=$(id);if(b&&!b.hidden&&mode==="details")b.click()}
+// a tab shown: the others hidden, the bar marks it, and what it holds is filled in (only once it's on screen)
+function dvShow(k){if(!dv.secs[k]||!dv.nav)return;dv.cur=k;
+  for(const [x] of DV_SECS){const p=dv.secs[x];if(p)p.classList.toggle("on",x===k)}
+  dv.nav.querySelectorAll(".dv-t").forEach(t=>{const on=t.dataset.s===k;t.classList.toggle("cur",on);t.setAttribute("aria-selected",String(on))});
+  const g=curGame();if(!g||mode!=="details")return;
+  {const n=dv.nav.firstChild,t=n.querySelector(".dv-t.cur");if(t&&n.scrollWidth>n.clientWidth+1){const a=n.getBoundingClientRect(),b=t.getBoundingClientRect();n.scrollLeft+=b.left-a.left-(a.width-b.width)/2}} /* (a narrow panel: the tab you're on scrolled into its bar) */
+  if(k==="overview"){const dd=$("dDesc"),m=$("dMore");if(dd.classList.contains("clamp"))requestAnimationFrame(()=>{if(dv.cur==="overview")m.hidden=!dd.textContent||dd.scrollHeight<=dd.clientHeight+4})} /* (measured where it shows: on another tab it had no height) */
+  else if(k==="ach")dvAchList(g);else if(k==="media")dvArt(g);else if(k==="copy")dvSetup(g)}
+// a tab picked (a click, LB / RB, Q / E): the panel keeps its place unless it was scrolled past the tabs (then the tabs
+// come to the top); the controller stays where it was when that's still there (the header), else it lands on the tab's
+// first item (Play when it has none)
+function dvGo(k){const d=$("details"),s=dv.secs[k];if(!s||s.hidden||mode!=="details")return;dMenuClose(true);dvShow(k);
+  const T=Math.max(0,s.offsetTop-dvNavH()-8);if(d.scrollTop>T){d._gT=null;d.scrollTo({top:T,behavior:"auto"})}
+  const f=d.querySelector(".pad-focus");if(!f||!padItems(d).includes(f))padSet(d,padItems(s)[0]||$("dPlay"))}
 function dvJump(dir){if(mode!=="details")return;const L=dvList();if(!L.length)return;let i=L.findIndex(s=>s.dataset.s===dv.cur);if(i<0)i=0;
   const j=i+(dir>0?1:-1);if(j<0||j>=L.length)return;dvGo(L[j].dataset.s);play_("tick",{dir:dir>0?1:-1})}
 function dvCapGlyph(pad){const c=$("dvCapG"),t=$("dvTrG"),k=pad?"p":"k";if(dv.glyphs===k+glyphStyle())return;dv.glyphs=k+glyphStyle();
   if(c)c.innerHTML=pad?glyph("R3"):'<span class="g">V</span>';if(t)t.innerHTML=pad?glyph("x"):'<span class="g">Enter</span>';
+  const t2=$("dvTr2");if(t2)t2.innerHTML=pad?`<i></i>${glyph("↔")}<span>Volume</span><i></i>${glyph("tri")}<span>Full screen</span>`:'<i></i><span class="g">← →</span><span>Volume</span>';
   if(dv.nav){const b=dv.nav.querySelectorAll(".dv-bump");b[0].innerHTML=pad?glyph("L1"):'<span class="g">Q</span>';b[1].innerHTML=pad?glyph("R1"):'<span class="g">E</span>'}}
-function dvFavPaint(){const b=$("dFav"),g=curGame();if(!b)return;const ok=!!g&&isGame(g),on=ok&&isFav(g);b.hidden=!ok;b.classList.toggle("set",on);b.setAttribute("aria-pressed",String(on));b.title=on?"In your favourites (H takes it out)":"Add to your favourites (H)"}
-function dvStatusPaint(g){const v=statusOf(g);$("dvStatus").querySelectorAll(".dv-opt").forEach(b=>{const on=b.dataset.v===v;b.classList.toggle("on",on);b.setAttribute("aria-checked",String(on))})}
-// Status: the one pressed again clears it; saved per game in the settings (main: game:status)
-async function dvSetStatus(g,k){if(!g||!isGame(g)||!api.gameStatus)return;const v=statusOf(g)===k?"":k,c=cfgInfo&&cfgInfo.config;
+function dvFavPaint(){const b=$("dFav"),g=curGame();if(!b)return;const ok=!!g&&isGame(g),on=ok&&isFav(g);b.hidden=!ok;b.classList.toggle("set",on);b.setAttribute("aria-pressed",String(on));
+  b.setAttribute("aria-label",on?"Remove from favorites":"Add to favorites");b.title=on?"In your favorites (H takes it out)":"Add to your favorites (H)"}
+// the Status chip: Not started (nothing set), Playing, Finished, Abandoned; pressed, it steps on to the next one
+function dvStatusPaint(g){const b=$("dvStatus");if(!b)return;const e=DV_STATUS.find(x=>x[0]===statusOf(g))||DV_STATUS[0];b.dataset.v=e[0];b.firstChild.textContent=e[1];
+  b.setAttribute("aria-label",`Status: ${e[1]}. Press for the next one`);b.title=`Status: ${e[1]} (press for the next one)`}
+function dvCycleStatus(g){if(!g||!isGame(g)||mode!=="details")return;const i=Math.max(0,DV_STATUS.findIndex(x=>x[0]===(statusOf(g)||"notstarted"))),nx=DV_STATUS[(i+1)%DV_STATUS.length][0];dvSetStatus(g,nx==="notstarted"?"":nx)}
+// Status, saved per game in the settings (main: game:status); "" clears it (Not started)
+async function dvSetStatus(g,v){if(!g||!isGame(g)||!api.gameStatus)return;v=v||"";const c=cfgInfo&&cfgInfo.config;
   if(c){c.games=Object.assign({},c.games);const o=Object.assign({},c.games[g.id]);if(v)o.status=v;else delete o.status;if(Object.keys(o).length)c.games[g.id]=o;else delete c.games[g.id]}
   dvStatusPaint(g);play_("tick",{dir:1});
   try{const r=await api.gameStatus(g.id,v);if(r&&r.games&&cfgInfo)cfgInfo.config.games=r.games}catch(e){toast(String(e&&e.message||e))}
-  if(mode==="details"&&curGame()===g)dvStatusPaint(g)}
-// Your play, from the history main keeps: launches, time, last played, and (since beta.12) first played, the longest
-// session and the last sessions (start, length in seconds)
+  if(mode==="details"&&curGame()===g)dvStatusPaint(g);
+  autoStatusChanged()} /* (beta.14) the Playing / Finished shelves follow */
+// "3 days ago", from a time in ms
 const dvAgo=t=>{const d=Math.floor((Date.now()-t)/864e5);return d<1?"today":d<2?"yesterday":d<14?d+" days ago":d<61?Math.round(d/7)+" weeks ago":d<730?Math.round(d/30.4)+" months ago":Math.round(d/365)+" years ago"};
-function dvStats(g){const h=HIST[g.id]||{},S=Array.isArray(h.s)?h.s:[],n=h.count||0,ms=h.ms||(g.kind==="steam"&&g.minutes?g.minutes*60000:0),sh=shelfFor(g);
-  const day=t=>new Date(t).toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"});
-  const m0=new Date();m0.setDate(1);m0.setHours(0,0,0,0);let month=0,long=h.long||0;for(const [t,l] of S){if(t*1000>=m0.getTime())month+=l*1000;if(l*1000>long)long=l*1000}
-  let tot=0;for(const x of (sh&&sh.items)||[]){const e=x&&HIST[x.id];if(e&&e.ms)tot+=e.ms}
-  const avg=h.ms&&n?h.ms/n:0;
-  const T=[["Play time",ms?fmtPlay(ms):"Not yet","all sessions"],["Launches",String(n),n===1?"time started":"times started"],["Average",avg?fmtPlay(avg):"–","a session"],
-    ["Last played",h.last?fmtDate(h.last/1000):"Never",h.last?day(h.last):""],["First played",h.first?day(h.first):n?"Not recorded":"Not yet",h.first?dvAgo(h.first):n?"recorded from now on":""],
-    ["Longest",long?fmtPlay(long):"–","one session"],["This month",month?fmtPlay(month):"None",new Date().toLocaleDateString(undefined,{month:"long"})],
-    ["Of "+(sh&&sh.name||"its shelf"),tot&&h.ms?Math.max(1,Math.round(100*h.ms/tot))+"%":"–","of your time on it"]];
-  const tiles=$("dvTiles");tiles.textContent="";T.forEach(([k,v,sm])=>{const t=dvMk("div","dv-tile");t.dataset.k=k;const a=dvMk("span"),b=dvMk("b"),c=dvMk("small");a.textContent=k;b.textContent=v;c.textContent=sm;t.append(a,b,c);tiles.append(t)});
-  // hours by week: the last eight weeks, this one on the right
-  const W=new Array(8).fill(0),now=Date.now()/1000;for(const [t,l] of S){const k=Math.floor((now-t)/604800);if(k>=0&&k<8)W[7-k]+=l}
-  const mx=Math.max(...W),bars=$("dvBars");bars.textContent="";W.forEach(v=>{const b=dvMk("i");b.style.height=(mx?Math.max(3,Math.round(100*v/mx)):3)+"%";b.title=v?fmtPlay(v*1000):"None";bars.append(b)});
-  $("dvWk").textContent=W[7]?fmtPlay(W[7]*1000):"None"}
-function dvCopy(g){const a=g.art||{},s=shelfFor(g),st=stOf(g),man=Array.isArray(a.manual)?a.manual:[],same=dv.gid===String(g.id);dv.gid=String(g.id);
-  const O={box:[!!a.front,a.front?(a.back?"Front and back":"Front only"):"No scan yet",frontUrl(g)],spine:[!!a.spine,a.spine?"On file":"No scan yet",a.spine],
-    disc:[!!a.disc,a.disc?"On file":"No scan yet",a.disc],manual:[man.length>0,man.length?`${man.length} pages`:g.manualMiss?"None found online":"Not yet",man[0]]};
-  let n=0;for(const k of Object.keys(O)){const [ok,txt,u]=O[k],o=dv.obj[k],pic=o.querySelector(".dv-art i"),sm=o.querySelector("small");if(ok)n++;
+// Media: the box, spine, disc and manual as they are on file (decoded first, only while Media shows)
+function dvArt(g){if(!g||g.kind!=="rom")return;const a=g.art||{},s=shelfFor(g),st=stOf(g),man=Array.isArray(a.manual)?a.manual:[],same=dv.gid===String(g.id);dv.gid=String(g.id);
+  const no="No scan yet",O={front:[!!a.front,a.front?"On file":no,frontUrl(g)],back:[!!a.back,a.back?"On file":no,a.back],spine:[!!a.spine,a.spine?"On file":no,a.spine],
+    disc:[!!a.disc,a.disc?"On file":no,a.disc],manual:[man.length>0,man.length?`${man.length} pages`:g.manualMiss?"None found online":"Not yet",man[0]]};
+  for(const k of Object.keys(O)){const [ok,txt,u]=O[k],o=dv.obj[k],pic=o.querySelector(".dv-art i"),sm=o.querySelector("small");
     o.classList.toggle("miss",!ok);sm.textContent=txt;sm.classList.toggle("ok",ok);if(k==="disc")o.querySelector("b").textContent=s?mediaWord(s.id):"Disc";
     if(k==="spine"){const sb=st.spineBand||{};pic.style.setProperty("--sb",sb.bg||"#2c2c35");pic.style.setProperty("--sf",sb.fg||"#c3c3cf");pic.textContent=a.spine?"":g.title}
-    const want=typeof u==="string"&&u?thumb(u,k==="box"||k==="manual"?220:160):"";if(!same)pic.style.backgroundImage="";pic.dataset.want=want;
+    const want=typeof u==="string"&&u?thumb(u,k==="spine"||k==="disc"?160:220):"";if(!same)pic.style.backgroundImage="";pic.dataset.want=want;
     dvPic(want,x=>{if(pic.dataset.want===x)pic.style.backgroundImage=x?dvUrl(x):""})}
-  $("dvCopySum").textContent=n===4?" · all on file":` · ${n} of 4 on file`;
-  const ba=$("dBoxArt"),cm=$("dChooseManual"),ge=$("dGameEmu"),mn=$("dvMan"),em=$("dvEmu");
-  $("dvArt").hidden=!ba||ba.hidden;mn.hidden=!cm||cm.hidden;if(cm)mn.querySelector("b").textContent=cm.textContent;em.hidden=!ge||ge.hidden;
-  const own=gameEmu(g);em.querySelector("small").textContent=[String(g.file||"").split(/[\\/]/).pop(),fmtSize(g.sizeBytes),g.discs&&g.discs.length>1?g.discs.length+" discs":""].filter(Boolean).join(" · ");
-  em.querySelector(".dv-val").textContent=own?emuLabel(own):`${s.emulatorName||"Emulator"}, the shelf's`}
-function dvFill(g){const d=$("details");if(!d.classList.contains("dv2")||!g)return;const s=shelfFor(g),i=g.info||{},rom=g.kind==="rom",game=rom||g.kind==="steam";
+  const ba=$("dBoxArt");$("dvArtBtn").hidden=!ba||ba.hidden}
+// Your copy: the file, its size and version, the emulator, the manual and the box art, each with the button that changes it
+function dvCopy(g){const R=dv.crow,a=g.art||{},s=shelfFor(g)||{},man=Array.isArray(a.manual)?a.manual:[];
+  const set=(k,v,ok)=>{const r=R[k];r.hidden=!v;const t=r.querySelector(".t");t.textContent=v||"";t.classList.toggle("ok",!!ok)};
+  const btn=(k,show,label)=>{const b=$("dvC-"+k);if(!b)return;b.hidden=!show;if(label)b.textContent=label};
+  const fn=String(g.file||"").split(/[\\/]/).pop();set("file",fn);
+  set("size",[fmtSize(g.sizeBytes),g.discs&&g.discs.length>1?g.discs.length+" discs":""].filter(Boolean).join(" · "));
+  const rev=(fn.match(/\((Rev[ ._-]?[\w.]+|v\d[\w.]*)\)/i)||[])[1]||"";set("ver",[g.region,rev.replace(/^rev[ ._-]?/i,"Rev ")].filter(Boolean).join(" · "));
+  const own=gameEmu(g),ge=$("dGameEmu");set("emu",own?emuLabel(own):`${s.emulatorName||"Emulator"}, the shelf's`);btn("emu",!!ge&&!ge.hidden);
+  const cm=$("dChooseManual");set("man",man.length?`${man.length} pages`:g.manualMiss?"None found online":"Not found yet",man.length>0);btn("man",man.length>0||(!!cm&&!cm.hidden),man.length?"Open":"Find");
+  const parts=[a.front&&"front",a.back&&"back",a.spine&&"spine",a.disc&&lcWord(s.id?mediaWord(s.id):"Disc")].filter(Boolean),w=parts.length>1?parts.slice(0,-1).join(", ")+" and "+parts[parts.length-1]:parts[0]||"";
+  set("art",w?w[0].toUpperCase()+w.slice(1):"No scan yet",parts.length===4);const ba=$("dBoxArt");btn("art",!!ba&&!ba.hidden);
+  ["dvRen","dvAdd","dvCol","dvHide"].forEach(id=>{const b=$(id),t=b&&$(b.dataset.for);if(b)b.hidden=!t||t.hidden})} /* (beta.14: dvAdd shows where Add to… does, dvCol where it doesn't: Android, Kid mode) */
+// Set up for me: what Settings → the console's page knows (asked once a game, when Your copy shows)
+function dvSetup(g){const r=dv.crow.setup;if(!r)return;const s=g&&g.kind==="rom"?shelfFor(g):null;if(!s||!s.emulator||!api.emuSetupStatus){r.hidden=true;return}
+  const put=st=>{if(curGame()!==g||mode!=="details")return;const ok=!!(st&&st.supported);r.hidden=!ok;if(!ok)return;const done=!!st.done,t=r.querySelector(".t");
+    t.textContent=done?"✓ Done":"Not yet";t.classList.toggle("ok",done);$("dvC-setup").textContent=done?"Change":"Set up"};
+  if(dv.es.has(s.id)){put(dv.es.get(s.id));return}r.hidden=true;dv.es.set(s.id,null);
+  Promise.resolve(api.emuSetupStatus(s.id)).then(st=>{dv.es.set(s.id,st||{});put(st)}).catch(()=>dv.es.delete(s.id))}
+// achievements, once they're in (raDetails): the chip, Overview's card, the tab's summary and (while it shows) its list
+function dvAchP(g){const s=g&&shelfFor(g);if(!g||g.kind!=="rom"||!raHas(s))return null;const p=RA.game.get(s.id+"|"+g.title);return p&&p.total?p:null}
+const dvWhen=d=>{const t=new Date(String(d).replace(" ","T")).getTime();return isNaN(t)?achDate(d):dvAgo(t)};
+function dvAchPaint(g){if(!DV2||!dv.nav||!g||curGame()!==g)return;const s=shelfFor(g),p=dvAchP(g),L=p&&Array.isArray(p.achievements)?p.achievements:[];
+  dv.achChip.hidden=!p;if(p)dv.achChip.lastChild.textContent=`${p.earned} of ${p.total}`;
+  const am=$("dvAchSum");am.hidden=!p;
+  if(p){am.querySelector(".dv-ash span").textContent=`${p.earned} of ${p.total} · ${achPts(p)}`;am.querySelector(".dv-bar i").style.transform=`scaleX(${Math.min(1,p.earned/p.total)})`;
+    const last=L.filter(a=>a.earned&&a.date).sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0];
+    am.querySelector("small").textContent=[last?`Last: ${last.title}, ${dvWhen(last.date)}`:"None unlocked yet",`Unlocks in ${achSrc(s)}`].join(" · ")}
+  const kv=$("dvAchKv");kv.textContent="";
+  const add=(k,v,ok)=>{const r=dvMk("div","dv-kv",'<span class="k"></span><span class="v"><span class="t"></span></span>');r.querySelector(".k").textContent=k;const t=r.querySelector(".t");t.textContent=v;t.classList.toggle("ok",!!ok);kv.append(r)};
+  if(raHas(s)){add("Unlocks in",achSrc(s)+(!achLocal(s)&&RA.profile?", signed in":""),!achLocal(s)&&!!RA.profile);
+    const rare=L.filter(a=>a.earned&&a.rarity!=null).sort((a,b)=>a.rarity-b.rarity)[0];if(rare)add("Rarest you have",`${rare.title} · ${rare.rarity}%`);
+    if(p&&p.mastered)add("Set",String(p.mastered)[0].toUpperCase()+String(p.mastered).slice(1),true)}
+  kv.hidden=!kv.childElementCount;if(dv.cur==="ach")dvAchList(g)}
+// the tab's list: All, Unlocked or Locked (the first 60; See all opens the full list screen, as A on any of them does)
+function dvAchList(g){const L=$("dvAchList"),F=$("dvAchF"),box=$("dvAchL");if(!L||!g)return;const p=dvAchP(g),all=p&&Array.isArray(p.achievements)?p.achievements:[];
+  box.hidden=!all.length;if(!all.length){L.textContent="";L.dataset.k="";return}
+  F.querySelectorAll(".dv-pill").forEach(b=>{const on=b.dataset.f===dv.achF;b.classList.toggle("on",on);b.setAttribute("aria-pressed",String(on))});
+  const key=[g.id,dv.achF,p.earned,all.length].join("|");if(L.dataset.k===key)return;L.dataset.k=key;L.textContent="";
+  const shown=all.filter(a=>dv.achF==="all"||(dv.achF==="got"?a.earned:!a.earned)),MAX=60;
+  const pts=a=>{if(p.unit==="G")return `${a.points} G`;if(p.unit==="trophy"){const t=achType(a.type);return t?t[1]:"Trophy"}return a.points===1?"1 pt":`${a.points} pts`};
+  for(const a of shown.slice(0,MAX)){const b=dvMk("button","dv-arow"+(a.earned?" got":""));b.type="button";const im=dvMk("img");im.alt="";im.loading="lazy";im.decoding="async";im.src=achImg(a);
+    const tx=dvMk("span","dv-atx"),t=dvMk("b"),ds=dvMk("small"),r=dvMk("span","dv-ar");t.textContent=a.title;ds.textContent=a.desc||"";
+    r.textContent=`${pts(a)} · ${a.earned?(a.date?dvWhen(a.date):"unlocked"):"locked"}`;tx.append(t,ds);b.append(im,tx,r);b.title=a.desc||a.title;b.addEventListener("click",()=>openAchievements());L.append(b)}
+  if(shown.length>MAX){const m=dvMk("button","dv-btn");m.type="button";m.textContent=`See all ${shown.length}`;m.addEventListener("click",()=>openAchievements());L.append(m)}
+  if(!shown.length){const e=dvMk("p","dv-how");e.textContent=dv.achF==="got"?"None unlocked yet.":"Every one is unlocked.";L.append(e)}}
+function dvFill(g){const d=$("details");if(!d.classList.contains("dv2")||!g)return;const s=shelfFor(g)||{},i=g.info||{},rom=g.kind==="rom",game=rom||g.kind==="steam",gid=String(g.id!=null?g.id:g.title);
   app.style.setProperty("--dv-tint",stOf(g).glow||"#9d8cff");
   // the art behind the case, and the trailer box's poster: fan art first, then a screenshot, then the box's own art
   const shots=rom&&i.shots||[],art=(rom&&i.bg)||(g.art&&g.art.hero)||shots[0]||frontUrl(g)||"",post=(rom&&i.bg)||shots[0]||(g.art&&g.art.hero)||""; /* (never the cover: the real case is right there) */
   const bu=art?thumb(art,360):"";if(dv.back!==bu){dv.back=bu;dvPic(bu,u=>{if(dv.back!==u)return;const im=$("dvBack").firstChild;if(u)im.src=u;else im.removeAttribute("src")})}
   const pu=post?thumb(post,512):"";if(dv.poster!==pu){dv.poster=pu;$("dMediaIn").style.backgroundImage="";dvPic(pu,u=>{if(dv.poster===u)$("dMediaIn").style.backgroundImage=u?dvUrl(u):""})}
-  $("dvVid").classList.toggle("dv-empty",!pu);$("dvNone").textContent=$("dTrailer").hidden?"No trailer or screenshots yet":"Trailer";
-  const show={overview:true,media:!$("dShots").hidden,about:!$("dDesc").hidden,play:game,ach:rom&&(!RA.on||raHas(s)),copy:rom,info:true};
+  $("dvVid").classList.toggle("dv-empty",!pu);$("dvNone").textContent=$("dTrailer").hidden?"No trailer or screenshots yet":"Trailer";$("dvVid").hidden=!game;
+  // the header: where you are, one line of facts (only the ones it has), the chips
+  $("dKicker").textContent=`${s.name||"Boxshelf"}  ›  Details`;
+  const h=HIST[g.id]||{},ms=h.ms||(g.kind==="steam"&&g.minutes?g.minutes*60000:0),np=+i.players,pl=i.players?(np>1?`1–${np} players`:np===1?"1 player":`${i.players} players`):"";
+  {const F=game?[yearOf(g),i.dev,genreOf(g),rom?pl:"",ms?fmtPlay(ms)+" played":""].filter(Boolean):[],fe=$("dvFacts");fe.textContent="";
+    F.forEach((t,k)=>{if(k){const x=dvMk("i");x.textContent="·";x.setAttribute("aria-hidden","true");fe.append(x)}const e=dvMk("span");e.textContent=String(t);fe.append(e)});fe.hidden=!F.length}
+  if(game){const ch=$("dChips");ch.textContent="";const chip=(t,cls)=>{if(!t)return;const c=dvMk("span","chipx"+(cls?" "+cls:""));c.textContent=t;ch.append(c)};
+    ch.append(dv.st);if(g.kind==="steam")chip(PC_SRC[g.source]||"Steam");
+    chip([rom&&i.rating?`★ ${(+i.rating).toFixed(1)}`:"",i.metacritic?`Critics ${i.metacritic}`:""].filter(Boolean).join(" · "),"score");
+    if(rom)ch.append(dv.achChip);
+    const age=rom&&i.esrb?String(i.esrb).replace(/ - .*$/,"").trim():"";chip(age?(age.length<=4?"Rated "+age:age):"","esrb");
+    if(rom&&g.compat)chip(`Xenia: ${g.compat}`,/playable|gameplay/i.test(g.compat)?"score":"")} /* (other tiles keep fillDetails' own chips) */
+  // Overview's facts, Playnite-style: a row per fact the game has (a PC game keeps fillDetails' list)
+  if(rom){const grid=$("dGrid");grid.textContent="";
+    [["Developer",i.dev],["Publisher",i.pub&&i.pub!==i.dev?i.pub:""],["Released",i.release||i.year?fmtRelease(i.release,i.year):""],["Genre",i.genres?String(i.genres).replace(/;/g,", "):""],["Series",i.series],
+      ["Players",pl?pl+(i.coop==="true"?", co-op":""):""],["Region",g.region],["Last played",h.last?fmtDate(h.last/1000):""],["Time played",ms?fmtPlay(ms):""],["Launches",h.count?String(h.count):""],["How long to beat",i.hltb]]
+      .forEach(([k,v])=>{if(v==null||String(v).trim()==="")return;const r=dvMk("div"),dt=dvMk("dt"),dd=dvMk("dd");dt.textContent=k;dd.textContent=String(v);dd.title=String(v);r.append(dt,dd);grid.append(r)});
+    const si=$("dSecInfo");if(si)si.hidden=!grid.childElementCount}
+  // More's pills say what they do (fillDetails names some of them for the Thor's own Details)
+  {const lab=(id,t)=>{const b=$(id);if(!b)return;const sp=b.querySelector("span");if(sp)sp.textContent=t;else b.textContent=t};
+    lab("dManual",hasManual(g)?"Read the manual":"Read the booklet");lab("dInspect","Inspect the case");lab("dGameEmu","Choose emulator");lab("dBoxArt","Box art");lab("dBoxArtPc","Box art");lab("dCols","Add to My shelves");lab("dHide","Hide");
+    {const b=$("dTrailerPick");if(b)b.hidden=!(rom&&g.file&&api.trailerChoices&&pvMode()!=="off")} /* (beta.14) Change trailer */
+    $("dMoreBtn").hidden=![...$("dMenu").querySelectorAll("button")].some(b=>!b.hidden)} /* (a tile with nothing more to do: no ···) */
+  {const dd=$("dDesc");$("dMore").textContent=dd.classList.contains("clamp")?"More":"Less"}
+  // the tabs this game has; another game starts on Overview
+  const show={overview:true,ach:rom&&(!RA.on||raHas(s)),media:rom||!$("dShots").hidden,copy:rom};
   for(const [k] of DV_SECS){const sc=dv.secs[k];if(sc)sc.hidden=!show[k];const t=dv.nav.querySelector(`.dv-t[data-s="${k}"]`);if(t)t.hidden=!show[k]}
-  $("dvDuo").hidden=!game;$("dvAchOff").hidden=!(rom&&!RA.on);
-  dvSndPaint();
-  {const by=[i.dev,i.pub&&i.pub!==i.dev?i.pub:""].filter(Boolean).join(" · ");if(by&&game){const e=dvMk("span","dv-by");e.textContent=by;$("dChips").append(e)}} /* (after the chips: developer · publisher) */
-  dvFavPaint();dvStatusPaint(g);if(game)dvStats(g);if(rom)dvCopy(g);
-  $("dvPl").textContent=[g.kind==="steam"?(PC_SRC[g.source]||"PC"):s&&s.name,yearOf(g),i.dev].filter(Boolean).join(" · ");$("dvPh").textContent=g.title;
-  $("dvCap").hidden=!rom;dvCapGlyph(showPad());if(d.scrollTop<4){dv.lock=0;dv.hold=null;dvMark("overview")}}
+  dv.nav.hidden=Object.values(show).filter(Boolean).length<2;
+  $("dvAchOff").hidden=!(rom&&!RA.on&&!achLocal(s)); /* (beta.14: Xbox 360 and PS3 need no account: Xenia's and RPCS3's own) */
+  $("dvShotsH").hidden=$("dShots").hidden;$("dvArtBox").hidden=!rom;
+  $("dvIgdb").hidden=!(rom&&!ANDROID&&((i.shots||[]).length<6)&&!igdbOn()&&!(cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.moreShots===false));
+  dvSndPaint();dvFavPaint();dvStatusPaint(g);dvAchPaint(g);if(rom)dvCopy(g);
+  if(dv.fg!==gid){dv.fg=gid;dv.achF="all";dv.es.clear();dvShow("overview")}else dvShow(show[dv.cur]?dv.cur:"overview");
+  $("dvCap").hidden=!rom;dvCapGlyph(showPad())}
 dvBuild();
 
 // Called by the setup screen.
@@ -4683,16 +5155,16 @@ window.Shelf={
   _lib:{filters:()=>filterList(),filter:v=>pickSort(1,v),cur:()=>{const g=curGame();return g?{id:g.id,title:g.title,kind:g.kind}:null},
     games:()=>(cur()?cur().items.filter(isGame):[]).map(g=>({id:g.id,year:yearOf(g),genres:genresOf(g)})),shelves:()=>shelves.map(s=>({id:s.id,name:s.name,col:!!s.col,ids:(s.items||[]).filter(isGame).map(g=>g.id),last:((s.items||[])[(s.items||[]).length-1]||{}).id||null,random:(s.items||[]).some(i=>i&&i.kind==="random")}))},
   // (beta.7) Settings changed your collections: their shelves are made again (the one you're on stays, if it still has games)
-  previewStop:()=>{if(PV){pvStop();pvBackStop()}},setCollections:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.collections=list;const was=cur();buildHome();
-    // (beta.10) the shelf you were on is gone (buildHome keeps the index, so another shelf slid into it): show that shelf's own cases, from its first game
-    if(cur()!==was){closeDetails(true);sel=cur()?Math.max(0,cur().items.findIndex(isGame)):0;flipped=false;spin=0;spinT=0;cancelAnimationFrame(spinRaf);spinRaf=0;build();if(cur()){updateInfo();raShelfLoad();preloadModel()}tuneTo(cur());save();return}
-    renderTabs();if(cur()&&cur().col)build()},
+  previewStop:()=>{if(PV){pvStop();pvBackStop()}},setCollections:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.collections=list;reHome()},
+  // (beta.14) Settings → My shelves → Automatic shelves switched (ui.autoShelves), and the genres / consoles a shelf can fill itself from
+  setAutoShelves:o=>{if(!cfgInfo||!o||typeof o!=="object")return;cfgInfo.config.ui.autoShelves=Object.assign({},o);reHome()},autoChoices:()=>autoChoices(),
   homeButton:()=>{if(qm.open){qmClose();return "closed"}qmOpen();return qm.open?"opened":"busy"},quickMenuOpen:()=>!!qm.open, // the Thor's Home key while Boxshelf is the Home app
-  _mus:{set:(k,v)=>musSetOpt(k,v),style:()=>musStyle(),hist:h=>{HIST=Object.assign({},HIST,h||{})},tv:()=>({ch:tvS.ch,n:tvS.list.length,list:tvS.list.slice(0,4).map(e=>String(e.key).slice(0,12)),i:tvS.i,ads:tvS.ads.length,bad:[...tvS.bad],guide:!!tvS.guide}),games:()=>allShelves.filter(sh=>sh.kind==="console").flatMap(sh=>sh.items.filter(isGame).map(g=>({id:g.id,title:g.title,sys:sh.id})))}, // museum test hooks (the harness can't see these names)
+  _mus:{set:(k,v)=>musSetOpt(k,v),style:()=>musStyle(),hist:h=>{HIST=Object.assign({},HIST,h||{})},tv:()=>({ch:tvS.ch,n:tvS.list.length,list:tvS.list.slice(0,4).map(e=>String(e.key).slice(0,12)),i:tvS.i,ads:tvS.ads.length,bad:[...tvS.bad],guide:!!tvS.guide}),games:()=>allShelves.filter(sh=>sh.kind==="console").flatMap(sh=>ownItems(sh).filter(isGame).map(g=>({id:g.id,title:g.title,sys:sh.id})))}, // museum test hooks (the harness can't see these names)
   refresh,flushSaves,toast,shuffle,cleanLogo,attractNow:()=>{lastInputAt=-1e9;attractCheck()},sound:(o)=>{if(o&&o.enabled!=null){soundOn=!!o.enabled;musTvVol()}if(o&&o.volume!=null&&cfgInfo){cfgInfo.config.ui.volume=+o.volume;paintVol()}if(window.Sound){Sound.set(o);if(o.preview)Sound.play(o.preview);if(o.music!=null||o.musicLevel!=null){if(o.music!=null)mmTrack=String(o.music);if(o.musicLevel!=null)mmLevel=+o.musicLevel;ambient(mmWant)}else if(o.enabled===true)ambient(mmWant)}},raReload:()=>{RA.shelf={};RA.game.clear();raInit()},
   // Settings closed without a rescan: pick up what refresh() used to re-read (sound on/off, the volume icon, prompts)
   settingsClosed:()=>{if(cpReturn){const x=cpReturn;cpReturn=null;const g=allShelves.flatMap(s=>s.items||[]).find(y=>y&&y.id===x.id);if(g)setTimeout(()=>pcCoverOpen(g,x.term),350)} /* (beta.9) back from the SteamGridDB key's page: the cover picker again */
     if(!cfgInfo)return;const u=cfgInfo.config.ui;soundOn=u.sound!==false;paintVol();buttonsPref=u.buttons||"auto";applyUiAll();renderHints.sig="";renderHints();updateSkipText();lastInputAt=performance.now();
+    BIOS_ST.clear(); /* (beta.14) a BIOS file added, or an emulator changed, in Settings: looked at again */
     if(reshelfWanted&&lastLib){reshelfWanted=false;pendingLib=null;refresh(true,lastLib)}}, // (beta.11) Surprise me / Emulator case changed: the shelves without the case at once (it lingered a few seconds)
   // Settings reads the controller itself: its presses count as activity (attract, dimming), and none of them act while
   // the dimmed screen is up or the press that woke it is still held
@@ -4710,6 +5182,21 @@ window.Shelf={
   // confirmButton, scrollSpeed, audioOut, openInto (read at the next start), effects / performance
   applyUi,hiddenList,setHidden,audioOutputs,
   gameCounts:()=>{const o={};(lastLib||[]).forEach(s=>{if(s&&s.id)o[s.id]=(s.games||[]).length});return o}, // Settings' console pages and tiles ("13 games")
+  caseRatio:id=>{const s=STYLE[id];return s&&s.ratio>0?s.ratio:null}, // (beta.14) the Art Studio's "On your shelf" case takes the shelf's own shape (a DS case, not a tall box)
+  caseShape:id=>{const s=STYLE[id];return s?{ratio:s.ratio,depth:s.depth,pack:packOf(s)}:null}, // (beta.14) a console's case: width / height, thickness / width and what it's made of
+  /* (beta.14: Art Studio changes must show at once, every console and game) a pick in the Studio (settings.js artPatch)
+     hands over the game's new pictures (main's versioned addresses, the ones the library uses): the game takes them on every
+     shelf it's on, and its cases already built swap in place (front decoded first; spine; the back drawn again when next
+     needed), with no rescan and no rebuild. The library refresh that follows finds them the same and keeps the cases */
+  artPlaced:o=>{if(!o||!o.file||!o.art||typeof o.art!=="object")return 0;const f=String(o.file).toLowerCase(),P=["front","back","spine","disc"];let n=0;
+    const same=g=>!!(g&&g.file&&String(g.file).toLowerCase()===f),take=g=>{g.art=Object.assign({},g.art||{});P.forEach(p=>{if(o.art[p])g.art[p]=o.art[p]});if(g.art.madeBack&&o.art.back)g.art.madeBack=false;if(g.art.madeSpine&&o.art.spine)g.art.madeSpine=false};
+    for(const sh of allShelves)for(const g of (sh.games||[]))if(same(g)){take(g);n++}
+    for(const sh of shelves)for(const g of (sh.items||[]))if(same(g)&&!(sh.games||[]).includes(g))take(g);
+    for(const s of slots){if(!s.el||!same(s.g))continue;const g=s.g;take(g); /* (a case's game can be its own copy: the Home shelf's) */
+      if(o.art.spine){const su=ANDROID?thumb(g.art.spine,bh*OS):g.art.spine;if(ANDROID)spineSwap(s,su);else spineOn(s,su)}
+      if(o.art.back&&s.back){s.back.innerHTML="";s.backDrawn=false;if(s===slots[sel])ensureBack(true)}
+      if(o.art.front&&s.img){if(ANDROID)artSwapQueue(s);else setFront(s,g,g.art.front)}}
+    return n},
   getMode:()=>mode,
   // Android's background box art: which shelf is in front and the game in focus (its cases come first in the fetch queue;
   // full: also the shelf's game ids in order), and how long since the last press (the museum's quiet moments)
@@ -4735,13 +5222,23 @@ window.Shelf._find={
   pad:()=>showPad(),glyph:k=>glyph(k),can:()=>mode==="browse"&&!sysBusy()&&!smoothTest.on&&!app.classList.contains("launching")&&!app.classList.contains("returning")&&!document.querySelector("#insert.on,#launch.on"), /* (never over a game starting: the insert, the Starting… screen) */
   thumb:u=>thumb(u,64),snd:(n,o)=>play_(n,o),
   games:()=>{const out=[],seen=new Set();allShelves.forEach(sh=>{if(!sh||sh.kind==="home")return;(sh._base||sh.items||[]).forEach(g=>{if(!g||!isGame(g)||seen.has(g.id))return;seen.add(g.id);const h=histOf(g);
-    out.push({id:g.id,title:String(g.title||""),sys:sh.name||"",art:(g.art&&g.art.front)||"",hue:g.hue,last:(h&&h.count&&h.last)||0})})});return out},
+    out.push({id:g.id,title:String(g.title||""),sys:sh.name||"",art:(g.art&&g.art.front)||"",hue:g.hue,last:(h&&h.count&&h.last)||0})})});
+    /* (beta.14) hidden games too, marked: choosing one unhides it (never in Kid mode) */
+    const hid=hiddenSet();if(hid.size&&lastLib&&!kidOn())lastLib.forEach(s=>(s.games||[]).forEach(g=>{if(!g||!hid.has(String(g.id))||seen.has(g.id))return;seen.add(g.id);out.push({id:g.id,title:String(g.title||""),sys:s.name||"",art:(g.art&&g.art.front)||"",hue:hash(String(g.title||""))%360,last:0,hidden:true})}));
+    return out},
+  unhide:async id=>{if(kidOn())return false;await setHidden(id,false);return window.Shelf._find.go(id)},
   go:id=>{if(mode!=="browse"||sysBusy())return false;let sh=null,g=null;
     for(const s of allShelves){if(!s||s.kind==="home")continue;const x=(s._base||s.items||[]).find(y=>y&&isGame(y)&&String(y.id)===String(id));if(x){sh=s;g=x;break}}
     if(!g)return false;if(sh.items.indexOf(g)<0&&filterBy!=="all"){pickSort(1,"all");toast("Showing all games again")}
     const si=shelves.indexOf(sh),j=sh.items.indexOf(g);if(si<0||j<0)return false;
     if(si===sysIdx)go(j);else{sysIdx=si;sel=j;flipped=false;spin=0;spinT=0;cancelAnimationFrame(spinRaf);spinRaf=0;build();tuneTo(cur());raShelfLoad();preloadModel();save()}
     lastInputAt=performance.now();return true}};
+/* (beta.14) + Add to…, for the device test: a shelf's games (its own, all, the added ones), the shelf going to a game on a
+   given shelf (as Find's go, no slide), and the shelf the game in view belongs to */
+window.Shelf._adds={ids:sid=>{const s=allShelves.find(x=>x&&x.id===sid);return s?{own:ownItems(s).filter(isGame).map(g=>g.id),all:(s.items||[]).filter(isGame).map(g=>g.id),added:s._adds?[...s._adds].map(g=>g.id):[]}:null},
+  go:(sid,gid)=>{if(mode!=="browse"||sysBusy())return false;const si=shelves.findIndex(s=>s&&s.id===sid);if(si<0)return false;const j=shelves[si].items.findIndex(g=>g&&String(g.id)===String(gid));if(j<0)return false;
+    if(si===sysIdx)go(j);else{sysIdx=si;sel=j;flipped=false;spin=0;spinT=0;cancelAnimationFrame(spinRaf);spinRaf=0;build();tuneTo(cur());raShelfLoad();preloadModel();save()}lastInputAt=performance.now();return true},
+  on:()=>{const s=cur(),g=curGame();return {shelf:s&&s.id,game:g&&g.id,own:g?(shelfFor(g)||{}).id:null}}};
 // Settings → a console's "Customize" button: switch the shelf to that console (the usual slide) and open Customize
 // for it once the switch has landed. Closes nothing else; false when there's no such shelf or the shelf isn't in view.
 window.Shelf.openCustomize=systemId=>{if(mode!=="browse"&&mode!=="details")return false;const i=shelves.findIndex(s=>s.id===systemId);if(i<0)return false;
@@ -4889,7 +5386,31 @@ window.Shelf.bottomCmd=(c,arg)=>{if(c==="rd"||c==="find"||c==="det")return bsCtx
   if(c==="settings"){if(mode==="setup")return;if(mode==="inspect")closeInspect();play_("panel");Setup.open({});return}
   if(c==="menu"){window.Shelf.homeButton();return}};
 window.Shelf._musPlay=()=>{const c=window.Museum&&Museum.current();if(mode==="museum"&&c&&c.game)museumPlay(c.game)}; // test hook: play the case in view
-window.Shelf.quickMenu=()=>qmOpen();window.Shelf._qs=()=>({g:(curGame()||{}).title,open:qm.open,r:qm.r,id:qm.rows[qm.r]&&qm.rows[qm.r].r.id,sub:qm.sub,sr:qm.sr,sc:qm.sc,ac:qm.ac,f:(()=>{const f=qsFocusEl();return f&&(f.dataset.v||f.dataset.k||f.className)})(),theme:themeId(),ov:themeOverride,bg:bgMode(),bgo:bgOverride,vol:curVol(),sort:sortBy,mode});window.Shelf._isp=()=>({rx:isp.rx,ry:isp.ry,tx:isp.tx,ty:isp.ty,tz:isp.tz,state:isp.state});window.Shelf._pickBuild=pickBuild; /* test hook: the Switch 2 build chooser */ // test hook: Inspect's pose (the device test checks the stick turn speed)
+window.Shelf.quickMenu=()=>qmOpen();window.Shelf._qs=()=>({g:(curGame()||{}).title,open:qm.open,r:qm.r,id:qm.rows[qm.r]&&qm.rows[qm.r].r.id,sub:qm.sub,sr:qm.sr,sc:qm.sc,ac:qm.ac,f:(()=>{const f=qsFocusEl();return f&&(f.dataset.v||f.dataset.k||f.className)})(),theme:themeId(),ov:themeOverride,bg:bgMode(),bgo:bgOverride,vol:curVol(),sort:sortBy,mode});window.Shelf._artOf=()=>{const g=curGame();return g?{file:g.file,art:Object.assign({},g.art||{})}:null};window.Shelf._isp=()=>({rx:isp.rx,ry:isp.ry,tx:isp.tx,ty:isp.ty,tz:isp.tz,state:isp.state});window.Shelf._pickBuild=pickBuild; /* test hook: the Switch 2 build chooser */ // test hook: Inspect's pose (the device test checks the stick turn speed)
+/* (beta.14) the Themes page and Make a theme (themes-page.js): every theme with its name and its backdrop for the game in
+   front, a few covers from this shelf for the preview's cases, and "use this one" (through Settings' own copy of the
+   config while Settings is open, so its next save keeps it) */
+window.Shelf._themes={
+  list:()=>Object.keys(THEMES).map(id=>({id,name:THEMES[id].name,custom:THEMES[id].custom?{...THEMES[id].custom,_im:undefined}:null})),
+  tint:id=>{const g=curGame()||{hue:220},t=THEMES[id];if(!t)return "";try{return t.tint(shelfHue(g),g,shelfPos())}catch{return ""}},
+  hue:()=>{const g=curGame();return g?Math.round(shelfHue(g)):220},
+  current:()=>{const t=cfgInfo&&cfgInfo.config.ui.theme;return THEMES[t]?t:themeId()},
+  shelf:()=>{const s=cur();return s?{id:s.id,name:s.name}:null},
+  art:()=>{const g=curGame();if(!g||!isGame(g))return null;let front="";try{front=thumb(frontUrl(g),420)}catch{}return {title:g.title,front,wide:(g.info&&g.info.bg)||(g.art&&g.art.hero)||""}},
+  covers:n=>{const s=cur(),L=(s&&s.items||[]).filter(isGame),g=curGame(),i=Math.max(0,L.indexOf(g)),k=n||3,out=[];
+    for(let j=i-k;j<=i+k;j++){const x=L[j];let u="";if(x)try{u=thumb(frontUrl(x),300)}catch{}out.push(u)}return out},
+  use:id=>{if(!THEMES[id])return false;if(window.Settings&&Settings.isOpen&&Settings.isOpen()&&Settings.setTheme){Settings.setTheme(id);return true}
+    if(!cfgInfo)return false;cfgInfo.config.ui.theme=id;themeOverride=null;applyTheme();updateBg();qmSave();if(qm.open)qsSoft();return true},
+  reload:()=>loadCustomThemes(),
+  // the quick menu's sound and music choices (Make a theme → Sound & more offers the same), and a theme pack's own: its
+  // sounds and music put on with it. TODO (sounds helper): new sound packs / songs show here as soon as QM_SOUNDS / QM_MUSIC list them
+  sounds:()=>({sounds:QM_SOUNDS.slice(),music:QM_MUSIC.slice(),sound:qsSndNow(qsUi()),musicNow:mmPick()}),
+  ui:(k,v)=>{if(!cfgInfo)return;cfgInfo.config.ui[k]=v;if(window.Settings&&Settings.isOpen&&Settings.isOpen()&&Settings.setUi)Settings.setUi(k,v);else qmSave()},
+  pack:o=>{if(!cfgInfo||!o)return;const ui=cfgInfo.config.ui,S=!!(window.Settings&&Settings.isOpen&&Settings.isOpen()&&Settings.setUi);
+    if(o.sound){if(o.sound==="off"){ui.sound=false;soundOn=false;if(window.Sound)Sound.set({enabled:false});if(S)Settings.setUi("sound",false)}
+      else if(QM_SOUNDS.some(x=>x[0]===o.sound)){ui.sound=true;soundOn=true;ui.soundTheme=o.sound;if(window.Sound)Sound.set({enabled:true,theme:o.sound});if(S){Settings.setUi("sound",true);Settings.setUi("soundTheme",o.sound)}}musTvVol()}
+    if(o.music&&QM_MUSIC.some(x=>x[0]===o.music)){ui.music=o.music;mmTrack=null;ambient(mmWant);if(S)Settings.setUi("music",o.music)}
+    if(!S)qmSave()}};
 window.Shelf._booklet=()=>makeBooklet(curGame());window.Shelf._rd=()=>({open:rd.open,making:rd.making,for:rd.bookletFor,state:isp.state,g:curGame()&&curGame().id});window.Shelf.customizeStep=d=>custStep(d);
 
 addEventListener("blur",()=>document.body.classList.add("idle-bg"));addEventListener("focus",()=>document.body.classList.remove("idle-bg"));

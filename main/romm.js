@@ -277,6 +277,7 @@ const SLUGS = {
   ps4: ['ps4', 'ps4--1', 'playstation-4'],
   ps5: ['ps5', 'playstation-5'],
   x360: ['xbox360', 'xbox-360', 'x360'],
+  xbox: ['xbox'],
   n3ds: ['3ds', 'n3ds', 'nintendo-3ds', 'new-nintendo-3ds'],
   psx: ['ps', 'psx', 'ps1', 'playstation', 'playstation-1'],
   nes: ['nes', 'famicom', 'fds', 'famicom-disk-system'],
