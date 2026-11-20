@@ -141,4 +141,27 @@ function plan(lib, found) {
   return out;
 }
 
-module.exports = { init, scanFolder, mainExe, titleFor, clean, find, read, plan, SPEC, HELPER };
+// Games you own in a store but haven't installed (Settings → Library → PC games → Games you haven't installed): Playnite's
+// store libraries (Steam, Epic, GOG, EA, Ubisoft, Xbox, Battle.net…) list every game the account owns, installed or not.
+// Each one gets the link that installs it: Steam's own (steam://install/<appid>, straight into Steam's install dialog);
+// any other store through Playnite (playnite://playnite/start/<game>: for a game that isn't installed Playnite runs that
+// store's installer). Hidden games and anything Playnite says is installed are left out.
+const PN_STORE = { 'cb91dfc9-b977-43bf-8e70-55f46e410fab': 'steam', '00000002-dbd1-46c6-b5d0-b1ba559d10e4': 'epic', 'aebe8b7c-6dc3-4a66-af31-e7375c6b5e9e': 'gog',
+  '85dd7072-2f20-4e76-a007-41035e390724': 'ea', 'c2f038e5-8b92-4877-91f1-da9094155fc5': 'ubisoft', '7e4fbb5e-2ae3-48d4-8ba0-6b30e7a4e287': 'xbox',
+  'e3c26a3d-d695-4cb7-a769-5ff7612c7edd': 'battlenet' }; // (a store not listed is 'other': it installs through Playnite all the same)
+function owned(lib, found) {
+  const out = [];
+  const media = v => { if (!v || /^https?:/i.test(v)) return null; const f = path.win32.isAbsolute(v) ? v : path.join(found.library, 'files', ...String(v).split(/[\\/]/)); return isFile(f) ? f : null; };
+  for (const g of lib.games) {
+    if (!g || !g.Name || g.Hidden || g.IsInstalled) continue;
+    const plug = String(g.PluginId || '').toLowerCase(); if (!plug || plug === EMPTY) continue; // games added to Playnite by hand: nothing to install
+    const store = PN_STORE[plug] || 'other', pid = String(g.Id || g._id || ''), gid = String(g.GameId || '');
+    if (!/^[0-9a-f-]{36}$/i.test(pid)) continue;
+    const uri = store === 'steam' && /^\d{1,10}$/.test(gid) ? 'steam://install/' + gid : 'playnite://playnite/start/' + pid;
+    out.push({ key: pid, title: String(g.Name).slice(0, 120), store, uri, appid: store === 'steam' && /^\d{1,10}$/.test(gid) ? gid : undefined, cover: media(g.CoverImage), favorite: !!g.Favorite });
+  }
+  out.sort((a, b) => a.title.localeCompare(b.title));
+  return out;
+}
+
+module.exports = { init, scanFolder, mainExe, titleFor, clean, find, read, plan, owned, SPEC, HELPER };

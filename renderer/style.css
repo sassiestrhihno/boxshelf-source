@@ -863,6 +863,13 @@ html.reduce-motion .art-card,html.reduce-motion .ac-bar i{transition:none}
 .slot.cloud .f-front::after{content:"";position:absolute;left:calc(8px*var(--os,1));top:calc(8px*var(--os,1));z-index:3;width:calc(26px*var(--os,1));height:calc(26px*var(--os,1));border-radius:50%;
   background:rgba(10,10,16,.75) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a9bfff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 9.2 4.5 4.5 0 0 0 7 18z'/><path d='M12 10v6m-2.5-2.5L12 16l2.5-2.5'/></svg>") center/62% no-repeat;pointer-events:none}
 
+/* A PC game you own but haven't installed (Settings → Library → PC games → Show games you haven't installed): its cover
+   and spine faded, a download mark in the corner. Filters on the pictures, not opacity on the case (that flattens the 3D) */
+.slot.toinstall .f-front img,.slot.toinstall .spine-band,.slot.toinstall .spine-title,.slot.toinstall .f-left,.slot.toinstall .f-right{filter:saturate(.3) brightness(.58)}
+.slot.toinstall.sel .f-front img{filter:saturate(.55) brightness(.78)}
+.slot.toinstall .f-front::after{content:"";position:absolute;left:calc(8px*var(--os,1));top:calc(8px*var(--os,1));z-index:3;width:calc(26px*var(--os,1));height:calc(26px*var(--os,1));border-radius:50%;
+  background:rgba(10,10,16,.8) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 4v11m-4.5-4.5L12 15l4.5-4.5'/><path d='M5 19h14'/></svg>") center/60% no-repeat;pointer-events:none}
+
 /* (beta.12) Mona Sans: titles in its wide cut, as in the font mockup (the console's name, a game's title on the shelf,
    in Details and on the launch screen, page titles in Settings and setup, the tour's card) */
 .sys-word,.g-title,.l-title,.d-title,.bss-title,.su-title,#btT{font-stretch:125%}
