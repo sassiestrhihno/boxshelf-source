@@ -194,6 +194,8 @@ function build(){
     T("Show installed Ubisoft games","pc.ubisoft",true,"Adds the games Ubisoft Connect has installed to the PC shelf. They start through Ubisoft Connect, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"ubisoft connect uplay store",sub:()=>pcCount("ubisoft")}),
     T("Show installed EA games","pc.ea",true,"Adds the games the EA app has installed to the PC shelf. They start through the EA app, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"ea app origin electronic arts store",sub:()=>pcCount("ea")}),
     T("Show installed Xbox games","pc.xbox",true,"Adds the games the Xbox app has installed (Game Pass included) to the PC shelf. They start like any Xbox app game, signed in with your Microsoft account.",{rescan:true,keys:"xbox game pass microsoft store",sub:()=>pcCount("xbox")}),
+    // every PC game in one list: on the shelf, a favourite, or hidden, each a step left / right away (pcEditRows)
+    M("Edit the PC shelf","pc-edit","Every PC game in one list: mark favourites or hide games quickly. Type to find one.","Each game: on the shelf, ♥ favourite or hidden. Left / right changes it at once.",[],{when:()=>!!(window.Shelf&&Shelf.pcEditList),extra:pcEditRows,keys:"edit pc games list favourite favorite hide hidden organize bulk manage editar organizar",sub:()=>{const L=pcEdit();if(!L.length)return null;const f=L.filter(x=>x.fav).length,h=L.filter(x=>x.hidden).length;return {text:`${L.length} games · ${f} ♥ · ${h} hidden`}}}),
     // (beta.12) where people look first for Playnite and decomps: the way to the page that has them
     A("Other PC games","Open","Games from Playnite or Quiver Launcher, decomps and recomps (Ship of Harkinian, Zelda 64 Recompiled…), PC ports and any other program go on the Custom shelf. This opens Custom games, where every way to bring them in is.",
       ()=>{if(typeof MORE!=="undefined"&&MORE&&MORE["lib-custom"]){route("custom");return}goSecId("custom");focus="page";rowI=0;play("open");render()},{ns:true,when:()=>SECTIONS.some(s=>s.id==="custom")||(typeof MORE!=="undefined"&&!!MORE&&!!MORE["lib-custom"]), /* (beta.14: Settings in tabs, Custom games is Library's page lib-custom: route opens it) */keys:"playnite decomp decomps recomp recomps port ports other launcher custom quiver",sub:()=>({text:"Playnite, decomps, ports → Custom games"})}),
@@ -756,6 +758,23 @@ async function emuAct(sys){const e=emuOf(sys);if(!e||e.state==="unsupported"||e.
   if(e.state==="no-emulator"){openConsole(sys);return}
   if(emuAsk===sys&&api.launchEmulator){emuAsk=null;await save();toast(`Opening ${e.emulator||"the emulator"}…`);try{await api.launchEmulator(sys)}catch(err){toast(errMsg(err))}render();return}
   emuAsk=sys;infoOpen=true;play("open");render()}
+// Settings → Library → PC games → Edit the PC shelf: one row per PC game, its state a choice (on the shelf / ♥ favourite /
+// hidden) applied at once through the shelf (Shelf.setFav / setHidden) and mirrored in this screen's copy of the config,
+// so the next save here doesn't put the old lists back
+let pcEditCache=null;
+function pcEdit(){if(!pcEditCache&&window.Shelf&&Shelf.pcEditList)try{pcEditCache=Shelf.pcEditList()||[]}catch{pcEditCache=[]}return pcEditCache||[]}
+const PC_SRC={steam:"Steam",epic:"Epic Games",gog:"GOG",ubisoft:"Ubisoft",ea:"EA",xbox:"Xbox",owned:"Not installed",quiver:"Quiver",custom:"Custom"};
+function pcEditRows(){const L=pcEdit();
+  if(!L.length)return [{t:"action",label:"No PC games yet",btn:"—",info:"Games from Steam, Epic and the other stores show up here once they're on the PC shelf.",run:()=>{},ns:true,dim:true}];
+  return L.map(g=>({t:"choice",label:g.title,opts:[["show","On the shelf"],["fav","♥ Favorite"],["hide","Hidden"]],d:"show",nosave:true,ns:true,keys:"pc edit "+g.title,
+    sub:()=>({text:PC_SRC[g.source]||""}),info:"Left / right: on the shelf, a favourite (♥, also on the Home shelf), or hidden from every shelf. It changes at once.",
+    get:()=>g.hidden?"hide":g.fav?"fav":"show",
+    set:async v=>{const id=g.id,wasHidden=g.hidden;g.fav=v==="fav";g.hidden=v==="hide";
+      const ui=cfg.ui;ui.favorites=(Array.isArray(ui.favorites)?ui.favorites:[]).filter(x=>String(x)!==id);if(g.fav)ui.favorites.push(id);
+      ui.hidden=(Array.isArray(ui.hidden)?ui.hidden:[]).filter(x=>String(x)!==id);if(g.hidden)ui.hidden.push(id);
+      try{await shelf("setHidden",id,g.hidden);await shelf("setFav",id,g.fav)}catch{}
+      if(g.hidden!==wasHidden)Promise.resolve(shelf("hiddenList")).then(l=>{hidden=Array.isArray(l)?l:[];bump()}).catch(()=>{}); /* the Hidden games page follows */
+      bump()}}))}
 function hiddenRows(){if(!(window.Shelf&&Shelf.hiddenList))return [];const L=hidden||[];
   if(!L.length)return [{t:"action",label:"No hidden games",btn:"—",info:"Hide a game from its Details panel (Hide). It shows up here so you can bring it back.",run:()=>{},ns:true,dim:true}];
   const names=Object.fromEntries(consoleList().map(c=>[c.id,c.name]));
@@ -1749,7 +1768,7 @@ let legacySnap="",legacyDl=0;
 const legacyKey=()=>JSON.stringify([cfg.systems,cfg.steam,cfg.apps,cfg.ui.artLibrary,cfg.ui.shelfOrder]);
 function resume(){if(!isOpen)return;if(legacyKey()!==legacySnap||(Setup.downloads?Setup.downloads():0)!==legacyDl)needRescan=true;
   // listSig: rebuild the row elements too, or they'd keep the previous build's row objects (a console page's rows capture their config)
-  ensureCfg();listSig="";build();root.classList.add("on");active=true;cover(true);hidden=null;const h=shelf("hiddenList");Promise.resolve(h).then(l=>{hidden=Array.isArray(l)?l:[];bump()}).catch(()=>{});
+  ensureCfg();listSig="";build();root.classList.add("on");active=true;cover(true);hidden=null;pcEditCache=null;const h=shelf("hiddenList");Promise.resolve(h).then(l=>{hidden=Array.isArray(l)?l:[];bump()}).catch(()=>{});
   const n=rowsOf(sec()).length;rowI=Math.min(rowI,Math.max(0,n-1));fit();render();startPoll()}
 
 /* ---------- Art Studio (1.67) ---------- */

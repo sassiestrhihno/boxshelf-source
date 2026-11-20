@@ -317,6 +317,13 @@ function autoStatusChanged(){if(!cfgInfo||sysBusy())return;const a=autoOpts();
   if(!(a.playing===true||a.finished===true||((cfgInfo.config.ui.collections||[]).some(c=>c&&c.rule&&c.rule.kind==="status"))))return;
   buildHome();renderTabs()}
 function homeLine(g){const h=HIST[g.id];const parts=[shelfFor(g).name];if(h&&h.count)parts.push("played "+fmtDay(h.last/1000));if(isFav(g))parts.push("♥ Favorite");return parts}
+// a game favourited (or not) by id, from Settings → Library → PC games → Edit the PC shelf: the same list as H / Y held,
+// the shelf's heart and the Home shelf follow, quietly (no toast for each of a long list of changes)
+async function favSet(id,on){if(!cfgInfo||id==null)return false;id=String(id);on=!!on;const list=new Set(cfgInfo.config.ui.favorites||[]);if(on===list.has(id))return true;
+  if(on)list.add(id);else list.delete(id);cfgInfo.config.ui.favorites=[...list];try{await api.saveConfig(cfgInfo.config)}catch{return false}
+  const s=slots.find(x=>x.g&&String(x.g.id)===id);if(s&&s.el)s.el.classList.toggle("fav",on);
+  const wasHome=cur()===HOME;buildHome();if(wasHome){if(!shelves.includes(HOME)){sysIdx=0;sel=0;build();renderTabs()}else{sel=Math.max(0,Math.min(sel,HOME.items.length-1));build()}}else renderTabs();
+  return true}
 async function toggleFav(){
   if((mode!=="browse"&&mode!=="details")||sysBusy())return; // the Home shelf appearing mid-switch would shift the shelves
   const g=curGame();if(!g||!isGame(g)||!cfgInfo)return;
@@ -5155,7 +5162,12 @@ window.Shelf={
   _lib:{filters:()=>filterList(),filter:v=>pickSort(1,v),cur:()=>{const g=curGame();return g?{id:g.id,title:g.title,kind:g.kind}:null},
     games:()=>(cur()?cur().items.filter(isGame):[]).map(g=>({id:g.id,year:yearOf(g),genres:genresOf(g)})),shelves:()=>shelves.map(s=>({id:s.id,name:s.name,col:!!s.col,ids:(s.items||[]).filter(isGame).map(g=>g.id),last:((s.items||[])[(s.items||[]).length-1]||{}).id||null,random:(s.items||[]).some(i=>i&&i.kind==="random")}))},
   // (beta.7) Settings changed your collections: their shelves are made again (the one you're on stays, if it still has games)
-  previewStop:()=>{if(PV){pvStop();pvBackStop()}},setCollections:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.collections=list;reHome()},
+  previewStop:()=>{if(PV){pvStop();pvBackStop()}},
+  // Settings → Library → PC games → Edit the PC shelf: every game the PC shelf has (hidden ones too) with its state, and
+  // a favourite set by id (hiding goes through setHidden, as Settings' Hidden games page does)
+  pcEditList:()=>{const hid=hiddenSet(),fav=new Set(((cfgInfo&&cfgInfo.config.ui.favorites)||[]).map(String)),pc=(lastLib||[]).find(s=>s.id==="pc");
+    return ((pc&&pc.games)||[]).filter(isGame).map(g=>({id:String(g.id),title:String(g.title||g.id),fav:fav.has(String(g.id)),hidden:hid.has(String(g.id)),source:g.source||"steam"})).sort((a,b)=>a.title.localeCompare(b.title,undefined,{sensitivity:"base"}))},
+  setFav:(id,on)=>favSet(id,on),setCollections:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.collections=list;reHome()},
   // (beta.14) Settings → My shelves → Automatic shelves switched (ui.autoShelves), and the genres / consoles a shelf can fill itself from
   setAutoShelves:o=>{if(!cfgInfo||!o||typeof o!=="object")return;cfgInfo.config.ui.autoShelves=Object.assign({},o);reHome()},autoChoices:()=>autoChoices(),
   homeButton:()=>{if(qm.open){qmClose();return "closed"}qmOpen();return qm.open?"opened":"busy"},quickMenuOpen:()=>!!qm.open, // the Thor's Home key while Boxshelf is the Home app
