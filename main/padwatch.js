@@ -708,7 +708,10 @@ function taskbarGuard(parentPid, marker) {
   if (process.platform !== 'win32') return;
   const t = taskbarType();
   const guard = `$ErrorActionPreference = 'SilentlyContinue'; $m = '${psq(marker)}'; $p = Get-Process -Id ${num(parentPid)}; ${t.load}\n` +
-    `while (Test-Path -LiteralPath $m) { if (-not $p -or $p.WaitForExit(100)) { ${t.call(true)}; Remove-Item -LiteralPath $m; break }; if (Test-Path -LiteralPath $m) { ${t.call(false)} } }`;
+    `while (Test-Path -LiteralPath $m) { if (-not $p -or $p.WaitForExit(100)) { ${t.call(true)}; Remove-Item -LiteralPath $m; break }; if (Test-Path -LiteralPath $m) { ${t.call(false)} } }; ${t.call(true)}`;
+  // (the last word is always "show": the marker can go between the loop's check and its hide, and Boxshelf's own show,
+  // sent a moment before, then lost to that hide; quitting, there's no later show to put it right, and the taskbar stayed
+  // hidden on the main screen after Boxshelf had closed)
   const step = `Start-Process -FilePath powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','${Buffer.from(guard, 'utf16le').toString('base64')}'`;
   try { const p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(step, 'utf16le').toString('base64')], { windowsHide: true, stdio: 'ignore' }); p.on('error', () => {}); } catch (e) { log('taskbar guard', e.message); }
 }
