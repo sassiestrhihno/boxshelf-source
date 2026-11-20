@@ -46,7 +46,8 @@ const CONSOLES = [
     emulatorFolders: ['{app}\\Eden', '%LOCALAPPDATA%\\Programs\\Eden', '%ProgramFiles%\\Eden', '%APPDATA%\\Eden', '{app}\\Citron', '%LOCALAPPDATA%\\Programs\\Citron', '{app}\\Ryujinx', '%LOCALAPPDATA%\\Programs\\Ryujinx'],
     romFolderNames: ['switch', 'nsw', 'ns'],
     // (beta.14, #29) no .nca: those are the pieces inside an installed or unpacked game (hundreds per game), never a game to start
-    extensions: ['nsp', 'xci', 'nro'],
+    // .nsz / .xcz: compressed .nsp / .xci. Eden's nightly builds load them directly, and many collections keep games that way
+    extensions: ['nsp', 'xci', 'nro', 'nsz', 'xcz'],
     // Eden comes from the yuzu family: -f = fullscreen, -g = game file.
     gameArgs: '-f -g "{rom}"',
     emulatorArgs: '',

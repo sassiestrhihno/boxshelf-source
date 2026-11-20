@@ -5433,3 +5433,7 @@ async function start(){bootMark("fonts");
 const ready=document.fonts&&document.fonts.load?Promise.all(["Lilita One","Bungee","Audiowide"].map(f=>document.fonts.load(`40px "${f}"`))):Promise.resolve();
 Promise.race([ready,new Promise(r=>setTimeout(r,2500))]).then(start,start);
 })();
+
+/* The console tabs stay centred: both top corners get the width of the wider one (--hud-side, see style.css), measured
+   again whenever the brand (console name or logo) or the right-hand corner changes size */
+(()=>{const top=document.querySelector(".hud-top"),b=document.getElementById("brand"),r=top&&top.querySelector(".right");if(!top||!b||!r||!window.ResizeObserver)return;const fit=()=>top.style.setProperty("--hud-side",Math.ceil(Math.max(b.scrollWidth,r.scrollWidth))+"px");const ro=new ResizeObserver(fit);ro.observe(b);ro.observe(r);fit()})();

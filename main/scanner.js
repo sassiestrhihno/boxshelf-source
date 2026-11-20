@@ -334,7 +334,7 @@ function* scanFilesG(sysDef, sysCfg) {
     const prev = byTitle.get(key); discOf.set(f, { n: info.disc || 1, size });
     // One box per game: prefer disc 1, then the larger (fuller) dump.
     if (prev) {
-      const better = (info.disc || 1) < (prev.disc || 1) || ((info.disc || 1) === (prev.disc || 1) && size > prev.sizeBytes);
+      const better = (info.disc || 1) < (prev.disc || 1) || ((info.disc || 1) === (prev.disc || 1) && ((info.ver || 0) > (prev.ver || 0) || ((info.ver || 0) === (prev.ver || 0) && size > prev.sizeBytes))); // the newer version (a merged update) first, then the fuller dump
       // two dumps of the same disc (an .iso and an .rvz of Disc 1) are one disc, not "2 discs": keep the fuller one
       if (prev.discs && info.disc) { const i = prev.discs.findIndex(d => (discOf.get(d) || { n: 1 }).n === info.disc); if (i < 0) prev.discs.push(f); else if (size > ((discOf.get(prev.discs[i]) || {}).size || 0)) prev.discs[i] = f; }
       if (!better) continue;
@@ -347,7 +347,7 @@ function* scanFilesG(sysDef, sysCfg) {
       disc: info.disc,
       file: f,
       ext: path.extname(f).slice(1).toLowerCase(),
-      sizeBytes: size, added,
+      sizeBytes: size, added, ver: info.ver || 0,
       art: null, _art: { title: info.title, fg: fg ? { icon: fg.icon, hero: fg.hero } : null }, // (looked up in withArt; the title before any "(Disc 2)" is added below)
       discs: prev ? prev.discs : [f],
       titleId: x ? x.titleId : fg && fg.titleId ? fg.titleId : undefined, compat: x ? x.compat : undefined

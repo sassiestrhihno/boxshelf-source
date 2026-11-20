@@ -496,8 +496,10 @@ body.pad-input,body.pad-input *{cursor:none!important}
 body.reduce-motion .l-bg img,body.reduce-motion .l-card,body.reduce-motion .l-glare{animation:none!important}
 
 /* the console tabs stay put in the centre whatever the brand corner shows ("GameCube" vs "PS3"): a 3-column grid
-   instead of space-between, which re-centred the tabs every time the brand's width changed */
-.hud-top{display:grid;grid-template-columns:minmax(max-content,1fr) minmax(0,auto) minmax(max-content,1fr);align-items:start}
+   instead of space-between, which re-centred the tabs every time the brand's width changed. Both side columns take
+   --hud-side (app.js: the wider of the brand and the right-hand corner), so a long console name no longer pushes the
+   tabs off centre the way two independent minmax(max-content,1fr) columns did */
+.hud-top{display:grid;grid-template-columns:var(--hud-side,minmax(max-content,1fr)) minmax(0,1fr) var(--hud-side,minmax(max-content,1fr));align-items:start}
 .hud-top>.brand{justify-self:start}
 .hud-top>.tabs{justify-self:center;min-width:0;max-width:min(100%,58vw);flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain}
 /* squeezed (lots of shelves): one line that scrolls under soft faded edges, the current console kept in view; wrapping

@@ -16,7 +16,10 @@
     const name = baseName(fileName);
     let base = name.replace(/\.[^.]+$/, '').replace(/\.?\s*\b(nkit|wia|rvz|gcz|ciso|iso|wbfs|part\d+)\s*$/i, '').replace(/\s*\((nkit|wbfs|iso)\)/gi, '');
     const meta = { region: '', disc: 0, rev: '' };
-    if (/(^|[^a-z0-9])v\d{5,}(?![0-9])/i.test(base)) meta.bigVersion = true; // Switch update packages carry versions like v65536
+    { const vm = /(^|[^a-z0-9])v(\d+)(?![0-9.])/i.exec(base); meta.ver = vm ? +vm[2] : 0; } // [v65536] etc.: the version a dump carries
+    // Switch update packages carry versions like v65536, but so do merged base+update packages ("Game [id] [v65536]
+    // (1G+1U).nsz", the common way to keep one file per game): a "(1G" tag says the file holds the game itself
+    if (/(^|[^a-z0-9])v\d{5,}(?![0-9])/i.test(base) && !/[(\[]\s*\d+G\b/i.test(base)) meta.bigVersion = true;
     // Pull out bracketed tags
     base = base.replace(/\s*[\(\[]([^\)\]]*)[\)\]]/g, (m, inner) => {
       const t = inner.trim();
