@@ -3829,6 +3829,7 @@ const HINTS=[
   {act:()=>sysStep(1),pad:["L2","R2"],kbd:["↑","↓"],label:"System",when:notDet},
   {act:()=>flip(),pad:["tri"],kbd:["F"],label:"Flip",when:notDet},
   {act:()=>toggleFav(),pad:["tri"],kbd:["H"],label:"♥ hold",when:notDet},
+  {act:()=>hideGame(curGame()),pad:["sq"],kbd:["X"],label:"Hide",when:notDet}, /* a game off the shelf in one key (X again, or U, undoes it) */
   {act:()=>mode==="details"?closeDetails():openDetails(),pad:["sq"],kbd:["I"],label:"Details",when:notDet},
   {act:()=>play(),pad:["x"],kbd:["Enter"],label:"Play"},
   {act:()=>openInspect(),pad:["R3"],kbd:["V"],label:"Inspect"},
@@ -3855,6 +3856,7 @@ const PAD_HINTS=[
 {act:()=>openDetails(),pad:["⧉"],label:"Details",when:()=>!ANDROID&&notDet()}, /* (beta.12, Windows / Linux: Minus opens Details; Settings is in the quick menu) */
   {act:()=>openMuseum(),pad:["⧉"],label:"",hold:"Museum",when:notDet},
   {act:()=>qmOpen(),pad:["☰"],label:"Menu",when:notDet},
+  {act:()=>hideGame(curGame()),pad:["sq"],label:"",hold:"Hide",when:notDet}, /* X held: the game off the shelf (a tap is still Details, or Undo right after) */
   {act:()=>panelScroll($("details"),1),pad:["R"],label:"Scroll",when:()=>mode==="details"},
   {act:()=>openSort(),pad:["☰"],label:"",hold:"Sort",when:notDet},
   {act:()=>dTab(1),pad:["L1","R1"],label:DV2?"Sections":"Tabs",when:inDet}, // (beta.7)
@@ -3929,7 +3931,7 @@ function renderHints(){pvGuard();bsCtxSoon();
     if(lab)b.querySelector(".lab").textContent=lab;if(usePad&&hold)b.querySelector(".hold").append(hold);
     b.addEventListener("click",hn.act);h.appendChild(b)});
 }
-let lastInputAt=0,yAt=0;
+let lastInputAt=0,yAt=0,xAt=0;
 addEventListener("pointerdown",()=>{wake()},true);addEventListener("wheel",()=>{lastInputAt=performance.now()},{capture:true,passive:true});
 let uiBusySent=0;
 function setInput(m){if(m==="kbd"&&touchBack)m=inputMode; /* a touch Back (sent as Esc) keeps the controller / touch prompts */const was=showPad();{const t=performance.now();if(t-uiBusySent>500&&api.uiBusy){uiBusySent=t;try{api.uiBusy()}catch{}}} // background downloads hold off while you're pressing buttons
@@ -4066,6 +4068,7 @@ addEventListener("keydown",e=>{
   else if(k==="v"||k==="V"){if(!e.repeat)openInspect()}
   else if(k==="r"||k==="R"){if(!e.repeat)shuffle()}
   else if(k==="h"||k==="H"){if(!e.repeat&&(mode==="browse"||mode==="details"))toggleFav()}
+  else if(k==="x"||k==="X"){if(!e.repeat&&mode==="browse"){if(undoHide)undoHide();else hideGame(curGame())}} /* right after hiding, X is Undo (as on a controller) */
   else if(k==="m"||k==="M"){if(!e.repeat)openMuseum()}
   else if(k==="o"||k==="O"){if(!e.repeat&&(mode==="browse"||mode==="details"))openEmulator()}
   else if(k==="g"||k==="G"){if(!e.repeat)openSort()}
@@ -4444,7 +4447,11 @@ function pollBody(t){
       if(v&&!prevBtn.v){setInput("pad");sysStep(v)}
       }
       prevBtn.v=!!v;prevBtn.h=!!h;
-      edge(gp,0,()=>{if(!(panel&&padActivate(panel)))primary()});edge(gp,1,()=>back());edge(gp,2,()=>{if(undoHide&&(mode==="browse"||mode==="details")){undoHide();return}mode==="details"?closeDetails():openDetails()}); // X right after hiding a game: Undo
+      edge(gp,0,()=>{if(!(panel&&padActivate(panel)))primary()});edge(gp,1,()=>back());/* X: a tap is Details (or Undo right after hiding a game); held ~half a second on the shelf it hides the game, like Y held favourites */
+      if(B(2)&&!prevBtn[2])xAt=t;
+      if(B(2)&&xAt&&t-xAt>520&&mode==="browse"&&!undoHide){xAt=0;setInput("pad");hideGame(curGame())}
+      if(!B(2)&&prevBtn[2]&&xAt){xAt=0;setInput("pad");if(undoHide&&(mode==="browse"||mode==="details"))undoHide();else mode==="details"?closeDetails():openDetails()}
+      prevBtn[2]=B(2); // X right after hiding a game: Undo
       if(mode==="details"){
         // Y: trailer when there is one (hold for achievements), otherwise achievements, otherwise flip; bumpers flick screenshots
         const hasTr=!$("dTrailer").hidden,hasAch=achReady(); // the row while loading / with no set doesn't count (Y fetched again then)
