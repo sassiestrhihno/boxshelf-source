@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('boxshelf', {
     : { os: 'windows', caps: { steam: true, power: true, homeMenu: true, emuSettings: true, autostart: true, displays: true, folders: true, companionServer: true, winMode: true, dolphinIpl: true, raAutoConfig: true } },
   getConfig: () => call('config:get'),
   openExternal: url => call('app:openExternal', { url }),
+  translateText: (text, lang) => call('i18n:translate', { text, lang }), // Details' description in the interface language, or null
   qrCode: text => call('app:qr', { text }), // (beta.14) a QR (an SVG) for an https address: Settings › IGDB's developer console
   updateCheck: force => call('app:updateCheck', { force: !!force }), // (1.82) { current, latest, newer, url, links } or { error }
   onUpdate: cb => ipcRenderer.on('app:update', (_e, r) => cb(r)),

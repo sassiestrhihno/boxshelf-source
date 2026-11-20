@@ -91,6 +91,8 @@ const smMode=()=>{const m=gp("ui.screenMode");return m==="window"||m==="full"?m:
 const F=(label,path,kind,info,x={})=>({t:"path",label,kind,info,...bindv(path,""),d:undefined,...x});
 const X=(label,path,info,x={})=>({t:"text",label,info,...bindv(path,""),d:undefined,...x});
 const H=(text,x={})=>({t:"head",text,...x});
+// search also finds a row by its words in the interface language
+const tl=s=>window.BsI18n&&s&&typeof s==="string"?BsI18n.t(s):"";
 // a sub-page inside a section (the rarely-used rows, so each page stays short): the row opens {kind:"more",id}, B comes
 // back to it. MORE is rebuilt with SECTIONS (build()); search and the deep links look inside these pages too.
 let MORE={};
@@ -202,6 +204,10 @@ function build(){
   {g:"Games",id:"custom",name:"Custom games",ic:"pc",lead:"Everything that isn't a console or store game: decomps and recomps, PC ports, games from Playnite or Quiver Launcher, and any other program. Each gets a case on the Custom shelf.",rows:[{t:"dyn",fn:customRows}]},
   {g:"Games",id:"apps",name:"Apps",ic:"apps",dot:()=>Object.values(cfg.apps||{}).some(a=>a&&a.enabled!==false&&a.path)?"ok":null,lead:"Stremio and Nuvio, launched from the Media shelf.",rows:appRows},
   {g:"Look & sound",id:"display",name:"Display",ic:"display",lead:"How the shelf looks from the couch.",rows:[
+    // Interface language (i18n.js translates the screen as it's drawn; locales/<lang>.js holds each language's words)
+    C("Language","ui.lang",()=>window.BsI18n?BsI18n.languages():[["auto","Automatic (system)"],["en","English"]],"auto","The language of menus and settings. Automatic follows your system's language. Game titles and box art aren't changed.",{live:v=>{if(window.BsI18n)BsI18n.set(v)},keys:"language idioma lingua portugues portuguese english translation traducao"}),
+    // Details' descriptions in the interface language, machine translated once each (main/translate.js); not for English
+    T("Translate game descriptions","ui.mtDesc",true,"Shows each game's description in your language, translated once by Google Translate and kept on this PC. Only the description text is sent. Off: descriptions stay as the game databases have them.",{keys:"translate translation description summary google machine traduzir sinopse descricao",when:()=>gp("ui.lang")!=="en"&&!(gp("ui.lang")==="auto"&&!/^pt/i.test(navigator.language||""))}),
     C("Interface size","ui.uiScale",[[1,"Standard"],[1.15,"Large"],[1.3,"Extra large"]],1,"Bigger text and buttons for a TV across the room.",{more:"Large suits most 55\" and bigger TVs at 2–3 m. Extra large for very far seating.",live:()=>fit(),keys:"zoom text big small scale"}),
     // (1.78) no peek: the page stays put and takes on the theme's colour at once; the shelf behind switches once you stop on a
     // theme (stepping through them quickly used to fade the page out and in and cross-fade the shelf on every step)
@@ -489,7 +495,7 @@ function regroup(S){
     out.push({g:"",id:"consoles",name:"Library",ic:"games",alias:["pc","custom","apps","library"],badge:(secOf("consoles")||{}).badge,dot:()=>attnList().some(x=>!x.tip)?"warn":null,
       lead:"Your consoles, their emulators and your games: where Boxshelf finds them and what goes on the shelves.",rows:[...rows,mo].filter(Boolean)})}
   // ---- Look ----
-  {const rows=[...all("display","Theme","Keep themes moving while you scroll","Custom themes","Interface size","Clock","Startup animation","Bottom screen","Text size"),
+  {const rows=[...all("display","Theme","Keep themes moving while you scroll","Custom themes","Interface size","Language","Translate game descriptions","Clock","Startup animation","Bottom screen","Text size"),
       H("Motion & effects"),...all("perf","Performance","Reduce motion","Box shine")];
     /* (beta.14) Video previews live in Look now (they were in Box art & media) */
     const pv=secOf("previews");
@@ -1162,15 +1168,15 @@ function sw2BuildRows(){sw2Want();const c=sysCfg("sw2"),fx=sw2Fixed(),L=sw2b||[]
 function allSettings(){const out=[];
   SECTIONS.forEach((s,si)=>{let k=0,grp="";const rs=expand(s).rows;rs.forEach(r=>{if(r.t==="head"){grp=r.text;return}if(!shown(r))return;const i=k++;
     if(r.t==="consoles"){consoleList().forEach(c=>out.push({sec:si,console:c.id,label:c.name,where:"Games › Consoles",text:`${c.name} ${c.emulatorName||""} emulator console`}));return}
-    if(r.ns&&!r.keys)return;out.push({sec:si,i,row:r,label:r.label,where:`${s.g?s.g+" › ":""}${s.name}${grp?" › "+grp:""}`,text:[r.label,r.info,r.keys,s.name,grp,r.opts&&typeof r.opts!=="function"?r.opts.map(o=>o[1]).join(" "):""].join(" ")})})});
+    if(r.ns&&!r.keys)return;out.push({sec:si,i,row:r,label:r.label,where:`${s.g?s.g+" › ":""}${s.name}${grp?" › "+grp:""}`,text:[r.label,r.info,tl(r.label),tl(r.info),r.keys,s.name,grp,r.opts&&typeof r.opts!=="function"?r.opts.map(o=>o[1]).join(" "):""].join(" ")})})});
   // the sections' own sub-pages (Screen & TV, Art Studio, Advanced…): found here, opened on the row inside
   SECTIONS.forEach((s,si)=>{const top=rowsOf(expand(s));top.forEach((m,at)=>{const pg=m.pg&&MORE[m.pg];if(!pg)return;let k=0,grp="";expand(pg).rows.forEach(r=>{if(r.t==="head"){grp=r.text;return}if(!shown(r))return;const i=k++;if(r.ns&&!r.keys)return;
-    out.push({sec:si,more:pg.id,at,i,row:r,label:r.label,where:`${s.name} › ${pg.name}${grp?" › "+grp:""}`,text:[r.label,r.info,r.keys,s.name,pg.name,grp,r.opts&&typeof r.opts!=="function"?r.opts.map(o=>o[1]).join(" "):""].join(" ")})})})});
+    out.push({sec:si,more:pg.id,at,i,row:r,label:r.label,where:`${s.name} › ${pg.name}${grp?" › "+grp:""}`,text:[r.label,r.info,tl(r.label),tl(r.info),r.keys,s.name,pg.name,grp,r.opts&&typeof r.opts!=="function"?r.opts.map(o=>o[1]).join(" "):""].join(" ")})})})});
   const ai0=SECTIONS.findIndex(s=>s.id==="acct");if(ai0>=0)Object.keys(SVC_N).forEach(id=>{const p=svcPage(id);let k=0,grp="";p.rows.forEach(r=>{if(r.t==="head"){grp=r.text;return}if(r.t==="dyn"||!shown(r))return;const i=k++;if(r.ns&&!r.keys)return;
-    out.push({sec:ai0,svc:id,i,row:r,label:r.label,where:`Accounts & services › ${p.name}${grp?" › "+grp:""}`,text:[r.label,r.info,r.keys,p.name,grp].join(" ")})})});
+    out.push({sec:ai0,svc:id,i,row:r,label:r.label,where:`Accounts & services › ${p.name}${grp?" › "+grp:""}`,text:[r.label,r.info,tl(r.label),tl(r.info),r.keys,p.name,grp].join(" ")})})});
   const ci0=SECTIONS.findIndex(s=>s.id==="consoles");
   consoleList().forEach(c=>{const P=conPages(c.id);[P.main,P.adv].forEach(p=>{const adv=p===P.adv;let k=0,grp="";p.rows.forEach(r=>{if(r.t==="head"){grp=r.text;return}if(!shown(r))return;const i=k++;if(r.ns)return;
-    out.push({sec:ci0,console:c.id,adv,i,row:r,label:r.label,where:`Consoles › ${c.name}${adv?" › "+p.name:""}${grp&&grp!==c.emulatorName?" › "+grp:""}`,text:[r.label,r.info,r.keys,c.name,c.emulatorName,adv?"advanced":""].join(" ")})})})});
+    out.push({sec:ci0,console:c.id,adv,i,row:r,label:r.label,where:`Consoles › ${c.name}${adv?" › "+p.name:""}${grp&&grp!==c.emulatorName?" › "+grp:""}`,text:[r.label,r.info,tl(r.label),tl(r.info),r.keys,c.name,c.emulatorName,adv?"advanced":""].join(" ")})})})});
   return out}
 // (beta.9) the search index is built once per search (every section, sub-page and console page), not on every key
 let searchIdx=null;
