@@ -63,31 +63,52 @@ async function fetchInfo(appid) {
   } catch (e) { log('steam info', appid, e.message); }
 }
 
+function saveInfo() {
+  if (!infoFile) return;
+  try { fs.writeFileSync(infoFile + '.tmp', JSON.stringify(info)); fs.renameSync(infoFile + '.tmp', infoFile); } catch {}
+}
+async function fetchInfoOne(appid) {
+  const id = String(appid || '');
+  if (!dir || !/^\d{1,10}$/.test(id)) return null;
+  const old = info[id];
+  if (!old || Date.now() - old.at > (old.ok ? MONTH : RETRY)) { await fetchInfo(id); saveInfo(); }
+  return gameInfo(id);
+}
+
 // Fill in covers and info for the installed Steam games; resolves to { covers, other }: new covers (worth a toast) and
 // heroes / store info (a quiet refresh). Kept apart so a monthly info refresh never reads as "Added covers for 40 games"
 async function fill(games) {
   if (!dir) return { covers: 0, other: 0 };
-  let covers = 0, other = 0;
-  const need = games.filter(g => !tried.has(g.appid)); need.forEach(g => tried.add(g.appid));
-  for (const g of need) {
-    const id = g.appid;
-    if (!g.art.front && !isFile(coverFile(id)) && !recentlyMissed(id)) {
-      const r = await save(asset(id, 'library_600x900_2x.jpg').concat(asset(id, 'library_600x900.jpg')), coverFile(id));
-      if (r === 'ok') covers++;
-      else if (r === 'missing') { try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(missFile(id), ''); } catch {} log('steam cover: none on the CDN for', id, g.title); }
-      else { log('steam art: network trouble, trying again next launch'); break; } // offline: don't mark anything, don't hammer
+  let covers = 0, other = 0, dirty = false, fetched = 0;
+  const need = games.filter(g => !tried.has(g.appid));
+  try {
+    for (const g of need) {
+      const id = g.appid;
+      if (!g.art.front && !isFile(coverFile(id)) && !recentlyMissed(id)) {
+        const r = await save(asset(id, 'library_600x900_2x.jpg').concat(asset(id, 'library_600x900.jpg')), coverFile(id));
+        if (r === 'ok') covers++;
+        else if (r === 'missing') { try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(missFile(id), ''); } catch {} log('steam cover: none on the CDN for', id, g.title); }
+        else { log('steam art: network trouble, trying again next launch'); break; } // offline: don't mark remaining games
+      }
+      if (!g.art.hero && !isFile(heroFile(id)) && !recentlyMissed(id + '_hero')) {
+        const r = await save(asset(id, 'library_hero.jpg'), heroFile(id));
+        if (r === 'ok') other++;
+        else if (r === 'missing') { try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(missFile(id + '_hero'), ''); } catch {} } // the folder may not exist yet: without it the marker was lost and the lookup repeated every launch
+        else break;
+      }
+      tried.add(id);
+      const old = info[id];
+      if (!old || Date.now() - old.at > (old.ok ? MONTH : RETRY)) {
+        await fetchInfo(id);
+        if (info[id] !== old) { dirty = true; fetched++; if (info[id] && info[id].ok) other++; }
+        if (fetched >= 10) { saveInfo(); dirty = false; fetched = 0; }
+        await new Promise(r => setTimeout(r, 350));
+      } // the store API rate-limits bursts; a failed refresh leaves the old entry, which isn't a change
     }
-    if (!g.art.hero && !isFile(heroFile(id)) && !recentlyMissed(id + '_hero')) {
-      const r = await save(asset(id, 'library_hero.jpg'), heroFile(id));
-      if (r === 'ok') other++;
-      else if (r === 'missing') { try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(missFile(id + '_hero'), ''); } catch {} } // the folder may not exist yet: without it the marker was lost and the lookup repeated every launch
-      else break;
-    }
-    const old = info[id];
-    if (!old || Date.now() - old.at > (old.ok ? MONTH : RETRY)) { await fetchInfo(id); if (info[id] !== old && info[id].ok) other++; await new Promise(r => setTimeout(r, 350)); } // the store API rate-limits bursts; a failed refresh leaves the old entry, which isn't a change
+  } finally {
+    if (dirty) saveInfo(); // temp + rename: a cut-off file lost every game's info
   }
-  if (need.length) { try { fs.writeFileSync(infoFile + '.tmp', JSON.stringify(info)); fs.renameSync(infoFile + '.tmp', infoFile); } catch {} } // temp + rename: a cut-off file lost every game's info
   return { covers, other };
 }
 
-module.exports = { init, local, gameInfo, fill };
+module.exports = { init, local, gameInfo, fetchInfoOne, fill };

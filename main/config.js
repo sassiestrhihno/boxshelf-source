@@ -65,6 +65,20 @@ function defaults() {
 const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
 // (beta.12) Details' Status per game (cfg.games[id].status): the words the shelf can sort and filter by later
 const GAME_STATUS = ['playing', 'finished', 'notstarted', 'abandoned'];
+function sanitizeGameInfo(v) {
+  if (!isObj(v)) return null;
+  const out = {};
+  const str = (x, max) => typeof x === 'string' ? x.replace(/\s+/g, ' ').trim().slice(0, max) : '';
+  if (typeof v.overview === 'string') { const s = v.overview.replace(/\r\n/g, '\n').trim().slice(0, 2400); if (s) out.overview = s; }
+  for (const [k, max] of [['dev', 160], ['pub', 160], ['genres', 200], ['release', 20], ['series', 120]]) { const s = str(v[k], max); if (s) out[k] = s; }
+  if (v.year != null && v.year !== '') { const y = +String(v.year).slice(0, 4); if (Number.isFinite(y) && y >= 1970 && y <= 2099) out.year = y; }
+  if (v.rating != null && v.rating !== '') { const r = +v.rating; if (Number.isFinite(r) && r > 0 && r <= 5) out.rating = Math.round(r * 10) / 10; }
+  if (Array.isArray(v.shots)) {
+    const sh = [...new Set(v.shots.filter(u => typeof u === 'string' && /^(https|bsfile):/i.test(u)).map(u => u.slice(0, 1024)))].slice(0, 8);
+    if (sh.length) out.shots = sh;
+  }
+  return Object.keys(out).length ? out : null;
+}
 function merge(base, saved) {
   if (!isObj(saved)) return saved === undefined ? base : saved;
   const out = Array.isArray(base) ? [] : { ...base };
@@ -210,7 +224,7 @@ function sanitize(cfg) {
   // per-game emulator overrides: plain paths only, a sane number of them
   // (beta.5: title = the name the player gave it) (beta.12: status = Details' Status, one of GAME_STATUS)
   // (beta.14: trailer = Details' Change trailer: 'ss', 'none' or 'yt:<YouTube id>')
-  const games = {}; if (isObj(cfg.games)) for (const [id, v] of Object.entries(cfg.games).slice(0, 5000)) { if (typeof id !== 'string' || id.length > 2048 || !isObj(v)) continue; const e = typeof v.emulator === 'string' ? v.emulator.trim().slice(0, 1024) : '', t = typeof v.title === 'string' ? v.title.replace(/\s+/g, ' ').trim().slice(0, 120) : '', st = GAME_STATUS.includes(v.status) ? v.status : '', tr = typeof v.trailer === 'string' && /^(ss|none|yt:[\w-]{6,20})$/.test(v.trailer) ? v.trailer : ''; if (e || t || st || tr) games[id] = { ...(e ? { emulator: e } : {}), ...(t ? { title: t } : {}), ...(st ? { status: st } : {}), ...(tr ? { trailer: tr } : {}) }; }
+  const games = {}; if (isObj(cfg.games)) for (const [id, v] of Object.entries(cfg.games).slice(0, 5000)) { if (typeof id !== 'string' || id.length > 2048 || !isObj(v)) continue; const e = typeof v.emulator === 'string' ? v.emulator.trim().slice(0, 1024) : '', t = typeof v.title === 'string' ? v.title.replace(/\s+/g, ' ').trim().slice(0, 120) : '', st = GAME_STATUS.includes(v.status) ? v.status : '', tr = typeof v.trailer === 'string' && /^(ss|none|yt:[\w-]{6,20})$/.test(v.trailer) ? v.trailer : '', inf = sanitizeGameInfo(v.info); if (e || t || st || tr || inf) games[id] = { ...(e ? { emulator: e } : {}), ...(t ? { title: t } : {}), ...(st ? { status: st } : {}), ...(tr ? { trailer: tr } : {}), ...(inf ? { info: inf } : {}) }; }
   cfg.games = games;
   // (beta.7) your collections (shelves of your own): [{ id, name, ids: [game ids] }], a sane number and size
   ui.lastSeenVersion = typeof ui.lastSeenVersion === 'string' ? ui.lastSeenVersion.slice(0, 40) : '';
@@ -324,4 +338,4 @@ function sanitizeArt(a, ui) {
 // settings coming back from the screen: same shape rules as a loaded file (a missing or broken section gets its defaults)
 function normalize(c) { if (!isObj(c)) throw new Error('Not a settings object.'); return sanitize(merge(defaults(), c)); }
 
-module.exports = { init, load, save, flush, defaults, normalize, sanitize, GAME_STATUS, file: () => FILE, blocked: () => readBlocked, ART, defaultArtStyle, cleanArtStyle, sanitizeArt };
+module.exports = { init, load, save, flush, defaults, normalize, sanitize, sanitizeGameInfo, GAME_STATUS, file: () => FILE, blocked: () => readBlocked, ART, defaultArtStyle, cleanArtStyle, sanitizeArt };

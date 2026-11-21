@@ -1362,6 +1362,55 @@ function renameRows(){const s=renameState;if(!s)return [];
   return s.renamed?[s.nameRow,s.resetRow]:[s.nameRow]}
 async function renameSave(v){const s=renameState;if(!s||!api.renameGame)return;v=String(v||"").replace(/\s+/g," ").trim();const back=!v||v===s.file;
   try{await api.renameGame({...s.ref,title:back?"":v});s.renamed=!back;s.name=back?s.file:v;s.saved=s.name;play("tick",1);toast(back?"Back to its file name":`Renamed to ${v}`);shelf("refresh",true)} /* (true: the shelf stays on this game) */catch(e){if(s.saved!=null)s.name=s.saved;toast(errMsg(e));play("error")}bump()} // (beta.10) a failed rename shows the name it still has
+let gdState=null;
+function gdRows(){const s=gdState;if(!s)return [];
+  const row=(k,mk)=>s.rows.get(k)||(s.rows.set(k,mk()),s.rows.get(k));
+  const sync=d=>{if(d&&typeof d==="object"){s.info={...d};s.year=d.year!=null?String(d.year):"";s.dev=String(d.dev||"");s.pub=String(d.pub||"");s.genres=String(d.genres||"");s.overview=String(d.overview||"");s.shots=Array.isArray(d.shots)?d.shots.slice(0,8):[]}};
+  const searchBtn=row("go",()=>A("Search all platforms","Search","Finds matching games on IGDB across all platforms (not only PC).",()=>gdSearch(),{ns:true}));
+  searchBtn.btn=s.busy?"Searching…":"Search";searchBtn.dim=!!s.busy;
+  const out=[
+    H("Online lookup (IGDB)"),
+    row("q",()=>X("Search title","","Search IGDB across all platforms (console, PC, ports, remakes).",{get:()=>s.q,set:v=>{s.q=String(v||"")},nosave:true,live:()=>gdSearch(),ns:true,keys:"search igdb details match"})),
+    searchBtn,
+  ];
+  if(s.err)out.push(infoRow("Lookup note","",{text:s.err}));
+  if(s.hits.length){
+    out.push(H(`Results (${s.hits.length})`));
+    for(const h of s.hits){
+      const sub=[h.year||"", ...(h.platforms||[])].filter(Boolean).join(" · ");
+      out.push(A(h.name,"Use match",((h.info&&h.info.overview)||"Apply metadata and screenshots from this IGDB entry."),async()=>{
+        const next={...(h.info||{}),...(Array.isArray(h.shots)&&h.shots.length?{shots:h.shots}:{})};
+        await gdSave(next);sync(next);toast(`Applied details from ${h.name}`);bump();
+      },{ns:true,sub:sub?()=>({text:sub}):undefined}));
+    }
+  }
+  out.push(
+    H("Manual details"),
+    row("year",()=>X("Year","","4-digit release year (e.g. 2026).",{get:()=>s.year,set:v=>{s.year=String(v||"").replace(/[^0-9]/g,"").slice(0,4)},nosave:true,ns:true})),
+    row("dev",()=>X("Developer","","Studio or team name.",{get:()=>s.dev,set:v=>{s.dev=String(v||"")},nosave:true,ns:true})),
+    row("pub",()=>X("Publisher","","Publisher name.",{get:()=>s.pub,set:v=>{s.pub=String(v||"")},nosave:true,ns:true})),
+    row("genres",()=>X("Genres","","Semicolon-separated genres (e.g. Action; Adventure).",{get:()=>s.genres,set:v=>{s.genres=String(v||"")},nosave:true,ns:true})),
+    row("overview",()=>X("Synopsis","","Game description shown on Details.",{get:()=>s.overview,set:v=>{s.overview=String(v||"")},nosave:true,ns:true})),
+    row("save",()=>A("Save details","Save","Saves these details for this game on your shelf.",async()=>{
+      const next={...(s.info||{}),year:s.year?+s.year:undefined,dev:s.dev.trim(),pub:s.pub.trim(),genres:s.genres.trim(),overview:s.overview.trim()};
+      await gdSave(next);toast("Details saved");bump();
+    },{ns:true})),
+    row("reset",()=>A("Reset to automatic","Reset","Clears your custom details override and returns to automatic lookup.",async()=>{
+      await gdSave(null);sync({});toast("Reset to automatic details");bump();
+    },{ns:true,when:()=>!!(cfg.games&&cfg.games[s.id]&&cfg.games[s.id].info)}))
+  );
+  return out;
+}
+async function gdSearch(){const s=gdState;if(!s||!api.searchGameDetails||s.busy)return;const q=String(s.q||"").trim();if(!q)return;
+  s.busy=true;s.err="";bump();
+  try{const r=await api.searchGameDetails({title:q,allPlatforms:true});
+    if(r&&!r.ok&&r.error==="igdb_not_configured"){s.hits=[];s.err="Connect IGDB (Settings → Accounts & services) to search online matches."}
+    else{s.hits=Array.isArray(r&&r.list)?r.list:[];if(!s.hits.length)s.err="No IGDB matches found for that title."}}
+  catch(e){s.err=errMsg(e)}finally{s.busy=false;bump()}}
+async function gdSave(nextInfo){const s=gdState;if(!s||!api.saveGameDetails)return;
+  const r=await api.saveGameDetails({id:s.id,info:nextInfo});
+  if(r&&r.games&&typeof r.games==="object")cfg.games=clone(r.games);
+  needRescan=true;play("tick",1);shelf("refresh",true)}
 // (beta.5) the cover picker's Search by name: a name typed here (keyboard, or the on-screen one on a controller); Enter
 // closes Settings and the picker opens again with SteamGridDB's covers for that name
 let coverSearch=null;
@@ -1420,6 +1469,7 @@ async function pnImport(){const P=ADD.pn;if(!P||ADD.busy)return;ADD.busy=true;co
   try{
     if(ADD.pnOn.pc)for(const g of P.pc){if(!ADD.pnPick.has(g.key)||have.has(String(g.exe).toLowerCase()))continue;const id="pn-"+addSlug(g.key).slice(0,40);
       pc.custom.push({id,title:g.title,exe:g.exe,args:g.args||"",src:"playnite"});have.add(String(g.exe).toLowerCase());n++;if(g.cover)covers.push({id,file:g.cover});
+      if(g.info&&typeof g.info==="object"){cfg.games=cfg.games||{};const gk="custom-"+addSlug(id);if(!(cfg.games[gk]&&cfg.games[gk].info))cfg.games[gk]={...(cfg.games[gk]||{}),info:g.info}}
       if(g.favorite){const fav=cfg.ui.favorites=Array.isArray(cfg.ui.favorites)?cfg.ui.favorites:[];const fid="custom-"+addSlug(id);if(!fav.includes(fid))fav.push(fid)}}
     pc.pnDirs=pc.pnDirs||{};
     for(const [sys,c] of Object.entries(P.consoles||{})){if(!ADD.pnOn[sys]||!cfg.systems[sys])continue;const sc=sysCfg(sys);
@@ -1690,6 +1740,10 @@ function route(page,o){if(!page)return;o=o||{};if(RG_SUB&&RG_SUB[page]&&MORE[RG_
   if(page==="rename"&&o.ref){const file=String(o.fileTitle||o.title||""),cur=String(o.title||"");renameState={ref:o.ref,name:cur,saved:cur,file,renamed:!!o.fileTitle&&o.fileTitle!==cur};
     MORE.rename={id:"rename",name:`Rename ${cur}`.slice(0,60),lead:o.fileTitle&&o.fileTitle!==cur?`Its file's name: ${o.fileTitle}`:"Give this game the name you want on your shelf.",rows:[{t:"dyn",fn:renameRows}]};
     goSecId(o.ref.systemId?"consoles":(/^(steam|epic)-/.test(String(o.ref.id||""))?"pc":"custom"));focus="page";rowI=0;openSub({kind:"more",id:"rename"});return}
+  if(page==="gamedetails"&&o.id){const cur=String(o.title||""),d=Object.assign({},(cfg.games&&cfg.games[o.id]&&cfg.games[o.id].info)||{},o.info||{});
+    gdState={id:String(o.id),title:cur,q:cur,info:d,year:d.year!=null?String(d.year):"",dev:String(d.dev||""),pub:String(d.pub||""),genres:String(d.genres||""),overview:String(d.overview||""),shots:Array.isArray(d.shots)?d.shots.slice(0,8):[],hits:[],busy:false,err:"",rows:new Map()};
+    MORE.gamedetails={id:"gamedetails",name:`Details: ${cur}`.slice(0,60),lead:"Search IGDB across all platforms or edit metadata manually.",rows:[{t:"dyn",fn:gdRows}]};
+    goSecId("custom");focus="page";rowI=0;openSub({kind:"more",id:"gamedetails"});return}
   if(page==="trailer"&&o.systemId&&o.file){const nm=String(o.name||o.title||"This game");trailerState={ref:{systemId:String(o.systemId),file:String(o.file),title:String(o.title||nm),youtube:o.youtube||null},list:[],cur:"",busy:true,link:"",rows:new Map()};
     MORE.trailer={id:"trailer",name:`Trailer: ${nm}`.slice(0,60),lead:"Where this game's trailer in Details (and behind the shelf) comes from.",rows:[{t:"dyn",fn:trailerRows}]};
     goSecId("consoles");focus="page";rowI=0;openSub({kind:"more",id:"trailer"});trailerLoad();return} /* (beta.14) Details → Change trailer */

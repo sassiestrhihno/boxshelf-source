@@ -468,28 +468,73 @@ function matchTitle(list, title, art = () => 1, exactOnly = false) {
   if (/^(dvd|disc|game|image|iso|default)$/i.test(title) || /^xbox 360 game [0-9a-f]{8}$/i.test(title)) return null; // a generic file name matches nothing honestly
   const want = norm(title), tight = want.replace(/ /g, '');
   if (!want) return null;
-  const richest = arr => arr.length ? arr.reduce((a, b) => art(b) > art(a) ? b : a) : null;
-  const exact = richest(list.filter(g => g.n === want)) || richest(list.filter(g => g.n.replace(/ /g, '') === tight));
+  const yrM = /(?:[([\s]|^)(19[7-9]\d|20[0-3]\d)(?:[\])]|$)/.exec(String(title || '').trim());
+  const wantYear = yrM ? +yrM[1] : 0;
+  const stripYear = x => String(x || '').replace(/\b(?:19[7-9]\d|20[0-3]\d)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  const wantCore = (wantYear && stripYear(want)) || want;
+  const candTitleYear = g => { const m = /\b(19[7-9]\d|20[0-3]\d)\b/.exec(String((g && g.n) || '')); return m ? +m[1] : 0; };
+  const candYear = g => { const y = +((g && g.year) || 0); return y >= 1970 && y <= 2039 ? y : candTitleYear(g); };
+  const hasYearWord = (g, y) => y && new RegExp('\\b' + y + '\\b').test(String((g && (g.name || g.n)) || ''));
+  const rankScore = g => {
+    let r = +art(g) || 0;
+    if (!wantYear) return r;
+    const cy = candYear(g);
+    if (cy === wantYear || hasYearWord(g, wantYear)) r += 10000;
+    else if (cy && Math.abs(cy - wantYear) <= 1) r += 2000;
+    else if (!cy) r += 100;
+    if (+((g && g.id) || 0) > 0 && wantYear >= 2020) r += Math.min(0.9, +g.id / 1e9);
+    return r;
+  };
+  const conflictYear = g => { const cty = candTitleYear(g); return !!(wantYear && cty && cty !== wantYear); };
+  const richest = arr => arr.length ? arr.reduce((a, b) => rankScore(b) > rankScore(a) ? b : a) : null;
+  const exact = richest(list.filter(g => g.n === want)) || richest(list.filter(g => g.n.replace(/ /g, '') === tight))
+    || (wantCore !== want ? (richest(list.filter(g => g.n === wantCore && !conflictYear(g))) || richest(list.filter(g => stripYear(g.n) === wantCore && !conflictYear(g)))) : null);
   if (exact || exactOnly) return exact;
   // Brand prefixes that dumps carry and the database usually doesn't ("Disney-Pixar Finding Nemo" vs "Finding Nemo")
   const BRAND = /^(disney s|disneys|disney pixar|disney|pixar|nickelodeon|nick|mtv|cartoon network|dreamworks|activision|ea sports|ea|sega|capcom|konami|ubisoft|thq|namco)\s+/;
   const unbrand = x => { let y = x; for (let i = 0; i < 2; i++) y = y.replace(BRAND, ''); return y; };
-  const want2 = unbrand(want);
-  if (want2 !== want) { const e2 = richest(list.filter(g => g.n === want2 || unbrand(g.n) === want2)); if (e2) return e2; }
+  const want2 = unbrand(wantCore);
+  if (want2 !== wantCore) { const e2 = richest(list.filter(g => (g.n === want2 || unbrand(g.n) === want2 || stripYear(g.n) === want2) && !conflictYear(g))); if (e2) return e2; }
   // "A and B" vs "A / B" ("Ocarina of Time & Master Quest")
-  const noAnd = want.replace(/\band\b/g, ' ').replace(/\s+/g, ' ').trim();
-  if (noAnd !== want) { const e3 = richest(list.filter(g => g.n.replace(/\band\b/g, ' ').replace(/\s+/g, ' ').trim() === noAnd)); if (e3) return e3; }
+  const noAnd = want2.replace(/\band\b/g, ' ').replace(/\s+/g, ' ').trim();
+  if (noAnd !== want2) { const e3 = richest(list.filter(g => (g.n.replace(/\band\b/g, ' ').replace(/\s+/g, ' ').trim() === noAnd || stripYear(g.n).replace(/\band\b/g, ' ').replace(/\s+/g, ' ').trim() === noAnd) && !conflictYear(g))); if (e3) return e3; }
   // Close calls: one name is the other plus a few words ("Metroid Prime 4 Beyond" vs "Metroid Prime 4: Beyond - Deluxe"), or the same words in a different order.
   const W = new Set(want2.split(' ').filter(Boolean)), wantW = want2.split(' ').filter(Boolean);
+  const meaningW = wantW.filter(w => !/^(of|in|on|at|to|for|and|or)$/.test(w));
+  const SEQ_RE = /\b(\d+[a-z]*|[ivx]+)\b/, SEQ_TOK = /^(\d+[a-z]*|[ivx]+)$/;
   let best = null, bestScore = 0;
   for (const g of list) {
+    if (conflictYear(g)) continue;
+    const gn = (wantYear && stripYear(g.n)) || g.n;
     let score = 0;
-    if (g.n.startsWith(want2 + ' ') || want2.startsWith(g.n + ' ')) { const extra = g.n.length > want2.length ? g.n.slice(want2.length) : want2.slice(g.n.length); if (!/\b(\d+|[ivx]+)\b/.test(extra)) score = .9 - Math.abs(g.n.length - want2.length) / 200; } // "Pikmin" must not stand in for "Pikmin 2"
-    else { const G = g.n.split(' ').filter(Boolean); if (G.length) { let hit = 0; for (const w of G) if (W.has(w)) hit++; const j = hit / new Set([...W, ...G]).size; if (j >= .75) score = j;
-      /* ours is theirs minus a few filler words, in the same order ("Mario and Sonic Rio 2016" = "Mario & Sonic at the Rio 2016 Olympic Games") */
-      else if (W.size >= 3) { const extra = G.filter(w => !W.has(w)); let k = 0; for (const w of G) if (k < wantW.length && w === wantW[k]) k++;
-        if (k === wantW.length && extra.length <= 3 && !extra.some(w => /^(\d+|[ivx]+)$/.test(w))) score = .8 - extra.length * .03; } } }
-    if (score && !art(g)) score -= .05; /* an entry without pictures only wins when nothing else is close */
+    if (gn === want2) score = .98;
+    else if (gn.startsWith(want2 + ' ') || want2.startsWith(gn + ' ')) { const extra = gn.length > want2.length ? gn.slice(want2.length) : want2.slice(gn.length); if (!SEQ_RE.test(extra)) score = .9 - Math.abs(gn.length - want2.length) / 200; } // "Pikmin" must not stand in for "Pikmin 2"
+    else if (wantW.length >= 3 && meaningW.length >= 2 && want2.length >= 12 && (gn.endsWith(' ' + want2) || want2.endsWith(' ' + gn))) {
+      const extra = gn.length > want2.length ? gn.slice(0, gn.length - want2.length) : want2.slice(0, want2.length - gn.length);
+      if (!SEQ_RE.test(extra)) score = .78 - Math.abs(gn.length - want2.length) / 300;
+    } else {
+      const G = gn.split(' ').filter(Boolean);
+      if (G.length) {
+        const Gset = new Set(G); let hit = 0; for (const w of Gset) if (W.has(w)) hit++;
+        const j = hit / new Set([...W, ...Gset]).size;
+        if (j >= .75) {
+          const diffNum = [...Gset].filter(w => !W.has(w)).some(w => SEQ_TOK.test(w)) || [...W].filter(w => !Gset.has(w)).some(w => SEQ_TOK.test(w));
+          if (!diffNum) score = j;
+        } else if (W.size >= 3) {
+          const extra = G.filter(w => !W.has(w)); let k = 0; for (const w of G) if (k < wantW.length && w === wantW[k]) k++;
+          if (k === wantW.length && extra.length <= 3 && !extra.some(w => SEQ_TOK.test(w))) score = .8 - extra.length * .03;
+        }
+      }
+    }
+    if (score) {
+      if (!art(g)) score -= .05; /* an entry without pictures only wins when nothing else is close */
+      if (wantYear) {
+        const cy = candYear(g);
+        if (cy === wantYear || hasYearWord(g, wantYear)) score += .25;
+        else if (cy && Math.abs(cy - wantYear) <= 1) score += .08;
+        else if (!cy) score += .02;
+      }
+    }
     if (score > bestScore) { bestScore = score; best = g; }
   }
   return best;

@@ -1063,7 +1063,7 @@ function fillDetails(){
     if(show){const mins=g.kind==="steam"&&g.minutes?g.minutes:0;const tiles=[["Played",hs&&hs.ms?fmtPlay(hs.ms):mins?`${(mins/60).toFixed(1)} h`:"Not yet"],["Last played",hs&&hs.last?fmtDay(hs.last/1000):"Never"],["Launches",String(hs&&hs.count||0)]];
       tiles.forEach(([k,v])=>{const d=document.createElement("div");d.className="d-stat";const a=document.createElement("span");a.textContent=k;const b=document.createElement("b");b.textContent=v;d.append(a,b);st.append(d)})}}
   // screenshots strip (LaunchBox); the chosen one fills the hero
-  const shots=(g.kind==="rom"&&i.shots)||[];shotSel=0;const ds=$("dShots");ds.innerHTML="";ds.hidden=!shots.length;$("dCover").closest(".d-hero").classList.toggle("shot",!!shots.length);
+  const shots=((g.kind==="rom"||g.kind==="steam")&&i.shots)||[];shotSel=0;const ds=$("dShots");ds.innerHTML="";ds.hidden=!shots.length;$("dCover").closest(".d-hero").classList.toggle("shot",!!shots.length);
   shots.forEach((u,k)=>{const d=document.createElement("button");d.type="button";d.className="d-shot"+(k===0?" on":""); /* (a button: the controller can land on it in Media) */const im=document.createElement("img");im.loading="lazy";im.decoding="async";im.alt="";im.src=u;d.append(im);d.addEventListener("click",()=>{if(mode==="details")openShotView(k);else showShot(k)}) /* (beta.12: full screen; on Android too, with swipes) */;ds.append(d)}); /* (beta.9: decoded off the main thread) */
   if(shots.length)heroBgSoon(shots[0],g); // (beta.9: decoded first, then swapped in: never a half-drawn or hitching backdrop)
   $("dTrailer").hidden=!(g.kind==="rom"&&i.video);
@@ -1095,7 +1095,7 @@ function fillDetails(){
   $("dPlay").textContent=g.kind==="rom"||g.kind==="steam"?"Play":"Open";
   $("dInspect").hidden=g.kind!=="rom";$("dManual").hidden=g.kind!=="rom";$("dManual").querySelector("span").textContent=hasManual(g)?"Read manual":"Read booklet"; /* (beta.7: an icon button: only its label changes) */
   $("dEmu").hidden=!(g.kind==="rom"&&s.hasEmulator);$("dEmu").textContent=`Open ${s.emulatorName||"emulator"}`;
-  {const pc=g.kind==="steam"&&!!api.pcCoverOptions,b=$("dBoxArt"),p=$("dBoxArtPc");if(b)b.hidden=!(g.kind==="rom"&&api.artStudio&&g.file);if(p)p.hidden=!pc;} /* (beta.9) a PC game's Box art sits beside Play (it has no manual or Inspect), not in More */{const b=$("dRename");if(b)b.hidden=!(api.renameGame&&((g.kind==="rom"&&g.file)||g.kind==="steam"));} /* (beta.5: PC games too, through the cover picker) */
+  {const pc=g.kind==="steam"&&!!api.pcCoverOptions,b=$("dBoxArt"),p=$("dBoxArtPc");if(b)b.hidden=!(g.kind==="rom"&&api.artStudio&&g.file);if(p)p.hidden=!pc;} /* (beta.9) a PC game's Box art sits beside Play (it has no manual or Inspect), not in More */{const b=$("dRename");if(b)b.hidden=!(api.renameGame&&((g.kind==="rom"&&g.file)||g.kind==="steam"));}{const b=$("dEditDetails");if(b)b.hidden=!(api.saveGameDetails&&((g.kind==="rom"&&g.file)||g.kind==="steam"));} /* (beta.5: PC games too, through the cover picker) */
   {const b=$("dCols");if(b)b.hidden=!isGame(g)||g.kind==="app";}
   {const b=$("dAddTo");if(b)b.hidden=!addCan(g);if(b&&!b.hidden){const c=$("dCols");if(c)c.hidden=true}} /* (beta.14) Add to… (Windows / Linux, not in Kid mode); it covers My shelves, so the older My shelves button steps aside */
   {const b=$("dChooseManual");if(b){b.hidden=!(g.kind==="rom"&&api.manualStudio&&g.file);b.textContent=hasManual(g)?"Choose manual…":"Find a manual…";b.title=!hasManual(g)&&g.manualMiss?`Boxshelf looked online on ${new Date(g.manualMiss).toLocaleDateString()} and found no manual for this game. Search or add one here.`:""}}
@@ -1109,24 +1109,25 @@ function fillDetails(){
 // title screen, IGDB with keys). The new ones join the end of the strip, so the ones on screen never move; they land only
 // while this game is still in Details, and never while the shelf slides.
 var SHOTS_ASKED=new Set(); // (var: a refill on start-up can come before this line)
-function dShotsMore(g,s,shots){if(!SHOTS_ASKED||ANDROID||!g||g.kind!=="rom"||!api.moreShots||!s||!g.file||shots.length>=6)return;const k=s.id+"|"+g.file;if(SHOTS_ASKED.has(k))return;SHOTS_ASKED.add(k);
-  api.moreShots({systemId:s.id,file:g.file,title:g.title,shots}).then(r=>{const list=Array.isArray(r)?r.filter(u=>typeof u==="string"&&u):[];const now=(g.info&&g.info.shots)||[];if(list.length<=now.length)return;
+function dShotsMore(g,s,shots){if(!SHOTS_ASKED||ANDROID||!g||(g.kind!=="rom"&&g.kind!=="steam")||!api.moreShots||!s||shots.length>=6)return;const pc=g.kind==="steam",f=pc?g.id:g.file;if(!f)return;const sys=pc?"pc":s.id,k=sys+"|"+f;if(SHOTS_ASKED.has(k))return;SHOTS_ASKED.add(k);
+  api.moreShots({systemId:sys,file:f,title:g.title,shots}).then(r=>{const list=Array.isArray(r)?r.filter(u=>typeof u==="string"&&u):[];const now=(g.info&&g.info.shots)||[];if(list.length<=now.length)return;
     if(g.info)g.info.shots=list;else g.info={shots:list};const land=()=>{if(window.BS_BUSY&&BS_BUSY())return void setTimeout(land,300);if((mode==="details"||mode==="shot")&&curGame()===g)dShotsAdd(g)};land()}).catch(()=>{SHOTS_ASKED.delete(k)})}
-// (beta.14) IGDB's game info (main/igdb.js, Windows and Linux, only with the keys): a console game missing a description,
+// (beta.14) IGDB's game info (main/igdb.js, Windows and Linux, only with the keys): a console or PC game missing a description,
 // genres, developer or release date asks main once per run; what comes back only fills gaps (LaunchBox's values stay), and
 // Details is filled again if this game is still in it (never while the shelf slides)
 function igdbOn(){const k=cfgInfo&&cfgInfo.config&&cfgInfo.config.keys;return !!(k&&String(k.igdbId||"").trim()&&String(k.igdbSecret||"").trim())}
 var INFO_ASKED=new Set(); // (var: a refill on start-up can come before this line)
-function dInfoMore(g,s){if(!INFO_ASKED||ANDROID||!g||g.kind!=="rom"||!api.moreInfo||!s||!g.file||!igdbOn())return;const i0=g.info||{},no=v=>v==null||v==="";
-  if(!no(i0.overview)&&!no(i0.genres)&&!no(i0.dev)&&!(no(i0.release)&&no(i0.year)))return;const k=s.id+"|"+g.file;if(INFO_ASKED.has(k))return;INFO_ASKED.add(k);
-  api.moreInfo({systemId:s.id,file:g.file,title:g.title}).then(x=>{if(!x||typeof x!=="object")return;const i=g.info||{},add={};
-    for(const f of ["overview","genres","dev","pub","rating","series"])if(!no(x[f])&&no(i[f]))add[f]=x[f];
-    if(x.release&&no(i.release)&&(no(i.year)||String(i.year).slice(0,4)===String(x.year)))add.release=x.release;if(x.year&&no(i.year)&&no(i.release))add.year=x.year;
+function dInfoMore(g,s){const pc=g&&g.kind==="steam";if(!INFO_ASKED||ANDROID||!g||(g.kind!=="rom"&&!pc)||!api.moreInfo||!s||(!pc&&!igdbOn()))return;const f=pc?g.id:g.file;if(!f)return;const sys=pc?"pc":s.id,i0=g.info||{},no=v=>v==null||v==="";
+  if(!no(i0.overview)&&!no(i0.genres)&&!no(i0.dev)&&!(no(i0.release)&&no(i0.year)))return;const k=sys+"|"+f;if(INFO_ASKED.has(k))return;INFO_ASKED.add(k);
+  api.moreInfo({systemId:sys,file:f,title:g.title}).then(x=>{if(!x||typeof x!=="object")return;const i=g.info||{},add={},rep=!!(x._replace||(pc&&no(i.overview)&&!no(x.overview)));
+    for(const fld of ["overview","genres","dev","pub","rating","series","metacritic","bg"])if(!no(x[fld])&&(rep||no(i[fld])))add[fld]=x[fld];
+    if(Array.isArray(x.shots)&&x.shots.length&&(rep||!(Array.isArray(i.shots)&&i.shots.length)))add.shots=x.shots;
+    if(x.release&&(rep||(no(i.release)&&(no(i.year)||String(i.year).slice(0,4)===String(x.year)))))add.release=x.release;if(x.year&&(rep||(no(i.year)&&no(i.release))))add.year=x.year;
     if(!Object.keys(add).length)return;g.info=Object.assign({},i,add);
     const land=()=>{if(window.BS_BUSY&&BS_BUSY())return void setTimeout(land,300);if(mode==="details"&&curGame()===g)fillDetails()};land()}).catch(()=>{INFO_ASKED.delete(k)})}
 function dShotsAdd(g){const sh=(g.info&&g.info.shots)||[],ds=$("dShots"),n0=ds.children.length;if(sh.length<=n0)return;
   for(let k=n0;k<sh.length;k++){const d=document.createElement("button");d.type="button";d.className="d-shot"+(k===0?" on":"");const im=document.createElement("img");im.loading="lazy";im.decoding="async";im.alt="";im.src=sh[k];d.append(im);d.addEventListener("click",()=>{if(mode==="details")openShotView(k);else showShot(k)});ds.append(d)}
-  ds.hidden=false;$("dCover").closest(".d-hero").classList.add("shot");if(!n0)heroBgSoon(sh[0],g);$("dNoMedia").hidden=true;$("dTabMedia").classList.add("has");{const h=$("dvShotsH");if(h)h.hidden=false}{const q=$("dvIgdb");if(q&&sh.length>=6)q.hidden=true}}
+  ds.hidden=false;$("dCover").closest(".d-hero").classList.add("shot");if(!n0){heroBgSoon(sh[0],g);if(DV2)dvShot(sh[0])}$("dNoMedia").hidden=true;$("dTabMedia").classList.add("has");if(DV2&&dv.secs&&dv.secs.media){dv.secs.media.hidden=false;const t=dv.nav&&dv.nav.querySelector('.dv-t[data-s="media"]');if(t)t.hidden=false;dv.nav.hidden=dvList().length<2}{const h=$("dvShotsH");if(h)h.hidden=false}{const q=$("dvIgdb");if(q&&sh.length>=6)q.hidden=true}}
 function openDetails(){if(mode!=="browse"||!curGame()||emptyShelf())return;uiCrumb("Details: "+curGame().title);
   // (beta.7) the shelf's own preview already playing for this game carries straight on behind Details (no restart)
   {const g=curGame(),k=String(g.id!=null?g.id:g.title);if(PV&&PV.bkey===k&&app.classList.contains("pv-on")){const v=$("pvBack");clearTimeout(PV.bt);PV.bkey="";PV.key=k;PV.r={type:"file",url:v.currentSrc||v.src};app.classList.add("pv-det")}}
@@ -4892,6 +4893,10 @@ async function chooseGameEmu(g){if(!g||g.kind!=="rom"||!api.gameEmulator)return;
 (function(){const c=$("dActEnd");if(!c||$("dRename"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dRename";b.textContent="Rename";b.title="Give this game the name you want on your shelf";
   b.addEventListener("click",()=>{const g=curGame();if(!g||!api.renameGame||!(g.kind==="rom"||g.kind==="steam"))return;const s=g._sh||shelfFor(g);const ref=g.kind==="rom"?{systemId:s.id,file:g.file}:{id:g.id};
     closeDetails(true);play_("panel");Setup.open({page:"rename",ref,title:g.title,fileTitle:g.fileTitle||""})});c.before(b)})();
+const gameKeyOf=g=>{if(!g)return "";if(g.kind==="rom"){const s=g._sh||shelfFor(g);return s&&g.file?s.id+":"+g.file:String(g.id||"")}return String(g.id||"")};
+(function(){const c=$("dActEnd");if(!c||$("dEditDetails"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dEditDetails";b.hidden=true;b.textContent="Edit details…";b.title="Search online metadata across all platforms or edit year, developer, genres and synopsis";
+  b.addEventListener("click",()=>{const g=curGame();if(!g||!api.saveGameDetails||!(g.kind==="rom"||g.kind==="steam")||!window.Setup)return;
+    closeDetails(true);play_("panel");Setup.open({page:"gamedetails",id:gameKeyOf(g),title:g.title,info:g.info||{}})});c.before(b)})();
 // the Details panel's "Choose manual…" button (Manual Studio): every manual found for this game side by side, in Settings
 // → Art & manuals (the same picker as the box art's); B there goes up to the console's games, then the Art page
 (function(){const m=$("dManual");if(!m||$("dChooseManual"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dChooseManual";b.textContent="Choose manual…";b.title="Every manual found for this game, side by side: pick another language, region or scan, or add your own PDF";
@@ -4942,7 +4947,7 @@ function dvBuild(){
   const fav=dvMk("button","btn d-ico dv-round dv-fav",DV_ICO.heart);fav.type="button";fav.id="dFav";fav.setAttribute("aria-pressed","false");
   fav.addEventListener("click",()=>{Promise.resolve(toggleFav()).then(dvFavPaint,dvFavPaint)});
   const mb=$("dMoreBtn");mb.classList.add("dv-round");mb.setAttribute("aria-label","More");mb.title="More: the manual, the case, the emulator, box art, rename, My shelves, hide";mb.before(fav);
-  {const ae=$("dActEnd");if(ae)["dManual","dInspect","dGameEmu","dBoxArt","dBoxArtPc","dRename","dAddTo","dCols","dHide","dChooseManual","dEmu","dTrailerPick"].forEach(id=>{const b=$(id);if(b)ae.before(b)})}
+  {const ae=$("dActEnd");if(ae)["dManual","dInspect","dGameEmu","dBoxArt","dBoxArtPc","dRename","dEditDetails","dAddTo","dCols","dHide","dChooseManual","dEmu","dTrailerPick"].forEach(id=>{const b=$(id);if(b)ae.before(b)})}
   hero.append(acts,menu);
   const tr=$("dTrailer");tr.innerHTML='<span class="dv-vfull"><span class="dv-trg" id="dvTrG"></span><span id="dvTrL">Pause</span><span class="dv-tr2" id="dvTr2"></span></span>'; /* (beta.14: dvTr2, the volume and full-screen keys beside it) */tr.setAttribute("aria-label","Pause the trailer");tr.title="Pause (Y: full screen)"; /* (beta.12: A pauses / plays it here; Y is full screen) */
   const vid=dvMk("div","dv-vid");vid.id="dvVid";const none=dvMk("span","dv-none");none.id="dvNone";vid.append($("dMedia"),none,tr,dvSndBuild());boxSync(); /* (beta.12: the speaker and volume bar; the box's sound follows its picture) */
@@ -4986,7 +4991,7 @@ function dvBuild(){
   row("man","Manual","Open",()=>dvPress(hasManual(curGame())?"dManual":"dChooseManual"));
   row("art","Box art","Change",()=>dvPress("dBoxArt"));
   dv.crow.setup.hidden=true;cL.append(rows,$("dHow"));
-  [["dvRen","Rename on the shelf","dRename"],["dvAdd","Add to another shelf…","dAddTo"],["dvCol","Add to one of My shelves","dCols"],["dvHide","Hide from the shelf","dHide"]].forEach(([id,l,t])=>{const b=dvMk("button","dv-act");b.type="button";b.id=id;b.textContent=l;b.dataset.for=t;b.addEventListener("click",()=>dvPress(t));cR.append(b)});
+  [["dvRen","Rename on the shelf","dRename"],["dvEditDet","Edit details…","dEditDetails"],["dvAdd","Add to another shelf…","dAddTo"],["dvCol","Add to one of My shelves","dCols"],["dvHide","Hide from the shelf","dHide"]].forEach(([id,l,t])=>{const b=dvMk("button","dv-act");b.type="button";b.id=id;b.textContent=l;b.dataset.for=t;b.addEventListener("click",()=>dvPress(t));cR.append(b)});
   cR.append(d.querySelector(".d-adv"));copy.append(cL,cR);
   navT.append(bump("dv-rb",1));
   const foot=dvMk("div","dv-foot");foot.setAttribute("aria-hidden","true"); /* (the panel fades out under the hint bar) */
@@ -5060,7 +5065,7 @@ function dvCopy(g){const R=dv.crow,a=g.art||{},s=shelfFor(g)||{},man=Array.isArr
   const cm=$("dChooseManual");set("man",man.length?`${man.length} pages`:g.manualMiss?"None found online":"Not found yet",man.length>0);btn("man",man.length>0||(!!cm&&!cm.hidden),man.length?"Open":"Find");
   const parts=[a.front&&"front",a.back&&"back",a.spine&&"spine",a.disc&&lcWord(s.id?mediaWord(s.id):"Disc")].filter(Boolean),w=parts.length>1?parts.slice(0,-1).join(", ")+" and "+parts[parts.length-1]:parts[0]||"";
   set("art",w?w[0].toUpperCase()+w.slice(1):"No scan yet",parts.length===4);const ba=$("dBoxArt");btn("art",!!ba&&!ba.hidden);
-  ["dvRen","dvAdd","dvCol","dvHide"].forEach(id=>{const b=$(id),t=b&&$(b.dataset.for);if(b)b.hidden=!t||t.hidden})} /* (beta.14: dvAdd shows where Add to… does, dvCol where it doesn't: Android, Kid mode) */
+  ["dvRen","dvEditDet","dvAdd","dvCol","dvHide"].forEach(id=>{const b=$(id),t=b&&$(b.dataset.for);if(b)b.hidden=!t||t.hidden})} /* (beta.14: dvAdd shows where Add to… does, dvCol where it doesn't: Android, Kid mode) */
 // Set up for me: what Settings → the console's page knows (asked once a game, when Your copy shows)
 function dvSetup(g){const r=dv.crow.setup;if(!r)return;const s=g&&g.kind==="rom"?shelfFor(g):null;if(!s||!s.emulator||!api.emuSetupStatus){r.hidden=true;return}
   const put=st=>{if(curGame()!==g||mode!=="details")return;const ok=!!(st&&st.supported);r.hidden=!ok;if(!ok)return;const done=!!st.done,t=r.querySelector(".t");
@@ -5097,7 +5102,7 @@ function dvAchList(g){const L=$("dvAchList"),F=$("dvAchF"),box=$("dvAchL");if(!L
 function dvFill(g){const d=$("details");if(!d.classList.contains("dv2")||!g)return;const s=shelfFor(g)||{},i=g.info||{},rom=g.kind==="rom",game=rom||g.kind==="steam",gid=String(g.id!=null?g.id:g.title);
   app.style.setProperty("--dv-tint",stOf(g).glow||"#9d8cff");
   // the art behind the case, and the trailer box's poster: fan art first, then a screenshot, then the box's own art
-  const shots=rom&&i.shots||[],art=(rom&&i.bg)||(g.art&&g.art.hero)||shots[0]||frontUrl(g)||"",post=(rom&&i.bg)||shots[0]||(g.art&&g.art.hero)||""; /* (never the cover: the real case is right there) */
+  const shots=game&&i.shots||[],art=(game&&i.bg)||(g.art&&g.art.hero)||shots[0]||frontUrl(g)||"",post=(game&&i.bg)||shots[0]||(g.art&&g.art.hero)||""; /* (never the cover: the real case is right there) */
   const bu=art?thumb(art,360):"";if(dv.back!==bu){dv.back=bu;dvPic(bu,u=>{if(dv.back!==u)return;const im=$("dvBack").firstChild;if(u)im.src=u;else im.removeAttribute("src")})}
   const pu=post?thumb(post,512):"";if(dv.poster!==pu){dv.poster=pu;$("dMediaIn").style.backgroundImage="";dvPic(pu,u=>{if(dv.poster===u)$("dMediaIn").style.backgroundImage=u?dvUrl(u):""})}
   $("dvVid").classList.toggle("dv-empty",!pu);$("dvNone").textContent=$("dTrailer").hidden?"No trailer or screenshots yet":"Trailer";$("dvVid").hidden=!game;
@@ -5125,12 +5130,13 @@ function dvFill(g){const d=$("details");if(!d.classList.contains("dv2")||!g)retu
     $("dMoreBtn").hidden=![...$("dMenu").querySelectorAll("button")].some(b=>!b.hidden)} /* (a tile with nothing more to do: no ···) */
   {const dd=$("dDesc");$("dMore").textContent=dd.classList.contains("clamp")?"More":"Less"}
   // the tabs this game has; another game starts on Overview
-  const show={overview:true,ach:rom&&(!RA.on||raHas(s)),media:rom||!$("dShots").hidden,copy:rom};
+  const pc=g.kind==="steam";
+  const show={overview:true,ach:rom&&(!RA.on||raHas(s)),media:rom||pc||!$("dShots").hidden,copy:rom};
   for(const [k] of DV_SECS){const sc=dv.secs[k];if(sc)sc.hidden=!show[k];const t=dv.nav.querySelector(`.dv-t[data-s="${k}"]`);if(t)t.hidden=!show[k]}
   dv.nav.hidden=Object.values(show).filter(Boolean).length<2;
   $("dvAchOff").hidden=!(rom&&!RA.on&&!achLocal(s)); /* (beta.14: Xbox 360 and PS3 need no account: Xenia's and RPCS3's own) */
   $("dvShotsH").hidden=$("dShots").hidden;$("dvArtBox").hidden=!rom;
-  $("dvIgdb").hidden=!(rom&&!ANDROID&&((i.shots||[]).length<6)&&!igdbOn()&&!(cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.moreShots===false));
+  $("dvIgdb").hidden=!((rom||pc)&&!ANDROID&&((i.shots||[]).length<6)&&!igdbOn()&&!(cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.moreShots===false));
   dvSndPaint();dvFavPaint();dvStatusPaint(g);dvAchPaint(g);if(rom)dvCopy(g);
   if(dv.fg!==gid){dv.fg=gid;dv.achF="all";dv.es.clear();dvShow("overview")}else dvShow(show[dv.cur]?dv.cur:"overview");
   $("dvCap").hidden=!rom;dvCapGlyph(showPad())}

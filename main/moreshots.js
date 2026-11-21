@@ -119,9 +119,9 @@ async function run(sysId, game, k, base0, opts) {
   // every source that's set up and due: what it has for this game (lookups only, no pictures yet)
   const cands = [], asked = [];
   for (const src of sources) {
-    if (!ready(src, opts) || !due(e, src, now)) continue;
+    if ((!opts.force && !due(e, src, now)) || !ready(src, opts)) continue;
     if (opts.bg && src.bgLimit != null) bgUsed[src.id] = (bgUsed[src.id] || 0) + 1;
-    let got; try { got = await src.find(sysId, game); } catch (err) { log('More screenshots:', src.id, 'busy', (err && err.message) || ''); continue; } // (asked again next time)
+    let got; try { got = await src.find(opts.lookupSysId || sysId, game, sysId); } catch (err) { log('More screenshots:', src.id, 'busy', (err && err.message) || ''); continue; } // (asked again next time)
     asked.push(src.id);
     for (const c of Array.isArray(got) ? got : []) if (c && typeof c.url === 'string' && KIND_RANK[c.kind] != null) cands.push({ url: c.url, kind: c.kind, src });
   }
@@ -165,7 +165,7 @@ function background(items, opts = {}) {
       while (bgNext) { const { items: L, opts: o } = bgNext; bgNext = null; let n = 0;
         for (const it of L) {
           if (bgNext || (o.stop && o.stop())) break;
-          const bo = o.only ? { bg: true, only: o.only } : { bg: true };
+          const bo = { bg: true, ...(o.only ? { only: o.only } : {}), ...(it.lookupSysId ? { lookupSysId: it.lookupSysId } : {}) };
           if (!it || !it.game || !need(it.sysId, it.game, it.base, bo)) continue;
           if (o.wait) await o.wait(); if (bgNext || (o.stop && o.stop())) break;
           await topUp(it.sysId, it.game, it.base, bo); n++;
@@ -203,9 +203,9 @@ function lrSource(o) {
 function igdbSource(o) {
   const IG = require('./igdb'), c = o.client || IG.client(o);
   return { id: 'igdb', ready: () => c.ready(),
-    find: async (sysId, game) => {
+    find: async (sysId, game, storeSysId) => {
       const r = await c.lookup(sysId, game); if (!r) return []; // (no keys, or a Client ID or Secret Twitch won't take: nothing)
-      if (o.onFound) { try { o.onFound(sysId, game, r); } catch {} }
+      if (o.onFound) { try { o.onFound(storeSysId || sysId, game, r); } catch {} }
       return IG.shotsOf(r.shotHit).slice(0, MAX).map(url => ({ url, kind: 'play' }));
     },
     get: (c2, dest) => o.download(c2.url, dest) };

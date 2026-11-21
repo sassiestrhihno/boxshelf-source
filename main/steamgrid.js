@@ -23,15 +23,21 @@ function init(o = {}) { getKey = o.key || getKey; log = o.log || log; cacheFile 
 const key = () => String((getKey && getKey()) || '').trim();
 const enabled = () => !!key() && key() !== badKey; // a key the server refused isn't sent again until it changes
 
-// ---------- cache: { ids: { "<what>": [gameId|0, at] }, lists: { "<gameId>|<dims>": [at, [grid]] } } ----------
+// ---------- cache: { v: 2, ids: { "<what>": [gameId|0, at, extra?] }, lists: { "<gameId>|<dims>": [at, [grid]] } } ----------
+const CACHE_V = 2;
 function cacheGet() {
   if (cache) return cache;
-  try { const j = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); if (j && j.ids && j.lists && typeof j.ids === 'object' && typeof j.lists === 'object') cache = { ids: j.ids, lists: j.lists }; } catch {}
-  return cache || (cache = { ids: {}, lists: {} });
+  try {
+    const j = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+    if (j && j.lists && typeof j.lists === 'object') {
+      cache = { v: CACHE_V, ids: j.v === CACHE_V && j.ids && typeof j.ids === 'object' ? j.ids : {}, lists: j.lists };
+    }
+  } catch {}
+  return cache || (cache = { v: CACHE_V, ids: {}, lists: {} });
 }
 function cacheSave() {
   if (!cacheFile) return; clearTimeout(saveT);
-  saveT = setTimeout(() => { saveT = null; const c = cacheGet(), now = Date.now();
+  saveT = setTimeout(() => { saveT = null; const c = cacheGet(), now = Date.now(); c.v = CACHE_V;
     for (const [k, v] of Object.entries(c.ids)) if (now - v[1] > ID_TTL) delete c.ids[k]; // only what's still fresh is kept
     for (const [k, v] of Object.entries(c.lists)) if (now - v[0] > LIST_TTL) delete c.lists[k];
     const trim = (m, n, at) => { const ks = Object.keys(m); if (ks.length > n) ks.sort((a, b) => at(m[a]) - at(m[b])).slice(0, ks.length - n).forEach(k => delete m[k]); };
@@ -67,25 +73,50 @@ async function api(p, k = key()) {
 // ---------- which SteamGridDB game this is ----------
 // Steam / PC games by their appid; console games by title through autocomplete, accepted only on an exact or near match
 // (the same title matching the LaunchBox lookup uses: "Pikmin" never stands in for "Pikmin 2"). 0 = no match (cached too).
-async function gameId(game, match) {
+function autoQueries(name) {
+  const raw = String(name || '').slice(0, 120).trim();
+  if (!raw) return [];
+  const clean = raw.replace(/[()[\]]+/g, ' ').replace(/\s+[-–—:]+\s+/g, ' ').replace(/\s+/g, ' ').trim();
+  const noYear = clean.replace(/\b(?:19[7-9]\d|20[0-3]\d)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  const out = [];
+  for (const s of [clean, noYear, raw]) if (s && !out.includes(s)) out.push(s);
+  return out.slice(0, 3);
+}
+const sameCoreTitle = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').replace(/\b(?:19[7-9]\d|20[0-3]\d)\b/g, ' ').replace(/\s+/g, ' ').trim();
+async function gameIds(game, match) {
   const c = cacheGet(), appid = game && /^\d{1,10}$/.test(String(game.appid || '')) ? String(game.appid) : '';
-  const title = String((game && game.title) || '').trim(); if (!appid && !title) return 0;
+  const title = String((game && game.title) || '').trim(); if (!appid && !title) return [];
   const ck = appid ? 'steam:' + appid : 'title:' + title.toLowerCase(), hit = c.ids[ck];
-  if (hit && Date.now() - hit[1] < (hit[0] ? ID_TTL : MISS_TTL)) return hit[0];
-  let id = 0;
+  if (hit && !game.term && Date.now() - hit[1] < (hit[0] ? ID_TTL : MISS_TTL)) {
+    return hit[0] ? [hit[0], ...(Array.isArray(hit[2]) ? hit[2] : [])] : [];
+  }
+  let id = 0, extra = [];
   if (appid) { const d = await api('/games/steam/' + appid); id = d && +d.id || 0; }
   else {
     // game.names: its other names, most specific first (covers.lookupNames: without "Nintendo Switch 2 Edition" and the
     // like); each further one must match exactly (match's third argument). At most three searches per game.
     const names = Array.isArray(game.names) && game.names.length ? game.names.slice(0, 3) : [title];
     for (let i = 0; i < names.length && !id; i++) {
-      const d = await api('/search/autocomplete/' + encodeURIComponent(String(names[i]).slice(0, 120)));
-      const list = Array.isArray(d) ? d.filter(x => x && x.id && x.name) : [];
-      const m = list.length && match ? match(list.map(x => ({ id: x.id, name: String(x.name), year: x.release_date ? new Date(x.release_date * 1000).getUTCFullYear() : 0 })), { ...game, title: String(names[i]) }, i > 0) : null;
+      const seen = new Map();
+      for (const q of autoQueries(names[i])) {
+        const d = await api('/search/autocomplete/' + encodeURIComponent(q));
+        for (const x of Array.isArray(d) ? d : []) if (x && x.id && x.name && !seen.has(+x.id)) seen.set(+x.id, x);
+      }
+      const mapped = [...seen.values()].map(x => ({ id: x.id, name: String(x.name), year: x.release_date ? new Date(x.release_date * 1000).getUTCFullYear() : 0 }));
+      const m = mapped.length && match ? match(mapped, { ...game, title: String(names[i]) }, i > 0) : null;
       id = m ? +m.id || 0 : 0;
+      if (id) {
+        const winCore = sameCoreTitle(m.name);
+        extra = mapped.filter(x => +x.id !== id && sameCoreTitle(x.name) === winCore).sort((a, b) => (+b.id || 0) - (+a.id || 0)).slice(0, 2).map(x => +x.id);
+      }
     }
   }
-  c.ids[ck] = [id, Date.now()]; cacheSave(); return id;
+  c.ids[ck] = extra.length ? [id, Date.now(), extra] : [id, Date.now()]; cacheSave();
+  return id ? [id, ...extra] : [];
+}
+async function gameId(game, match) {
+  const ids = await gameIds(game, match);
+  return ids[0] || 0;
 }
 // the poster grids of one game (or a Steam app), SteamGridDB's own order (best voted first)
 async function grids(id, appid) {
@@ -108,7 +139,20 @@ async function posters(game, match) {
     const appid = game && /^\d{1,10}$/.test(String(game.appid || '')) ? String(game.appid) : '';
     let list;
     if (appid) list = await grids(0, appid);
-    else { const id = await gameId(game, match); if (!id) return []; list = await grids(id); }
+    else {
+      const ids = await gameIds(game, match); if (!ids.length) return [];
+      if (ids.length === 1) list = await grids(ids[0]);
+      else {
+        const parts = await Promise.all(ids.slice(0, 2).map(id => grids(id).catch(() => [])));
+        const first = parts[0] || [], second = parts[1] || [], seen = new Set(), combined = [];
+        const push = g => { if (g && g.id && !seen.has(g.id)) { seen.add(g.id); combined.push(g); } };
+        first.slice(0, 16).forEach(push);
+        second.slice(0, 8).forEach(push);
+        first.slice(16).forEach(push);
+        second.slice(8).forEach(push);
+        list = combined.slice(0, 40);
+      }
+    }
     return list.map((g, i) => ({ url: g.url, thumbUrl: g.thumb, ext: extOf(g.url, g.mime), source: 'steamgriddb', type: 'grid', sgId: g.id, w: g.w, h: g.h, style: g.style, styleName: STYLE_N[g.style] || '', author: g.author, rank: i }));
   } catch (e) { if (e.code !== 'nokey') log('SteamGridDB:', e.message); return []; }
 }
@@ -133,4 +177,4 @@ async function test(k) {
   try { await api('/search/autocomplete/' + encodeURIComponent('zelda'), k); if (k === badKey) badKey = ''; return { ok: true }; }
   catch (e) { return { ok: false, error: e.code === 'auth' ? 'not accepted' : e.message }; }
 }
-module.exports = { init, posters, logos, test, enabled, gameId, grids, DIMS, _t: { cacheGet, reset: () => { cache = null; pausedUntil = 0; badKey = ''; }, paused: () => pausedUntil } };
+module.exports = { init, posters, logos, test, enabled, gameId, gameIds, grids, DIMS, _t: { cacheGet, reset: () => { cache = null; pausedUntil = 0; badKey = ''; }, paused: () => pausedUntil } };
