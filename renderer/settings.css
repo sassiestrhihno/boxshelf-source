@@ -643,3 +643,11 @@ body.bss-reduce .bsa-card.dk.sel .im.disc img{animation:none}
 .bss-row.cur.theme .bss-tile.on{box-shadow:inset 0 0 0 2px rgba(255,255,255,.6),0 10px 26px -8px rgba(0,0,0,.6)}
 .bss-root.tgrid .bss-row.cur.theme .bss-tile{opacity:.8}
 .bss-root.tgrid .bss-row.cur.theme .bss-tile.on{opacity:1;box-shadow:0 0 0 3px #6b8cff,inset 0 0 0 2px #fff,0 12px 30px -8px rgba(107,140,255,.7)}
+
+/* Steam-style collapsible PC category organizer (Edit the PC shelf) */
+.bss-row.pc-cat-hdr{background:linear-gradient(90deg,rgba(78,118,176,.26),rgba(52,82,126,.16));border-left:3px solid rgba(130,175,245,.75);margin-top:8px;min-height:46px}
+.bss-row.pc-cat-hdr.open{background:linear-gradient(90deg,rgba(96,144,210,.36),rgba(60,96,150,.22));border-left-color:#8cb8ff}
+.bss-row.pc-cat-hdr .nm{font-weight:700;letter-spacing:.04em;color:#e3eeff;font-size:15px}
+.bss-row.pc-cat-hdr.dyn .nm{color:#c9e4ff}
+.bss-row.pc-cat-item{padding-left:28px;border-left:2px solid rgba(130,175,245,.22);margin-left:8px}
+.bss-row.pc-cat-edit{background:rgba(130,175,245,.08)}

@@ -31,7 +31,7 @@ function defaults() {
     steam: { enabled: true, path: '', hideTools: true },
     // (beta.4) PC games beyond Steam (main/pcgames.js): Epic's installs on the PC shelf; Quiver Launcher's apps and games
     // added by hand ({ id, title, exe, args }) on the Custom shelf. quiverPath: a portable Quiver's folder, chosen or found
-    pc: { epic: true, quiver: true, quiverPath: '', custom: [], gog: true, ubisoft: true, ea: true, xbox: true },
+    pc: { epic: true, quiver: true, quiverPath: '', custom: [], gog: true, ubisoft: true, ea: true, xbox: true, battlenet: true, amazon: true, rockstar: true, groups: [], activeFilters: [], activeInstallFilter: 'all' },
     games: {}, // per-game choices keyed by game id ("<console>:<file>"): { emulator } = this game runs in its own emulator build
     emuSeen: [], // emulator builds used before (newest first): offered for a game a build was made for
     // (beta.7) Set up for me (main/emusetup.js): auto = the first run sets up emulators that look new; graphics = the preset
@@ -234,7 +234,36 @@ function sanitize(cfg) {
   if (isObj(cfg.pc)) { const s = (v, n) => typeof v === 'string' ? v.trim().slice(0, n) : '';
     cfg.pc.custom = (Array.isArray(cfg.pc.custom) ? cfg.pc.custom : []).filter(c => isObj(c) && s(c.exe, 1024)).slice(0, 2000).map(c => ({ id: s(c.id, 80) || s(c.title, 80) || s(c.exe, 80), title: s(c.title, 120), exe: s(c.exe, 1024), args: s(c.args, 1000), ...(s(c.src, 20) ? { src: s(c.src, 20) } : {}), ...(typeof c.shelf === 'string' && /^[a-z0-9_-]{1,24}$/.test(c.shelf) && c.shelf !== 'custom' ? { shelf: c.shelf } : {}) })); // (beta.7: src 'playnite' marks an import, for Remove what was imported; up to 2000 games) (beta.10: shelf 'pc' = on the PC shelf instead of Custom; beta.14: or a console's id, main.js checks it's a known one)
     cfg.pc.pnDirs = isObj(cfg.pc.pnDirs) ? Object.fromEntries(Object.entries(cfg.pc.pnDirs).slice(0, 60).map(([k, v]) => [String(k).slice(0, 20), (Array.isArray(v) ? v : []).filter(x => typeof x === 'string' && x.length <= 1024).slice(0, 50)])) : {}; // (the games folders a Playnite import added)
-    cfg.pc.quiverPath = s(cfg.pc.quiverPath, 1024); for (const k of ['epic', 'quiver', 'gog', 'ubisoft', 'ea', 'xbox']) if (typeof cfg.pc[k] !== 'boolean') cfg.pc[k] = true; } // (beta.7: the four new stores)
+    cfg.pc.quiverPath = s(cfg.pc.quiverPath, 1024); for (const k of ['epic', 'quiver', 'gog', 'ubisoft', 'ea', 'xbox', 'battlenet', 'amazon', 'rockstar']) if (typeof cfg.pc[k] !== 'boolean') cfg.pc[k] = true;
+    const cleanArr = (a, max = 30) => [...new Set((Array.isArray(a) ? a : []).map(x => s(x, 60)).filter(Boolean))].slice(0, max);
+    cfg.pc.groups = (Array.isArray(cfg.pc.groups) ? cfg.pc.groups : []).filter(g => isObj(g) && s(g.id, 60) && s(g.name, 60)).slice(0, 50).map(g => {
+      const kind = g.kind === 'dynamic' ? 'dynamic' : 'manual';
+      const out = {
+        id: s(g.id, 60),
+        name: s(g.name, 60).replace(/\s+/g, ' ').trim() || 'Category',
+        kind,
+        ids: [...new Set((Array.isArray(g.ids) ? g.ids : []).filter(x => typeof x === 'string' && x && x.length <= 240))].slice(0, 5000),
+        collapsed: g.collapsed !== false,
+      };
+      if (s(g.icon, 24)) out.icon = s(g.icon, 24);
+      if (kind === 'dynamic' && isObj(g.rule)) {
+        const r = {};
+        const genres = cleanArr(g.rule.genres); if (genres.length) r.genres = genres;
+        const sources = cleanArr(g.rule.sources); if (sources.length) r.sources = sources;
+        const status = cleanArr(g.rule.status); if (status.length) r.status = status;
+        if (['installed', 'not_installed'].includes(g.rule.install)) r.install = g.rule.install;
+        if (g.rule.favOnly === true) r.favOnly = true;
+        if (g.rule.multiplayer === true) r.multiplayer = true;
+        if (g.rule.unplayed === true) r.unplayed = true;
+        out.rule = r;
+      }
+      return out;
+    });
+    const validGroupIds = new Set([...cfg.pc.groups.map(g => g.id), '__favorites', '__uncategorized']);
+    cfg.pc.activeFilters = [...new Set((Array.isArray(cfg.pc.activeFilters) ? cfg.pc.activeFilters : []).map(x => s(x, 60)).filter(x => validGroupIds.has(x)))].slice(0, 50);
+    cfg.pc.activeInstallFilter = ['all', 'installed', 'not_installed'].includes(cfg.pc.activeInstallFilter) ? cfg.pc.activeInstallFilter : 'all';
+    const validStoreFilters = ['steam', 'epic', 'gog', 'xbox', 'ea', 'ubisoft', 'battlenet', 'amazon', 'rockstar'];
+    cfg.pc.activeStoreFilter = validStoreFilters.includes(cfg.pc.activeStoreFilter) ? cfg.pc.activeStoreFilter : ''; } // (beta.7: the four new stores)
   { const e = isObj(cfg.emuSetup) ? cfg.emuSetup : {}; cfg.emuSetup = { auto: e.auto !== false, graphics: ['auto', 'fast', 'balanced', 'pretty'].includes(e.graphics) ? e.graphics : 'auto', resume: e.resume === true,
     shape: ['auto', 'original', 'wide'].includes(e.shape) ? e.shape : 'auto', sharp: e.sharp === true, crt: e.crt === true, // (beta.14) Set up for me's Picture choices
     pending: [...new Set((Array.isArray(e.pending) ? e.pending : []).filter(x => typeof x === 'string' && x && x.length <= 1024))].slice(0, 40) }; }

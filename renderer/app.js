@@ -28,6 +28,17 @@ const STYLE={
   media:{id:"media",rc:0.03,re:0.18,hue:285,ratio:.71,depth:.06,edge:.02,caseColor:"#1a1c24",caseSide:"#0e0f14",spineInk:"#e8e8f0",band:{bg:"#1a1c24",fg:"#9aa3b8",label:"APP"},spineBand:{bg:"#2a2d38",fg:"#c8cede",label:"APP"},tint:["#2a3550","#0a0d16"],glow:"#b9a6ff"}
 };
 const WORDMARKS={home:["Home","Continue & favorites"],gc:["GameCube","Home console"],wii:["Wii","Motion console"],wiiu:["Wii U","Home console"],sw:["Switch","Hybrid console"],sw2:["Switch 2","Hybrid console"],psp:["PSP","Handheld"],ps3:["PS3","Home console"],ps4:["PS4","Home console"],ps5:["PS5","Home console"],x360:["Xbox 360","Home console"],n3ds:["3DS","Handheld"],ps2:["PS2","Home console"],pc:["PC","Steam, Epic & more"],custom:["Custom","PC ports & recomps"],media:["Media","Streaming"]};
+const PC_STORES_META=[
+  {id:"steam",name:"Steam",logo:"logos/steam.png"},
+  {id:"epic",name:"Epic Games",logo:"logos/epic.png"},
+  {id:"gog",name:"GOG",logo:"logos/gog.png"},
+  {id:"xbox",name:"Xbox",logo:"logos/xbox.png"},
+  {id:"ea",name:"EA",logo:"logos/ea.png"},
+  {id:"ubisoft",name:"Ubisoft",logo:"logos/ubisoft.png"},
+  {id:"battlenet",name:"Battle.net",logo:"logos/battlenet.png"},
+  {id:"amazon",name:"Amazon Games",logo:"logos/amazon.png"},
+  {id:"rockstar",name:"Rockstar Games",logo:"logos/rockstar.png"}
+];
 if(window.BS_SYSTEMS_EXTRA){Object.assign(STYLE,BS_SYSTEMS_EXTRA.style||{});Object.assign(WORDMARKS,BS_SYSTEMS_EXTRA.wordmarks||{})} // extra shelves (renderer/systems-extra.js)
 // (beta.14) what a case is made of: systems-extra.js names it (box, jewel, long); the rest are moulded keep cases
 const packOf=s=>s.pack||(s.rc<=.012?(s.depth<.1?"jewel":"box"):"keep");
@@ -158,6 +169,76 @@ function filterFn(v){
   m=/^genre:(.+)$/.exec(v||"");if(m){const n=m[1];return g=>genresOf(g).includes(n)}
   return ()=>true;
 }
+function pcCfg(){const p=cfgInfo&&cfgInfo.config&&cfgInfo.config.pc;return p&&typeof p==="object"?p:null}
+function pcGameStatus(g){const e=cfgInfo&&cfgInfo.config&&cfgInfo.config.games&&cfgInfo.config.games[String(g&&g.id)];return (e&&e.status)||""}
+function pcRuleMatches(rule,g){
+  if(!rule||typeof rule!=="object")return false;
+  if(Array.isArray(rule.genres)&&rule.genres.length){
+    const gg=String((g.info&&g.info.genres)||g.genres||"").toLowerCase();
+    if(!rule.genres.some(x=>gg.includes(String(x).toLowerCase())))return false;
+  }
+  if(Array.isArray(rule.sources)&&rule.sources.length){
+    const src=g.source==="owned"?(g.store||"owned"):(g.source||"steam");
+    if(!rule.sources.includes(src))return false;
+  }
+  if(Array.isArray(rule.status)&&rule.status.length&&!rule.status.includes(pcGameStatus(g)))return false;
+  if(rule.install==="installed"&&g.source==="owned")return false;
+  if(rule.install==="not_installed"&&g.source!=="owned")return false;
+  if(rule.favOnly&&!isFav(g))return false;
+  if(rule.unplayed&&((g.minutes||0)>0||(HIST[g.id]&&HIST[g.id].ms>0)))return false;
+  if(rule.multiplayer){
+    const gg=String((g.info&&g.info.genres)||g.genres||""),cats=(g.categories||[]).join(" ");
+    if(!(/multi|coop|co-op|online|mmo/i.test(gg+" "+cats)))return false;
+  }
+  return true;
+}
+function pcGroupMatches(grp,g){
+  if(!grp||!g)return false;
+  const id=String(g.id);
+  if(grp.kind==="dynamic")return (Array.isArray(grp.ids)&&grp.ids.includes(id))||pcRuleMatches(grp.rule,g);
+  return Array.isArray(grp.ids)&&grp.ids.includes(id);
+}
+function pcGameStoreOf(g){
+  if(!g||g.kind!=="steam")return "";
+  return String(g.source==="owned"?(g.store||""):(g.source||"steam")).toLowerCase();
+}
+function pcGameHasStore(g,sid){
+  if(!g||g.kind!=="steam"||!sid)return false;
+  if(pcGameStoreOf(g)===sid)return true;
+  if(Array.isArray(g._versions))return g._versions.some(v=>v&&v.game&&pcGameStoreOf(v.game)===sid);
+  return false;
+}
+function pcShelfKeep(g){
+  const p=pcCfg();if(!p)return true;
+  const sf=String(p.activeStoreFilter||"").toLowerCase();
+  if(sf&&!pcGameHasStore(g,sf))return false;
+  const inst=p.activeInstallFilter||"all";
+  if(inst==="installed"&&g.source==="owned")return false;
+  if(inst==="not_installed"&&g.source!=="owned")return false;
+  const af=Array.isArray(p.activeFilters)?p.activeFilters:[];
+  if(!af.length)return true;
+  const groups=Array.isArray(p.groups)?p.groups:[];
+  if(af.includes("__favorites")&&isFav(g))return true;
+  if(af.includes("__uncategorized")&&!groups.some(gr=>pcGroupMatches(gr,g)))return true;
+  return groups.some(gr=>af.includes(gr.id)&&pcGroupMatches(gr,g));
+}
+function pcFilterActive(){const p=pcCfg();return !!(p&&((Array.isArray(p.activeFilters)&&p.activeFilters.length)||(p.activeInstallFilter&&p.activeInstallFilter!=="all")||p.activeStoreFilter))}
+function pcFilterSummary(opts){
+  const tr=s=>(window.BsI18n&&BsI18n.t?BsI18n.t(s):s);
+  const p=pcCfg();if(!p)return tr("All");
+  const gs=Array.isArray(p.groups)?p.groups:[],af=Array.isArray(p.activeFilters)?p.activeFilters:[];
+  const names=[];
+  if(p.activeStoreFilter){
+    const st=PC_STORES_META.find(x=>x.id===p.activeStoreFilter);
+    if(st)names.push(st.name);
+  }
+  names.push(...af.map(id=>id==="__favorites"?tr("Favorites"):id==="__uncategorized"?tr("Uncategorized"):((gs.find(g=>g.id===id)||{}).name)).filter(Boolean));
+  if(!(opts&&opts.skipInstall)){
+    if(p.activeInstallFilter==="installed")names.push(tr("Installed"));
+    else if(p.activeInstallFilter==="not_installed")names.push(tr("Not installed"));
+  }
+  return names.length?names.join(", "):tr("All");
+}
 function arrange(){
   const keep=filterFn(filterBy),own=addsIndex();
   allShelves.forEach(sh=>{if(sh.kind==="home"||!sh.items)return;if(!sh._base)sh._base=sh.items.slice();
@@ -166,7 +247,8 @@ function arrange(){
     const by=(f,desc)=>(a,b)=>{const x=f(a),y=f(b);if(x==null&&y==null)return base(a,b);if(x==null)return 1;if(y==null)return -1;return (desc?y-x:x-y)||base(a,b)};
     const cmp={year:by(yearOf),recent:by(g=>histOf(g)&&histOf(g).last||null,true),most:by(g=>histOf(g)&&histOf(g).ms||null,true),rating:by(ratingOf,true),
       genre:(a,b)=>{const x=genreOf(a),y=genreOf(b);if(x===y)return base(a,b);if(!x)return 1;if(!y)return -1;return x.localeCompare(y)}}[sortBy]||base;
-    sh.items=[...B.filter(g=>!isGame(g)&&!g.tail),...B.filter(isGame).filter(keep).sort(cmp),...B.filter(g=>g.tail)]; // (beta.7: a tail tile, the Custom shelf's Add games, stays last)
+    const pcKeep=sh.id==="pc"?pcShelfKeep:()=>true;
+    sh.items=[...B.filter(g=>!isGame(g)&&!g.tail),...B.filter(isGame).filter(g=>keep(g)&&pcKeep(g)).sort(cmp),...B.filter(g=>g.tail)]; // (beta.7: a tail tile, the Custom shelf's Add games, stays last)
   });
 }
 /* (beta.14, Windows / Linux) + Add to… (quick menu, Details' ···): any game shown on another console's shelf, or PC or
@@ -206,6 +288,7 @@ function renderSort(){
   document.querySelectorAll("#sortPanel .sp-row").forEach(r=>r.classList.toggle("active",+r.dataset.row===spRow));
   const s=cur(),n=s&&s.kind!=="home"?s.items.filter(isGame).length:null;
   $("spFoot").textContent=(s&&s.kind==="home"?"Home keeps its own order. ":n!=null?`${n} game${n===1?"":"s"} on ${s.name} · `:"")+(showPad()?`${padWord("L1")} / ${padWord("R1")} jump between sections`:"Z / C jump between sections")+" · applies to every shelf and the museum";
+  if(s&&s.id==="pc"){const b=document.createElement("button");b.type="button";b.className="sp-opt";b.style.marginLeft="10px";b.textContent="PC categories (L)…";b.addEventListener("click",()=>openPcFilter());$("spFoot").append(b)}
 }
 function pickSort(row,v){
   if(row===0){if(sortBy===v)return;sortBy=v}else{if(filterBy===v)return;filterBy=v}
@@ -215,9 +298,81 @@ function pickSort(row,v){
 function sortStep(d){const list=spRow===0?SORTS:filterList(),curV=spRow===0?sortBy:filterBy;const i=list.findIndex(x=>x[0]===curV);pickSort(spRow,list[(i+d+list.length)%list.length][0])}
 function openSort(){if(sysBusy()||(mode!=="browse"&&mode!=="details"))return;closeDetails(true);mode="sort";spRow=0;renderSort();$("sortPanel").classList.add("on");$("sortPanel").setAttribute("aria-hidden","false");sfx.flip()}
 function closeSort(){if(mode!=="sort")return;mode="browse";$("sortPanel").classList.remove("on");$("sortPanel").setAttribute("aria-hidden","true");sfx.back()}
-function sortKey(k){if(k==="ArrowLeft")sortStep(-1);else if(k==="ArrowRight")sortStep(1);else if(k==="ArrowUp"||k==="ArrowDown"){spRow=1-spRow;play_("tick",{dir:k==="ArrowDown"?1:-1});renderSort()}else if(k==="Escape"||k==="Enter"||k==="Backspace"||k==="g"||k==="G")closeSort();else if(k==="z"||k==="Z"||k==="c"||k==="C"){closeSort();letter(k.toLowerCase()==="c"?1:-1)}else return false;return true}
+function sortKey(k){if(k==="ArrowLeft")sortStep(-1);else if(k==="ArrowRight")sortStep(1);else if(k==="ArrowUp"||k==="ArrowDown"){spRow=1-spRow;play_("tick",{dir:k==="ArrowDown"?1:-1});renderSort()}else if(k==="Escape"||k==="Enter"||k==="Backspace"||k==="g"||k==="G")closeSort();else if((k==="l"||k==="L")&&cur()&&cur().id==="pc")openPcFilter();else if(k==="z"||k==="Z"||k==="c"||k==="C"){closeSort();letter(k.toLowerCase()==="c"?1:-1)}else return false;return true}
 $("sortBtn").addEventListener("click",()=>mode==="sort"?closeSort():(setInput("pointer"),openSort()));
 $("sortPanel").addEventListener("click",e=>{if(e.target===$("sortPanel"))closeSort()});
+
+let pfI=0,pfEls=[],pfSaveT=0;
+function pcFilterSaveSoon(){clearTimeout(pfSaveT);pfSaveT=setTimeout(()=>{pfSaveT=0;if(cfgInfo&&api.saveConfig)api.saveConfig(cfgInfo.config).catch(()=>{})},350)}
+function pcFilterHudSync(){
+  const b=$("pcFilterBtn");if(!b)return;
+  const onPc=!!(cur()&&cur().id==="pc")||mode==="pcfilter";
+  b.hidden=!onPc;
+  if(!onPc){if(mode==="pcfilter")closePcFilter();return}
+  const p=pcCfg(),n=(p&&Array.isArray(p.activeFilters)?p.activeFilters.length:0)+((p&&p.activeInstallFilter&&p.activeInstallFilter!=="all")?1:0)+(p&&p.activeStoreFilter?1:0);
+  b.classList.toggle("on",n>0);
+  b.textContent=n?`Categories (${n})`:"Categories";
+}
+function pfFocus(i){
+  if(!pfEls.length)return;
+  pfI=((i%pfEls.length)+pfEls.length)%pfEls.length;
+  pfEls.forEach((el,k)=>el.classList.toggle("cur",k===pfI));
+  const el=pfEls[pfI];if(el){el.scrollIntoView({block:"nearest"});try{el.focus({preventScroll:true})}catch{}}
+}
+function renderPcFilter(){
+  const pcSh=allShelves.find(s=>s&&s.id==="pc");
+  const games=pcSh?(pcSh._base||pcSh.games||[]).filter(isGame):[];
+  if(cfgInfo&&!cfgInfo.config.pc)cfgInfo.config.pc={groups:[],activeFilters:[],activeInstallFilter:"all"};
+  const P=cfgInfo?cfgInfo.config.pc:(pcCfg()||{}),groups=Array.isArray(P.groups)?P.groups:[],af=new Set(Array.isArray(P.activeFilters)?P.activeFilters:[]);
+  const inst=P.activeInstallFilter||"all";
+  const list=$("pfList"),ir=$("pfInstRow"),ft=$("pfFoot");
+  list.innerHTML="";ir.innerHTML="";ft.innerHTML="";pfEls=[];
+  $("pfSub").textContent=pcFilterActive()?`Showing: ${pcFilterSummary()}`:`All ${games.length} PC games (check any to filter)`;
+  const tog=(id,name,count,dyn)=>{
+    const b=document.createElement("button");b.type="button";b.className="pf-opt"+(af.has(id)?" on":"");
+    b.innerHTML=`<span class="pf-chk">${af.has(id)?"✓":""}</span><span class="pf-nm"></span>${dyn?'<span class="pf-dyn" title="Dynamic filter">⚡</span>':""}<span class="pf-cnt">${count}</span>`;
+    b.querySelector(".pf-nm").textContent=name;
+    b.addEventListener("click",()=>{
+      const curAf=new Set(Array.isArray(P.activeFilters)?P.activeFilters:[]);
+      if(curAf.has(id))curAf.delete(id);else curAf.add(id);
+      P.activeFilters=[...curAf];play_("tick",{dir:1});applyArrange();renderPcFilter();pcFilterHudSync();pcFilterSaveSoon();
+    });
+    list.append(b);pfEls.push(b);
+  };
+  tog("__favorites","Favorites",games.filter(isFav).length,false);
+  for(const gr of groups)tog(gr.id,gr.name,games.filter(g=>pcGroupMatches(gr,g)).length,gr.kind==="dynamic");
+  tog("__uncategorized","Uncategorized",games.filter(g=>!groups.some(gr=>pcGroupMatches(gr,g))).length,false);
+  [["all","All"],["installed","Installed"],["not_installed","Not installed"]].forEach(([v,l])=>{
+    const b=document.createElement("button");b.type="button";b.className="sp-opt"+(inst===v?" on":"");b.textContent=l;
+    b.addEventListener("click",()=>{P.activeInstallFilter=v;play_("tick",{dir:1});applyArrange();renderPcFilter();pcFilterHudSync();pcFilterSaveSoon()});
+    ir.append(b);pfEls.push(b);
+  });
+  const clr=document.createElement("button");clr.type="button";clr.className="pf-act";clr.textContent="Clear filters";clr.disabled=!pcFilterActive();
+  clr.addEventListener("click",()=>{P.activeFilters=[];P.activeInstallFilter="all";P.activeStoreFilter="";play_("tick",{dir:-1});applyArrange();renderPcFilter();pcFilterHudSync();pcFilterSaveSoon()});
+  const mng=document.createElement("button");mng.type="button";mng.className="pf-act primary";mng.textContent="Manage categories…";
+  mng.addEventListener("click",()=>{closePcFilter();Setup.open({page:"pc-edit"})});
+  ft.append(clr,mng);pfEls.push(clr,mng);
+  pfFocus(Math.min(pfI,Math.max(0,pfEls.length-1)));
+}
+function openPcFilter(){
+  if(sysBusy()||!(cur()&&cur().id==="pc")||(mode!=="browse"&&mode!=="details"&&mode!=="sort"))return;
+  if(mode==="sort")closeSort();closeDetails(true);
+  mode="pcfilter";pfI=0;renderPcFilter();
+  $("pcFilterPanel").classList.add("on");$("pcFilterPanel").setAttribute("aria-hidden","false");sfx.flip();pcFilterHudSync();
+}
+function closePcFilter(){
+  if(mode!=="pcfilter")return;
+  mode="browse";$("pcFilterPanel").classList.remove("on");$("pcFilterPanel").setAttribute("aria-hidden","true");sfx.back();pcFilterHudSync();
+}
+function pcFilterKey(k){
+  if(k==="ArrowDown"||k==="ArrowRight"){play_("tick",{dir:1});pfFocus(pfI+1)}
+  else if(k==="ArrowUp"||k==="ArrowLeft"){play_("tick",{dir:-1});pfFocus(pfI-1)}
+  else if(k==="Enter"||k===" "){const el=pfEls[pfI];if(el)el.click()}
+  else if(k==="Escape"||k==="Backspace"||k==="l"||k==="L")closePcFilter();
+  else return false;return true;
+}
+if($("pcFilterBtn"))$("pcFilterBtn").addEventListener("click",()=>mode==="pcfilter"?closePcFilter():(setInput("pointer"),openPcFilter()));
+if($("pcFilterPanel"))$("pcFilterPanel").addEventListener("click",e=>{if(e.target===$("pcFilterPanel"))closePcFilter()});
 
 /* volume beside the clock: the icon mutes, the slider sets the level; - / = on the keyboard nudge it */
 let volSaveT=0,volPrev=.7,volShowT=0;
@@ -317,6 +472,13 @@ function autoStatusChanged(){if(!cfgInfo||sysBusy())return;const a=autoOpts();
   if(!(a.playing===true||a.finished===true||((cfgInfo.config.ui.collections||[]).some(c=>c&&c.rule&&c.rule.kind==="status"))))return;
   buildHome();renderTabs()}
 function homeLine(g){const h=HIST[g.id];const parts=[shelfFor(g).name];if(h&&h.count)parts.push("played "+fmtDay(h.last/1000));if(isFav(g))parts.push("♥ Favorite");return parts}
+// a game favourited (or not) by id, from Settings → Library → PC games → Edit the PC shelf: the same list as H / Y held,
+// the shelf's heart and the Home shelf follow, quietly (no toast for each of a long list of changes)
+async function setFavorite(id,on){if(!cfgInfo||id==null)return false;id=String(id);on=!!on;const list=new Set(cfgInfo.config.ui.favorites||[]);if(on===list.has(id))return true;
+  if(on)list.add(id);else list.delete(id);cfgInfo.config.ui.favorites=[...list];try{await api.saveConfig(cfgInfo.config)}catch{return false}
+  const s=slots.find(x=>x.g&&String(x.g.id)===id);if(s&&s.el)s.el.classList.toggle("fav",on);
+  const wasHome=cur()===HOME;buildHome();if(wasHome){if(!shelves.includes(HOME)){sysIdx=0;sel=0;build();renderTabs()}else{sel=Math.max(0,Math.min(sel,HOME.items.length-1));build()}}else renderTabs();
+  return true}
 async function toggleFav(){
   if((mode!=="browse"&&mode!=="details")||sysBusy())return; // the Home shelf appearing mid-switch would shift the shelves
   const g=curGame();if(!g||!isGame(g)||!cfgInfo)return;
@@ -624,8 +786,9 @@ function showBack(el,on){clearTimeout(el._sbT);if(on){el.classList.add("showback
 let landT;
 function landSel(){
   clearTimeout(landT);if(landSel.prev&&landSel.prev.el)landSel.prev.el.classList.remove("landed");landSel.prev=slots[sel];const s=slots[sel];if(!s)return;
+  const g=curGame();if(!g)return;
   landT=setTimeout(()=>{if(s.el){s.el.classList.add("landed");ensureBack(true);if(!ANDROID)prepBack(s,curGame())}},380);qsFreshSoon(); // (Android: its handheld budget keeps backs to the flip)
-  const g=curGame(),gh0=themeOf().halo(shelfHue(g),shelfPos()),gh=window.bsPlatform&&bsPlatform.os==="android"?Math.round(gh0/3)*3:gh0,glow=hsl(gh,95,62,.62); /* Android: the hue in 3° steps (invisible), so most shelf steps don't repaint the halo, floor and tab bar */glowEls=glowEls||[...document.querySelectorAll(".floor,.sel-halo,#tabs")];if(glow!==lastGlow){lastGlow=glow;
+  const gh0=themeOf().halo(shelfHue(g),shelfPos()),gh=window.bsPlatform&&bsPlatform.os==="android"?Math.round(gh0/3)*3:gh0,glow=hsl(gh,95,62,.62); /* Android: the hue in 3° steps (invisible), so most shelf steps don't repaint the halo, floor and tab bar */glowEls=glowEls||[...document.querySelectorAll(".floor,.sel-halo,#tabs")];if(glow!==lastGlow){lastGlow=glow;
     // a step along the shelf only walks the hue by a degree or so: the tab bar takes that at once instead of fading it in
     // over .6 s (a colour fade the compositor can't do, so it was a repaint every frame for as long as you kept moving);
     // a real change (another shelf, another theme) still fades
@@ -650,8 +813,8 @@ function metaFor(g){
 function updateInfo(){pvBackSchedule();
   bsSelectSoon();
   const g=curGame(),info=$("info");
-  if(!g){const es=emptyShelf();$("gTitle").textContent=filterBy&&filterBy!=="all"?"No games match this filter":"No games here yet";$("gMeta").innerHTML=filterBy&&filterBy!=="all"?`<span>${showPad()?"Hold "+padWord("menu"):"Press G"} to change the filter</span>`:"";
-    if(es&&!(filterBy&&filterBy!=="all")){const b=document.createElement("button");b.type="button";b.className="empty-set";b.textContent=es.kind==="steam"?`Press ${okWord()} to open Steam settings`:`Press ${okWord()} to open ${es.name} settings and add a games folder`;b.addEventListener("click",()=>play());$("gMeta").appendChild(b)}
+  if(!g){const es=emptyShelf(),pcF=!!(cur()&&cur().id==="pc"&&pcFilterActive()),anyF=!!(filterBy&&filterBy!=="all")||pcF;$("gTitle").textContent=anyF?"No games match this filter":"No games here yet";$("gMeta").innerHTML=filterBy&&filterBy!=="all"?`<span>${showPad()?"Hold "+padWord("menu"):"Press G"} to change the filter</span>`:pcF?`<span>Press L to change the filter</span>`:"";
+    if(es&&!anyF){const b=document.createElement("button");b.type="button";b.className="empty-set";b.textContent=es.kind==="steam"?`Press ${okWord()} to open Steam settings`:`Press ${okWord()} to open ${es.name} settings and add a games folder`;b.addEventListener("click",()=>play());$("gMeta").appendChild(b)}
     renderHints();return}
   $("gTitle").textContent=g.title;
   const raw=rawItem(),meta=raw&&raw!==g?["Surprise pick · "+(raw.pick.sh||shelves[raw.pick.shelf]).name,...metaFor(g).slice(0,2),rerollWord()]:metaFor(g);
@@ -802,7 +965,71 @@ function updateBg(){
     if(src&&src.then)src.then(blur,()=>blur(frontUrl(g)));else blur(src);
   },ANDROID?620:120); /* Android: once the slide (.55 s) has landed. Two screen-sized layers redrawn and cross-fading under the moving cases cost the Thor frames mid-slide; a held stick now changes the backdrop only when you stop */
 }
-function renderWordmark(el,id,name,base){const w=WORDMARKS[id]||[name,""];el.className=base+"wm wm-"+id;el.innerHTML="";const m=document.createElement("span");m.className="wm-main";m.textContent=w[0];const t=document.createElement("span");t.className="wm-tag";t.textContent=w[1];el.append(m,t)}
+function activePcStores(){
+  const cfg=cfgInfo&&cfgInfo.config,stCfg=cfg&&cfg.steam,pcCfg=cfg&&cfg.pc;
+  const curStore=String((pcCfg&&pcCfg.activeStoreFilter)||"").toLowerCase();
+  const counts=Object.create(null);
+  const pcSh=shelves.find(x=>x&&x.id==="pc")||allShelves.find(x=>x&&x.id==="pc");
+  for(const g of (pcSh&&(pcSh._base||pcSh.games))||[]){
+    if(!g||g.kind!=="steam")continue;
+    for(const st of PC_STORES_META){
+      if(pcGameHasStore(g,st.id))counts[st.id]=(counts[st.id]||0)+1;
+    }
+  }
+  return PC_STORES_META.filter(st=>{
+    const on=st.id==="steam"?(!stCfg||stCfg.enabled!==false):(!pcCfg||pcCfg[st.id]!==false);
+    return on||(counts[st.id]||0)>0||curStore===st.id;
+  }).map(st=>({...st,count:counts[st.id]||0}));
+}
+function togglePcStoreFilter(st){
+  if(!st||!st.id||sysBusy())return;
+  if(cfgInfo&&cfgInfo.config&&!cfgInfo.config.pc)cfgInfo.config.pc={groups:[],activeFilters:[],activeInstallFilter:"all",activeStoreFilter:""};
+  const P=(cfgInfo&&cfgInfo.config&&cfgInfo.config.pc)||pcCfg();if(!P)return;
+  const curStore=String(P.activeStoreFilter||"").toLowerCase();
+  if(curStore===st.id){
+    P.activeStoreFilter="";
+    play_("tick",{dir:-1});applyArrange();if(mode==="pcfilter")renderPcFilter();pcFilterHudSync();pcFilterSaveSoon();
+    return;
+  }
+  if(!st.count){
+    play_("error");toast(`No ${st.name} games in your library`);
+    return;
+  }
+  const pcSh=shelves.find(x=>x&&x.id==="pc")||allShelves.find(x=>x&&x.id==="pc");
+  const baseGames=((pcSh&&(pcSh._base||pcSh.games))||[]).filter(isGame);
+  const keep=filterFn(filterBy),prev=P.activeStoreFilter||"";
+  P.activeStoreFilter=st.id;
+  const matched=baseGames.filter(g=>keep(g)&&pcShelfKeep(g));
+  if(!matched.length){
+    P.activeStoreFilter=prev;
+    play_("error");toast(`No ${st.name} games match the current filter`);
+    return;
+  }
+  play_("tick",{dir:1});applyArrange();if(mode==="pcfilter")renderPcFilter();pcFilterHudSync();pcFilterSaveSoon();
+}
+function renderWordmark(el,id,name,base){const w=WORDMARKS[id]||[name,""];el.className=base+"wm wm-"+id;el.innerHTML="";const m=document.createElement("span");m.className="wm-main";m.textContent=w[0];el.append(m);
+  if(id==="pc"&&/\bsys-word\b/.test(base)){
+    const stores=activePcStores();
+    if(stores.length){
+      const p=pcCfg(),curStore=String((p&&p.activeStoreFilter)||"").toLowerCase();
+      const dock=document.createElement("div");dock.className="wm-stores"+(curStore?" filtered":"");dock.setAttribute("data-no-i18n","");
+      dock.addEventListener("dragstart",e=>e.preventDefault());
+      for(const st of stores){
+        const active=curStore===st.id;
+        const badge=document.createElement("button");badge.type="button";badge.draggable=false;
+        badge.className=`wm-store-badge store-${st.id}${st.count>0?" has-games":""}${active?" active":""}`;
+        badge.title=st.count?`${st.name} · ${st.count}`:st.name;
+        badge.setAttribute("aria-label",badge.title);
+        badge.setAttribute("aria-pressed",active?"true":"false");
+        const im=document.createElement("img");im.src=st.logo;im.alt=st.name;im.decoding="async";im.draggable=false;
+        badge.appendChild(im);
+        badge.addEventListener("click",e=>{e.stopPropagation();setInput("pointer");togglePcStoreFilter(st)});
+        dock.appendChild(badge);
+      }
+      el.append(dock);return;
+    }
+  }
+  const t=document.createElement("span");t.className="wm-tag";t.textContent=w[1];el.append(t)}
 // Logos people drop in are often on a flat white (or black) background. Knock that background out from the edges
 // inward so the logo sits on the shelf like the built-in wordmarks; the result is cached per file.
 const logoCache=new Map();
@@ -902,11 +1129,26 @@ function renderTabs(){
     shelves.forEach((s,i)=>{const b=document.createElement("button");b.type="button";b.className="tab";const short=ON_ANDROID&&TAB_SHORT[s.id];b.textContent=short||s.name;if(short){b.title=s.name;b.setAttribute("aria-label",s.name)}b.addEventListener("click",()=>{if(tabDragged)return;setInput("pointer");setSystem(i)});box.appendChild(b)})}
   t.querySelectorAll(".tab").forEach((b,i)=>b.classList.toggle("on",i===sysIdx));placePill();
   const s=cur();
-  if(s){renderWordmark($("sysWord"),s.id,s.name,"sys-word ");const n=s.games.length,shown=s.kind==="home"?n:s.items.filter(isGame).length;const what=s.kind==="apps"?(n===1?"app":"apps"):s.kind==="steam"?"installed":(n===1?"game":"games");
-    const extra=s.kind==="home"||s.kind==="apps"?"":[filterBy!=="all"?`${filterName(filterBy).toLowerCase()}`:"",SORT_WORD[sortBy]].filter(Boolean).join(" · ");
-    $("sysCount").textContent=(filterBy!=="all"&&s.kind!=="home"&&s.kind!=="apps"?`${shown} of ${n} ${what}`:`${n} ${what}`)+(extra?" · "+extra:"")}
+  if(s){renderWordmark($("sysWord"),s.id,s.name,"sys-word ");const n=s.games.length,shown=s.kind==="home"?n:s.items.filter(isGame).length;
+    const isInstalledGame=g=>!!g&&(g.source!=="owned"||(Array.isArray(g._versions)&&g._versions.some(v=>v&&v.game&&v.game.source!=="owned")));
+    const instN=s.kind==="steam"?s.games.filter(isInstalledGame).length:n;
+    const pcFilt=s.id==="pc"&&pcFilterActive(),anyFilt=filterBy!=="all"||pcFilt;
+    const extra=s.kind==="home"||s.kind==="apps"?"":[filterBy!=="all"?`${filterName(filterBy).toLowerCase()}`:"",pcFilt?pcFilterSummary({skipInstall:s.kind==="steam"&&instN<n&&!!(pcCfg()&&pcCfg().activeInstallFilter==="installed")}):"",SORT_WORD[sortBy]].filter(Boolean).join(" · ");
+    let countText;
+    if(s.kind==="steam"){
+      if(instN<n){
+        const base=anyFilt?`${shown} of ${n} ${n===1?"game":"games"}`:`${n} ${n===1?"game":"games"}`;
+        countText=`${base} · ${instN} installed`;
+      }else{
+        countText=anyFilt?`${shown} of ${n} installed`:`${n} installed`;
+      }
+    }else{
+      const what=s.kind==="apps"?(n===1?"app":"apps"):(n===1?"game":"games");
+      countText=anyFilt&&s.kind!=="home"&&s.kind!=="apps"?`${shown} of ${n} ${what}`:`${n} ${what}`;
+    }
+    $("sysCount").textContent=countText+(extra?" · "+extra:"")}
   else{$("sysCount").textContent="";$("counter").textContent=""}
-  applyLogo();renderHints();
+  applyLogo();renderHints();pcFilterHudSync();
 }
 
 /* ---------- actions ---------- */
@@ -2315,6 +2557,7 @@ api.onExited(async info=>{uiCrumb("Back from the game");if(info&&info.watched)st
 });
 function back(){
   if(mode==="sort"){closeSort();return}
+  if(mode==="pcfilter"){closePcFilter();return}
   if(mode==="build"){bpDone("");return}
   if(mode==="cover"){cpDone();sfx.back();return}
   if(mode==="achv"){closeAchievements();return}
@@ -2721,6 +2964,7 @@ function qsRows(){const ui=qsUi(),r=qsAch(),g=qsGame(),out=[];
     {k:"boot",l:"Boot sound",opts:QM_BOOTS,cur:ui.bootSound||"chime"},{k:"intro",l:"Startup",opts:QM_INTROS,cur:introStyle()}]});
   // the shelf's own look (its logo, 3D console, boot video): straight into Customize on this shelf (it replaced the link that sat at the foot of Customize's chips)
   out.push({id:"cz3d",icon:QS_I.cube,lbl:"3D & logos",val:qsCzVal,go:1});
+  if(cur()&&cur().id==="pc")out.push({id:"pcfilter",icon:QS_I.sort,lbl:"PC categories",val:pcFilterSummary,go:1});
   out.push({id:"sort",icon:QS_I.sort,lbl:"Sort & filter",val:()=>qsName(SORTS,sortBy)+(filterBy!=="all"?" · "+filterName(filterBy):""),lines:()=>[{k:"sort",l:"Sort by",opts:SORTS,cur:sortBy},{k:"filter",l:"Show",opts:filterList(),cur:filterBy}]});
   out.push({id:"ach",icon:QS_I.trophy,lbl:"Trophies",val:()=>!RA.on?"Not connected":r&&r.total?`${r.earned} / ${r.total}`+(RA.profile?` · ${RA.profile.points.toLocaleString()} pts`:""):RA.profile?`${RA.profile.points.toLocaleString()} points`:"",
     lines:()=>!RA.on?[{k:"note",note:"Sign in once and Boxshelf tracks every unlock."},{k:"go",opts:[["rasetup","Connect RetroAchievements ›"]],big:1}]:[{k:"achinfo",info:1},...(r&&r.total?[{k:"go",opts:[["achg","See this game's achievements ›"]],big:1}]:[])]});
@@ -2887,6 +3131,7 @@ function qsPick(){const x=qm.rows[qm.r];if(!x)return;const r=x.r;
   if(r.id==="ach"&&RA.on){const g=qsGame(),s=g&&shelfFor(g);if(g&&g.kind==="rom"&&raHas(s)&&RA.game.get(s.id+"|"+g.title)!==false){qmClose(true);play_("open");openAchievements();return}} /* (beta.11) signed in, on a console RetroAchievements covers: straight to this game's set, earned or not (the row opens only when there's nothing to show) */
   if(r.id==="studio"){const g=qsGame();qmClose(true);if(g&&ANDROID){play_("panel");Setup.open({page:"artstudio",systemId:shelfFor(g).id});return} /* (Android: the console's whole studio) */if(g)artStudioFor(g);return}
   if(r.id==="cz3d"){const e=qsCzShelf();qmClose(true);play_("open");if(e)custSel=e[0];czPick=null;openCustomize();return}
+  if(r.id==="pcfilter"){qmClose(true);openPcFilter();return}
   if(!r.lines)return;if(qm.sub===qm.r){qsCollapse();return}
   qm.sub=qm.r;qm.sr=0;qm.sc=0;qsFill(x,false);
   // land on what's chosen now (the current theme, the current sort…)
@@ -3119,7 +3364,7 @@ function companionStep(){const c=compPlay;if(!c)return;if(performance.now()>c.un
   if(mode==="launch"||mode==="boot"||mode==="homemenu"||sysBusy()||returnPrep||app.classList.contains("returning"))return again(300);
   if(mode==="setup"){if(window.Settings&&Settings.isOpen&&Settings.isOpen())Settings.close();else if(window.Setup)Setup.close();return again(450)}
   if(mode==="museum"){closeMuseum();return again(500)}if(mode==="inspect"){closeInspect();return again(400)}
-  if(mode==="sort"){closeSort();return again(200)}if(mode==="achv"){closeAchievements();return again(200)}if(mode==="customize"){closeCustomize();return again(300)}
+  if(mode==="sort"){closeSort();return again(200)}if(mode==="pcfilter"){closePcFilter();return again(200)}if(mode==="achv"){closeAchievements();return again(200)}if(mode==="customize"){closeCustomize();return again(300)}
   if(mode==="note"){noteClose();return again(300)} /* a card on the shelf (update, What's new): it goes, the game starts (Play used to be dropped) */
   if(window.BS_TOUR&&BS_TOUR.on()){BS_TOUR.end();return again(400)}
   if(window.BS_FIND&&BS_FIND.isOpen()){BS_FIND.close();return again(200)} /* (beta.12) Find a game closes, then the game starts */
@@ -3835,6 +4080,7 @@ const HINTS=[
   {act:()=>shuffle(),pad:["L3"],kbd:["R"],label:"Shuffle",when:notDet},
   {act:()=>window.BS_FIND&&BS_FIND.open(),pad:["L3"],kbd:["/"],label:"Find",lo:ANDROID,when:notDet}, /* (beta.12) Find a game (find.js); lo: Android's narrower bar leaves it out (the Search button is beside Menu there) */
   {act:()=>openMuseum(),pad:["⧉"],kbd:["M"],label:"Museum hold",when:notDet},
+  {act:()=>openPcFilter(),pad:["L1"],kbd:["L"],label:"Categories",when:()=>notDet()&&!!(cur()&&cur().id==="pc")},
   {act:()=>openSort(),pad:["☰"],kbd:["G"],label:"Sort hold",when:notDet},
   {act:()=>Setup.open(),pad:["☰"],kbd:["S"],label:"Settings",when:notDet},
   {act:()=>dTab(1),pad:["L1","R1"],kbd:["Q","E"],label:DV2?"Sections":"Tabs",when:inDet}, // (beta.7) (beta.12: Windows' Details is one page in sections)
@@ -3919,7 +4165,7 @@ const showPad=()=>inputMode==="pad"||(!!padSeen&&(inputMode!=="kbd"||!kbdEver));
 function renderHints(){pvGuard();bsCtxSoon();
   try{paintMenuGlyph();if(NOTE.el)noteKeys();if(qm.open)qsHints();if(mode==="achv")achHints();if(mode==="customize")custSwitchText();if(mode==="shot")svPaint()}catch{} // the quick menu's own hint bar follows a switch between pad and keyboard too
   const usePad=showPad();const g=curGame();if(DV2&&mode==="details")dvCapGlyph(usePad);
-  const es=!g&&!!emptyShelf();const sig=usePad+"|"+glyphStyle()+"|"+(g&&g.kind)+"|"+!!(g&&g.pick)+"|"+es+"|"+(mode==="details")+"|"+(mode==="details"?detailsYLab().join():"");if(sig===renderHints.sig&&$("hints").childElementCount)return;renderHints.sig=sig; // only rebuilt when something it shows changed
+  const es=!g&&!!emptyShelf();const sig=usePad+"|"+glyphStyle()+"|"+(g&&g.kind)+"|"+!!(g&&g.pick)+"|"+es+"|"+!!(cur()&&cur().id==="pc")+"|"+(mode==="details")+"|"+(mode==="details"?detailsYLab().join():"");if(sig===renderHints.sig&&$("hints").childElementCount)return;renderHints.sig=sig; // only rebuilt when something it shows changed
   const h=$("hints");h.innerHTML="";
   (usePad?PAD_HINTS:HINTS).forEach(hn=>{if(hn.when&&!hn.when(rawItem()))return;const b=document.createElement("button");b.type="button";b.className="hint"+(/Letter|Shuffle/.test(hn.label)||hn.lo?" hint-lo":"");
     const keys=(usePad?hn.pad.map(glyph):hn.kbd.map(k=>`<span class="g">${k}</span>`)).join("");
@@ -4023,6 +4269,7 @@ addEventListener("keydown",e=>{
   if(mode==="homemenu"){if(!e.repeat||/Arrow/.test(e.key))api.shelfMenuKey(e.key,true);e.preventDefault();return}
   if(mode==="setup"){Setup.key(e);return}
   if(mode==="sort"){setInput("kbd");if(sortKey(e.key))e.preventDefault();return}
+  if(mode==="pcfilter"){setInput("kbd");if(pcFilterKey(e.key))e.preventDefault();return}
   if(mode==="build"){setInput("kbd");if(bpKey(e.key))e.preventDefault();return}
   if(mode==="cover"){setInput("kbd");if(cpKey(e.key))e.preventDefault();return}
   if((e.key==="-"||e.key==="_"||e.key==="="||e.key==="+")&&mode!=="inspect"&&mode!=="museum"){setVol(curVol()+(e.key==="-"||e.key==="_"?-.05:.05),true);play_("tick",{dir:1});e.preventDefault();return}
@@ -4069,6 +4316,7 @@ addEventListener("keydown",e=>{
   else if(k==="m"||k==="M"){if(!e.repeat)openMuseum()}
   else if(k==="o"||k==="O"){if(!e.repeat&&(mode==="browse"||mode==="details"))openEmulator()}
   else if(k==="g"||k==="G"){if(!e.repeat)openSort()}
+  else if((k==="l"||k==="L")&&cur()&&cur().id==="pc"){if(!e.repeat)(mode==="pcfilter"?closePcFilter():openPcFilter())}
   else if(k==="Home"||k==="p"||k==="P"){if(e.repeat){}else if((mode==="browse"||mode==="details")&&api.openShelfMenu&&cfgInfo&&cfgInfo.config.ui.homeMenu!==false)api.openShelfMenu();else if(k==="Home"&&(mode==="browse"||mode==="details"))go(0)}
   else if(k==="s"||k==="S"){if(!e.repeat&&(mode==="browse"||mode==="details"))Setup.open()}
   else if(k==="t"||k==="T"){if(!e.repeat)toggleCustomize()}
@@ -4388,6 +4636,10 @@ function pollBody(t){
     if(mode==="sort"){
       if(h&&!prevBtn.h){setInput("pad");sortStep(h)}if(v&&!prevBtn.v){setInput("pad");spRow=1-spRow;play_("tick",{dir:v});renderSort()}prevBtn.v=!!v;prevBtn.h=!!h;
       edge(gp,0,()=>closeSort());edge(gp,1,()=>closeSort());edge(gp,9,()=>closeSort());edge(gp,4,()=>{closeSort();letter(-1)});edge(gp,5,()=>{closeSort();letter(1)});return;
+    }
+    if(mode==="pcfilter"){
+      if(v&&!prevBtn.v){setInput("pad");play_("tick",{dir:v});pfFocus(pfI+v)}if(h&&!prevBtn.h){setInput("pad");play_("tick",{dir:h});pfFocus(pfI+h)}prevBtn.v=!!v;prevBtn.h=!!h;
+      edge(gp,0,()=>{const el=pfEls[pfI];if(el)el.click()});edge(gp,1,()=>closePcFilter());edge(gp,9,()=>closePcFilter());return;
     }
     if(mode==="achv"){
       if(v&&!prevBtn.v){setInput("pad");achMove(v)}if(h&&!prevBtn.h){setInput("pad");achSide(h)}prevBtn.v=!!v;prevBtn.h=!!h;
@@ -5155,7 +5407,16 @@ window.Shelf={
   _lib:{filters:()=>filterList(),filter:v=>pickSort(1,v),cur:()=>{const g=curGame();return g?{id:g.id,title:g.title,kind:g.kind}:null},
     games:()=>(cur()?cur().items.filter(isGame):[]).map(g=>({id:g.id,year:yearOf(g),genres:genresOf(g)})),shelves:()=>shelves.map(s=>({id:s.id,name:s.name,col:!!s.col,ids:(s.items||[]).filter(isGame).map(g=>g.id),last:((s.items||[])[(s.items||[]).length-1]||{}).id||null,random:(s.items||[]).some(i=>i&&i.kind==="random")}))},
   // (beta.7) Settings changed your collections: their shelves are made again (the one you're on stays, if it still has games)
-  previewStop:()=>{if(PV){pvStop();pvBackStop()}},setCollections:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.collections=list;reHome()},
+  previewStop:()=>{if(PV){pvStop();pvBackStop()}},
+  // Settings → Library → PC games → Edit the PC shelf: every game the PC shelf has (hidden ones too) with its state, and
+  // a favourite set by id (hiding goes through setHidden, as Settings' Hidden games page does)
+  pcEditList:()=>{const hid=hiddenSet(),fav=new Set(((cfgInfo&&cfgInfo.config.ui.favorites)||[]).map(String)),gm=(cfgInfo&&cfgInfo.config.games)||{},pc=(lastLib||[]).find(s=>s.id==="pc");
+    return ((pc&&pc.games)||[]).filter(isGame).map(g=>{
+      const id=String(g.id),genres=(g.info&&g.info.genres)||"",cats=(g.categories||[]).join(" ");
+      return {id,title:String(g.title||id),fav:fav.has(id),hidden:hid.has(id),source:g.source||"steam",store:g.store||g.source||"steam",installed:g.source!=="owned",genres,multiplayer:/multi|coop|co-op|online|mmo/i.test(genres+" "+cats),minutes:g.minutes||0,status:(gm[id]&&gm[id].status)||"",appid:g.appid};
+    }).sort((a,b)=>a.title.localeCompare(b.title,undefined,{sensitivity:"base"}))},
+  pcGroupsChanged:()=>{pcFilterHudSync();if(cur()&&cur().id==="pc")applyArrange();else arrange()},
+  setFav:(id,on)=>setFavorite(id,on),setCollections:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.collections=list;reHome()},
   // (beta.14) Settings → My shelves → Automatic shelves switched (ui.autoShelves), and the genres / consoles a shelf can fill itself from
   setAutoShelves:o=>{if(!cfgInfo||!o||typeof o!=="object")return;cfgInfo.config.ui.autoShelves=Object.assign({},o);reHome()},autoChoices:()=>autoChoices(),
   homeButton:()=>{if(qm.open){qmClose();return "closed"}qmOpen();return qm.open?"opened":"busy"},quickMenuOpen:()=>!!qm.open, // the Thor's Home key while Boxshelf is the Home app

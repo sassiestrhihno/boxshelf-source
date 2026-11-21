@@ -106,6 +106,11 @@ function consoleList(){return info&&info.consoles||[]}
 // the Consoles grid's order: your shelves first, hidden ones after (dimmed); every use of the grid's position goes
 // through this, so a tile and its index always agree
 function tileList(){const L=consoleList();return [...L.filter(c=>sysCfg(c.id).enabled!==false),...L.filter(c=>sysCfg(c.id).enabled===false)]}
+function pcTileEnabled(){const s=cfg&&cfg.steam,p=cfg&&cfg.pc;return !!((!s||s.enabled!==false)||(p&&(p.epic!==false||p.gog!==false||p.ubisoft!==false||p.ea!==false||p.xbox!==false||p.battlenet!==false||p.amazon!==false||p.rockstar!==false||p.owned===true||(Array.isArray(p.custom)&&p.custom.some(c=>c&&c.shelf==="pc")))))}
+function pcTileState(){if(!pcTileEnabled())return "off";const g=gameCount("pc");return g===0?"warn":"ok"}
+function pcTileStatus(){const st=pcTileState(),g=gameCount("pc");if(st==="off")return "Shelf hidden";if(st==="ok")return g!=null?`Ready · ${g} game${g===1?"":"s"}`:"Ready · Stores & Playnite";return "No PC games found"}
+function libTileList(){const L=tileList(),win=!(window.bsPlatform&&bsPlatform.os==="android");return win?[{id:"pc",name:"PC",_pcTile:true,emulatorName:"Steam, Epic & more"},...L]:L}
+function openPcFromGrid(){if(typeof MORE!=="undefined"&&MORE&&MORE["lib-pc"]){openSub({kind:"more",id:"lib-pc"});return}goSecId("pc");focus="page";rowI=0;play("open");render()}
 function sysCfg(id){cfg.systems=cfg.systems||{};const c=cfg.systems[id]||(cfg.systems[id]={enabled:true,emulator:"",gameArgs:"",emulatorArgs:"",romDirs:[],artDir:"",bootOnLaunch:true});if(!Array.isArray(c.romDirs))c.romDirs=[];return c}
 function conState(c){const s=sysCfg(c.id);if(s.enabled===false)return "off";return s.emulator&&s.romDirs.length?"ok":s.emulator||s.romDirs.length?"warn":""}
 // (games counted on the last scan: "13 games"; until a scan has run, the folders)
@@ -183,6 +188,7 @@ function build(){
     C("Front end RocketLauncher is told","rocket.frontend",[["","Its default"],["HyperSpin","HyperSpin"],["LaunchBox","LaunchBox"],["Playnite","Playnite"],["RocketLauncherUI","RocketLauncherUI"]],"","Whose settings and media RocketLauncher uses for its fade and pause screens. Its default: the front end set in RocketLauncherUI.",{when:rlOn,keys:"rocketlauncher plugin frontend hyperspin launchbox"}),
   ]},
   {g:"Games",id:"pc",name:"PC games",ic:"pc",lead:"The games your stores have installed (Steam, Epic, GOG and more), on a shelf of their own. Playnite, decomps and ports: Custom games.",rows:[
+    H("Stores"),
     T("Show installed Steam games","steam.enabled",true,"Adds a PC shelf with every game Steam has installed. Uninstalled games are left out.",{rescan:true,keys:"steam"}),
     T("Hide Steam tools","steam.hideTools",true,"Leaves Proton, Steamworks Common Redistributables and other tools off the shelf.",{rescan:true,keys:"redistributables proton steam"}),
     F("Steam folder","steam.path","folder","The folder that contains steam.exe. Found automatically; change it only if Steam lives somewhere unusual.",{ph:"C:\\Program Files (x86)\\Steam",rescan:true,want:"dir",pickTitle:"Choose your Steam folder"}),
@@ -194,9 +200,19 @@ function build(){
     T("Show installed Ubisoft games","pc.ubisoft",true,"Adds the games Ubisoft Connect has installed to the PC shelf. They start through Ubisoft Connect, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"ubisoft connect uplay store",sub:()=>pcCount("ubisoft")}),
     T("Show installed EA games","pc.ea",true,"Adds the games the EA app has installed to the PC shelf. They start through the EA app, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"ea app origin electronic arts store",sub:()=>pcCount("ea")}),
     T("Show installed Xbox games","pc.xbox",true,"Adds the games the Xbox app has installed (Game Pass included) to the PC shelf. They start like any Xbox app game, signed in with your Microsoft account.",{rescan:true,keys:"xbox game pass microsoft store",sub:()=>pcCount("xbox")}),
+    T("Show Battle.net games","pc.battlenet",true,"Includes Battle.net games from your library on the PC shelf (when connected in Playnite).",{rescan:true,keys:"battlenet battle.net blizzard store"}),
+    T("Show Amazon Games","pc.amazon",true,"Includes Amazon Games from your library on the PC shelf (when connected in Playnite).",{rescan:true,keys:"amazon prime gaming store"}),
+    T("Show Rockstar Games","pc.rockstar",true,"Includes Rockstar Games titles from your library on the PC shelf (when connected in Playnite).",{rescan:true,keys:"rockstar games launcher store"}),
+    H("Playnite & custom games"),
+    A("Import from Playnite",pnBtn,PN_INFO,viaAdd(pnRun),{when:()=>!!api.playnitePlan&&addWin(),ns:true,keys:"playnite import library launcher pc",sub:()=>{pnLook();return pnSub()}}),
     // (beta.12) where people look first for Playnite and decomps: the way to the page that has them
     A("Other PC games","Open","Games from Playnite or Quiver Launcher, decomps and recomps (Ship of Harkinian, Zelda 64 Recompiled…), PC ports and any other program go on the Custom shelf. This opens Custom games, where every way to bring them in is.",
       ()=>{if(typeof MORE!=="undefined"&&MORE&&MORE["lib-custom"]){route("custom");return}goSecId("custom");focus="page";rowI=0;play("open");render()},{ns:true,when:()=>SECTIONS.some(s=>s.id==="custom")||(typeof MORE!=="undefined"&&!!MORE&&!!MORE["lib-custom"]), /* (beta.14: Settings in tabs, Custom games is Library's page lib-custom: route opens it) */keys:"playnite decomp decomps recomp recomps port ports other launcher custom quiver",sub:()=>({text:"Playnite, decomps, ports → Custom games"})}),
+    H("Organization"),
+    // every PC game in one list: on the shelf, a favourite, or hidden, each a step left / right away (pcEditRows)
+    M("Edit the PC shelf","pc-edit","Organize PC games into Steam-style collapsible categories, dynamic filters (Horror, Online…) or mark favorites and hide games quickly.",
+      "Collapsible categories (+ to expand), dynamic rules (⚡), or left / right on a game for shelf / ♥ / hidden.",[],
+      {when:()=>!!(window.Shelf&&Shelf.pcEditList),extra:pcEditRows,keys:"edit pc games list favourite favorite hide hidden organize bulk manage categories collections filter horror steam playnite editar organizar categorias",sub:()=>{const L=pcEdit();if(!L.length)return null;const f=L.filter(x=>x.fav).length,gn=((cfg&&cfg.pc&&cfg.pc.groups)||[]).length;return {text:`${L.length} games · ${f} ♥`+(gn?` · ${gn} ${gn===1?"category":"categories"}`:"")}}}),
   ]},
   // (beta.4) the Custom shelf: Quiver Launcher's apps (recomps, ports) and any program added by hand
   {g:"Games",id:"custom",name:"Custom games",ic:"pc",lead:"Everything that isn't a console or store game: decomps and recomps, PC ports, games from Playnite or Quiver Launcher, and any other program. Each gets a case on the Custom shelf.",rows:[{t:"dyn",fn:customRows}]},
@@ -480,8 +496,8 @@ function regroup(S){
   const openInto=take("display","Open into"); // (taken first: Look's More options gathers the rest of Display)
   // ---- Library: your consoles and games ----
   {const pc=secOf("pc"),cu=secOf("custom"),ap=secOf("apps");
+    if(pc)M("PC games","lib-pc","Steam, Epic, GOG, Ubisoft, EA and Xbox: which stores' games go on the PC shelf.",pc.lead,whole("pc"),{keys:"steam epic gog ubisoft ea xbox game pass store pc",ns:true});
     const rows=[{t:"dyn",fn:attnRows},take("consoles",r=>r.t==="consoles"),H("Your games"),take("sys","Rescan games"),
-      pc?M("PC games","lib-pc","Steam, Epic, GOG, Ubisoft, EA and Xbox: which stores' games go on the PC shelf.",pc.lead,whole("pc"),{keys:"steam epic gog ubisoft ea xbox game pass store pc",ns:true}):null,
       cu?M("Custom games","lib-custom","Decomps and recomps, PC ports, Playnite and Quiver Launcher games, any program: the Custom shelf.",cu.lead,whole("custom"),{keys:"custom decomp recomp port playnite quiver program exe add games",ns:true}):null,
       ap&&ap.rows.length?M("Media apps","lib-apps","Stremio and Nuvio on the Media shelf.",ap.lead,whole("apps"),{keys:"stremio nuvio media apps",ns:true}):null,
       take("shelf","My shelves"),take("shelf","Console order"),take("art","Hidden games")];
@@ -756,6 +772,247 @@ async function emuAct(sys){const e=emuOf(sys);if(!e||e.state==="unsupported"||e.
   if(e.state==="no-emulator"){openConsole(sys);return}
   if(emuAsk===sys&&api.launchEmulator){emuAsk=null;await save();toast(`Opening ${e.emulator||"the emulator"}…`);try{await api.launchEmulator(sys)}catch(err){toast(errMsg(err))}render();return}
   emuAsk=sys;infoOpen=true;play("open");render()}
+// Settings → Library → PC games → Edit the PC shelf: one row per PC game, its state a choice (on the shelf / ♥ favourite /
+// hidden) applied at once through the shelf (Shelf.setFav / setHidden) and mirrored in this screen's copy of the config,
+// so the next save here doesn't put the old lists back
+let pcEditCache=null,pcEdQ="",pcCatCur=null,pcAssignGid=null;
+const pcEdOpenVirtual={__favorites:false,__uncategorized:false};
+const pcCatRowsCache=new Map();
+function pcEdit(){if(!pcEditCache&&window.Shelf&&Shelf.pcEditList)try{pcEditCache=Shelf.pcEditList()||[]}catch{pcEditCache=[]}return pcEditCache||[]}
+const PC_SRC={steam:"Steam",epic:"Epic Games",gog:"GOG",ubisoft:"Ubisoft",ea:"EA",xbox:"Xbox",owned:"Not installed",quiver:"Quiver",custom:"Custom",battlenet:"Battle.net",other:"Playnite"};
+function pcCatCfg(){cfg.pc=cfg.pc||{};if(!Array.isArray(cfg.pc.groups))cfg.pc.groups=[];if(!Array.isArray(cfg.pc.activeFilters))cfg.pc.activeFilters=[];return cfg.pc}
+function pcGroups(){return pcCatCfg().groups}
+function pcEdNotify(){scheduleSave();shelf("pcGroupsChanged")}
+function pcEdRuleMatch(rule,g){
+  if(!rule||typeof rule!=="object")return false;
+  if(Array.isArray(rule.genres)&&rule.genres.length){
+    const gg=String(g.genres||"").toLowerCase();
+    if(!rule.genres.some(x=>gg.includes(String(x).toLowerCase())))return false;
+  }
+  if(Array.isArray(rule.sources)&&rule.sources.length){
+    const src=g.source==="owned"?(g.store||"owned"):(g.source||"steam");
+    if(!rule.sources.includes(src))return false;
+  }
+  if(Array.isArray(rule.status)&&rule.status.length&&!rule.status.includes(g.status||""))return false;
+  if(rule.install==="installed"&&!g.installed)return false;
+  if(rule.install==="not_installed"&&g.installed)return false;
+  if(rule.favOnly&&!g.fav)return false;
+  if(rule.unplayed&&(g.minutes||0)>0)return false;
+  if(rule.multiplayer&&!g.multiplayer)return false;
+  return true;
+}
+function pcEdGroupMatch(grp,g){
+  if(!grp||!g)return false;
+  if(grp.kind==="dynamic")return (Array.isArray(grp.ids)&&grp.ids.includes(g.id))||pcEdRuleMatch(grp.rule,g);
+  return Array.isArray(grp.ids)&&grp.ids.includes(g.id);
+}
+function pcEdAllGenres(L){
+  const set=new Set(["Horror","Action","Adventure","RPG","Indie","Strategy","Simulation","Racing","Sports","Shooter","Platformer","Puzzle"]);
+  for(const g of L){
+    for(const part of String(g.genres||"").split(/[;,]/)){
+      const s=part.trim();if(s)set.add(s);
+    }
+  }
+  return [...set].sort((a,b)=>a.localeCompare(b));
+}
+function pcGameChoiceRow(g,cls){
+  return {t:"choice",label:g.title,opts:[["show","On the shelf"],["fav","♥ Favorite"],["hide","Hidden"]],d:"show",nosave:true,ns:true,keys:"pc edit "+g.title,
+    ...(cls?{cls}:{}),
+    sub:()=>({text:[g.installed?(PC_SRC[g.source]||"Steam"):`${PC_SRC[g.store||"other"]||"Playnite"} · Not installed`,g.genres?String(g.genres).split(";")[0].trim():""].filter(Boolean).join(" · ")}),
+    info:"Left / right: on the shelf, a favourite (♥, also on the Home shelf), or hidden from every shelf.",
+    get:()=>g.hidden?"hide":g.fav?"fav":"show",
+    set:async v=>{const id=g.id,wasHidden=g.hidden;g.fav=v==="fav";g.hidden=v==="hide";
+      const ui=cfg.ui;ui.favorites=(Array.isArray(ui.favorites)?ui.favorites:[]).filter(x=>String(x)!==id);if(g.fav)ui.favorites.push(id);
+      ui.hidden=(Array.isArray(ui.hidden)?ui.hidden:[]).filter(x=>String(x)!==id);if(g.hidden)ui.hidden.push(id);
+      try{await shelf("setHidden",id,g.hidden);await shelf("setFav",id,g.fav)}catch{}
+      if(g.hidden!==wasHidden)Promise.resolve(shelf("hiddenList")).then(l=>{hidden=Array.isArray(l)?l:[];bump()}).catch(()=>{});
+      shelf("pcGroupsChanged");bump()}};
+}
+async function pcCatImport(kind){
+  const fn=kind==="steam"?api.importSteamCats:api.importPlayniteCats;if(!fn)return;
+  toast(kind==="steam"?"Reading Steam collections…":"Reading Playnite categories…");
+  try{
+    const r=await fn();if(!r)return;
+    pcCatCfg().groups=Array.isArray(r.groups)?r.groups:pcGroups();
+    if(Array.isArray(r.favorites))cfg.ui.favorites=r.favorites;
+    pcEditCache=null;await shelf("pcGroupsChanged");bump();
+    toast(kind==="steam"?`Imported ${(r.added||0)+(r.updated||0)} Steam collection${(r.added||0)+(r.updated||0)===1?"":"s"}`:`Imported ${(r.added||0)+(r.updated||0)} Playnite categor${(r.added||0)+(r.updated||0)===1?"y":"ies"}`);
+  }catch(e){toast(errMsg(e))}
+}
+function pcCatCreateNew(){
+  const gs=pcGroups();if(gs.length>=50){toast("Maximum of 50 PC categories reached.");return}
+  const g={id:"pcc-"+Date.now().toString(36),name:"New category",kind:"manual",ids:[],collapsed:false};
+  gs.push(g);pcEdNotify();pcCatOpen(g);
+}
+function pcCatOpen(grp){
+  if(!grp)return;
+  pcCatCur={id:grp.id,q:""};
+  MORE["pc-cat-edit"]={id:"pc-cat-edit",name:grp.name,lead:"Configure manual game memberships or dynamic filter rules (e.g. Horror, Online, Not installed).",rows:[{t:"dyn",fn:pcCatEditRows}]};
+  openSub({kind:"more",id:"pc-cat-edit"});
+}
+function pcGameAssignOpen(g){
+  if(!g)return;
+  pcAssignGid=g.id;
+  MORE["pc-cat-assign"]={id:"pc-cat-assign",name:`Categorize: ${g.title}`.slice(0,55),lead:"Choose which PC categories this game belongs to.",rows:[{t:"dyn",fn:pcGameAssignRows}]};
+  openSub({kind:"more",id:"pc-cat-assign"});
+}
+function pcGameAssignRows(){
+  const L=pcEdit(),g=L.find(x=>x.id===pcAssignGid);
+  if(!g)return [infoRow("Game not found","")];
+  const out=[pcGameChoiceRow(g,"")];
+  const manual=pcGroups().filter(x=>x.kind!=="dynamic");
+  out.push(H("Manual categories"));
+  if(!manual.length){
+    out.push(A("No manual categories yet","+ New","Create a category first to assign games manually.",()=>{leaveSub();pcCatCreateNew()},{ns:true}));
+  }else{
+    for(const grp of manual){
+      const k="assign|"+grp.id+"|"+g.id;
+      if(!pcCatRowsCache.has(k))pcCatRowsCache.set(k,T(grp.name,"",false,`Show ${g.title} inside ${grp.name}.`,{
+        get:()=>(grp.ids||[]).includes(g.id),
+        set:v=>{grp.ids=Array.isArray(grp.ids)?grp.ids:[];const i=grp.ids.indexOf(g.id);if(v&&i<0)grp.ids.push(g.id);if(!v&&i>=0)grp.ids.splice(i,1);pcEdNotify();bump()},
+        ns:true
+      }));
+      out.push(pcCatRowsCache.get(k));
+    }
+  }
+  const dyn=pcGroups().filter(x=>x.kind==="dynamic"&&pcEdGroupMatch(x,g));
+  if(dyn.length)out.push(H("Dynamic categories matched"),...dyn.map(x=>infoRow(x.name+" ⚡","Matched automatically by rule")));
+  return out;
+}
+function pcCatGamesPickerRows(){
+  const L=pcEdit();
+  const out=[];
+  const qKey="picker-search";
+  if(!pcCatRowsCache.has(qKey))pcCatRowsCache.set(qKey,X("Search games to categorize","","Type a game name, then open a game to toggle its categories.",{get:()=>pcEdQ,set:v=>{pcEdQ=String(v||"")},nosave:true,live:()=>bump(),ns:true,ph:"Resident Evil, Hades…"}));
+  out.push(pcCatRowsCache.get(qKey));
+  const q=pcEdQ.trim().toLowerCase(),gs=pcGroups();
+  const list=(q?L.filter(g=>g.title.toLowerCase().includes(q)):L).slice(0,120);
+  if(!list.length)return [...out,infoRow("No matching PC games","")];
+  for(const g of list){
+    const cats=gs.filter(gr=>pcEdGroupMatch(gr,g)).map(gr=>gr.name);
+    out.push(A(g.title,"Categories…","Open category checkboxes for "+g.title,()=>pcGameAssignOpen(g),{ns:true,sub:()=>({text:[g.fav?"♥":"",cats.length?cats.join(", "):"Uncategorized"].filter(Boolean).join(" · ")})}));
+  }
+  return out;
+}
+function pcCatEditRows(){
+  const cur=pcCatCur,grp=cur&&pcGroups().find(x=>x.id===cur.id);
+  if(!grp)return [infoRow("This category was removed","")];
+  const L=pcEdit(),k=p=>p+"|"+grp.id;
+  if(!pcCatRowsCache.has(k("name")))pcCatRowsCache.set(k("name"),X("Category name","","Shown in Settings and in the main shelf filter dropdown.",{get:()=>grp.name,set:v=>{const t=String(v||"").replace(/\s+/g," ").trim().slice(0,40);if(t){grp.name=t;if(MORE["pc-cat-edit"])MORE["pc-cat-edit"].name=t}},live:()=>{pcEdNotify()},ns:true}));
+  if(!pcCatRowsCache.has(k("mode")))pcCatRowsCache.set(k("mode"),C("Category mode","",[["manual","Manual list"],["dynamic","Dynamic filter ⚡"]],"manual","Manual list: pick games yourself. Dynamic filter: fills automatically from genres, store, multiplayer or install state.",{
+    get:()=>grp.kind==="dynamic"?"dynamic":"manual",
+    set:v=>{grp.kind=v==="dynamic"?"dynamic":"manual";if(grp.kind==="dynamic"&&!grp.rule)grp.rule={};pcEdNotify()},
+    live:()=>bump(),ns:true
+  }));
+  const out=[pcCatRowsCache.get(k("name")),pcCatRowsCache.get(k("mode"))];
+  if(grp.kind==="dynamic"){
+    grp.rule=grp.rule||{};
+    out.push(H("Dynamic filter rules (matches games fitting all enabled rules)"));
+    const curGenres=Array.isArray(grp.rule.genres)?grp.rule.genres:[];
+    const allG=pcEdAllGenres(L);
+    out.push(C("Install status","",[ ["","Any"],["installed","Installed only"],["not_installed","Not installed only"] ],"","Filter by whether the game is installed.",{
+      get:()=>grp.rule.install||"",set:v=>{if(v)grp.rule.install=v;else delete grp.rule.install;pcEdNotify();bump()},ns:true
+    }));
+    out.push(T("Favorites only","",false,"Only include ♥ Favorite PC games.",{
+      get:()=>!!grp.rule.favOnly,set:v=>{if(v)grp.rule.favOnly=true;else delete grp.rule.favOnly;pcEdNotify();bump()},ns:true
+    }));
+    out.push(T("Online / Multiplayer","",false,"Include online, multiplayer or co-op games.",{
+      get:()=>!!grp.rule.multiplayer,set:v=>{if(v)grp.rule.multiplayer=true;else delete grp.rule.multiplayer;pcEdNotify();bump()},ns:true
+    }));
+    out.push(T("Never played","",false,"Only include games with 0 playtime.",{
+      get:()=>!!grp.rule.unplayed,set:v=>{if(v)grp.rule.unplayed=true;else delete grp.rule.unplayed;pcEdNotify();bump()},ns:true
+    }));
+    out.push(C("Store / Source","",[ ["","Any store"],["steam","Steam"],["epic","Epic Games"],["gog","GOG"],["ea","EA"],["ubisoft","Ubisoft"],["xbox","Xbox"],["custom","Custom"] ],"","Optionally restrict to games from one store.",{
+      get:()=>(Array.isArray(grp.rule.sources)&&grp.rule.sources[0])||"",
+      set:v=>{if(v)grp.rule.sources=[v];else delete grp.rule.sources;pcEdNotify();bump()},ns:true
+    }));
+    out.push(H("Genres (match any checked genre)",{em:()=>curGenres.length?curGenres.join(", "):"Any"}));
+    for(const gn of allG){
+      out.push(T(gn,"",false,`Include games tagged with ${gn}.`,{
+        get:()=>curGenres.includes(gn),
+        set:v=>{const list=Array.isArray(grp.rule.genres)?[...grp.rule.genres]:[];const i=list.indexOf(gn);if(v&&i<0)list.push(gn);if(!v&&i>=0)list.splice(i,1);if(list.length)grp.rule.genres=list;else delete grp.rule.genres;pcEdNotify();bump()},
+        ns:true
+      }));
+    }
+    const matched=L.filter(g=>pcEdGroupMatch(grp,g));
+    out.push(H(`Preview matches (${matched.length})`),...(matched.length?matched.slice(0,15).map(g=>infoRow(g.title,PC_SRC[g.store||g.source]||"")):[infoRow("No PC games match these rules yet","")]));
+  }else{
+    if(!pcCatRowsCache.has(k("q")))pcCatRowsCache.set(k("q"),X("Search games to add / remove","","Type a title to quickly toggle games into or out of this category.",{get:()=>cur.q,set:v=>{cur.q=String(v||"")},nosave:true,live:()=>bump(),ns:true,ph:"Hollow Knight, Elden Ring…"}));
+    out.push(pcCatRowsCache.get(k("q")));
+    const tog=g=>{const tk="m|"+grp.id+"|"+g.id;
+      if(!pcCatRowsCache.has(tk))pcCatRowsCache.set(tk,T(g.title,"",false,`Include ${g.title} in ${grp.name}.`,{
+        get:()=>(grp.ids||[]).includes(g.id),
+        set:v=>{grp.ids=Array.isArray(grp.ids)?grp.ids:[];const i=grp.ids.indexOf(g.id);if(v&&i<0)grp.ids.push(g.id);if(!v&&i>=0)grp.ids.splice(i,1);pcEdNotify();bump()},
+        sub:()=>({text:PC_SRC[g.installed?g.source:(g.store||"other")]||""}),ns:true
+      }));
+      return pcCatRowsCache.get(tk);
+    };
+    const q=cur.q.trim().toLowerCase();
+    if(q){
+      const hits=L.filter(g=>g.title.toLowerCase().includes(q)).slice(0,40);
+      out.push(H(hits.length?`Matches for “${cur.q.trim()}”`:`No game matches “${cur.q.trim()}”`),...hits.map(tog));
+    }
+    const assigned=L.filter(g=>(grp.ids||[]).includes(g.id));
+    out.push(H(`In ${grp.name} (${assigned.length})`),...(assigned.length?assigned.map(tog):[infoRow("No games in this category yet","Search above and toggle games on")]));
+  }
+  const delBtn=A("Delete this category","Delete","Removes this category (games stay on the PC shelf). Press twice.",()=>{
+    if(delBtn.armed){
+      const gs=pcGroups(),i=gs.findIndex(x=>x.id===grp.id);if(i>=0)gs.splice(i,1);
+      pcCatCfg().activeFilters=pcCatCfg().activeFilters.filter(x=>x!==grp.id);
+      pcEdNotify();play("back");toast(`${grp.name} deleted`);leaveSub();render();
+    }else{
+      delBtn.armed=true;delBtn.btn="Press again";setTimeout(()=>{delBtn.armed=false;delBtn.btn="Delete";bump()},4000);bump();
+    }
+  },{ns:true});
+  out.push(H(""),delBtn);
+  return out;
+}
+function pcEditRows(){const L=pcEdit();
+  if(!L.length)return [{t:"action",label:"No PC games yet",btn:"—",info:"Games from Steam, Epic and the other stores show up here once they're on the PC shelf.",run:()=>{},ns:true,dim:true}];
+  const rows=[];
+  if(!pcCatRowsCache.has("ed-search"))pcCatRowsCache.set("ed-search",X("Search PC games","","Filter the organizer below by game title or genre.",{get:()=>pcEdQ,set:v=>{pcEdQ=String(v||"")},nosave:true,live:()=>bump(),ns:true,ph:"Title, Horror…"}));
+  rows.push(pcCatRowsCache.get("ed-search"));
+  rows.push(A("New category","+ New","Create a manual category or a dynamic filter (for example by genre, multiplayer, or install status).",pcCatCreateNew,{ns:true}));
+  if(api.importSteamCats)rows.push(A("Import Steam collections","Import","Imports your existing Steam collections (manual and dynamic) into PC shelf categories without changing Steam.",()=>pcCatImport("steam"),{ns:true}));
+  if(api.importPlayniteCats)rows.push(A("Import Playnite categories","Import","Imports categories from Playnite into PC shelf groups.",()=>pcCatImport("playnite"),{ns:true}));
+  rows.push(A("Categorize by game","Choose game…","Pick a game and check off which categories it belongs to.",()=>{MORE["pc-cat-games"]={id:"pc-cat-games",name:"Categorize by game",lead:"Pick a PC game to assign it to categories.",rows:[{t:"dyn",fn:pcCatGamesPickerRows}]};openSub({kind:"more",id:"pc-cat-games"})},{ns:true}));
+
+  const q=pcEdQ.trim().toLowerCase();
+  if(q){
+    const hits=L.filter(g=>g.title.toLowerCase().includes(q)||String(g.genres||"").toLowerCase().includes(q));
+    rows.push(H(`Search results (${hits.length})`));
+    if(!hits.length)rows.push(infoRow("No PC games match",pcEdQ));
+    else for(const g of hits.slice(0,80))rows.push(pcGameChoiceRow(g,"pc-cat-item"));
+    return rows;
+  }
+
+  const hdr=(id,name,count,isDyn,open,toggle)=>({t:"action",cls:"pc-cat-hdr"+(open?" open":"")+(isDyn?" dyn":""),label:`${open?"−":"+"} ${String(name).toUpperCase()} (${count})${isDyn?" ⚡":""}`,btn:open?"Collapse":"Expand",info:"Press Enter to expand or collapse this Steam-style category.",run:toggle,ns:true});
+  const favGames=L.filter(g=>g.fav),fOpen=!!pcEdOpenVirtual.__favorites;
+  rows.push(hdr("__favorites","Favorites",favGames.length,false,fOpen,()=>{pcEdOpenVirtual.__favorites=!fOpen;bump()}));
+  if(fOpen){
+    if(!favGames.length)rows.push(infoRow("No favorite PC games yet","Press ♥ Favorite on any game"));
+    else for(const g of favGames)rows.push(pcGameChoiceRow(g,"pc-cat-item"));
+  }
+
+  const groups=pcGroups();
+  for(const grp of groups){
+    const matched=L.filter(g=>pcEdGroupMatch(grp,g)),open=grp.collapsed===false;
+    rows.push(hdr(grp.id,grp.name,matched.length,grp.kind==="dynamic",open,()=>{grp.collapsed=open;scheduleSave();bump()}));
+    if(open){
+      rows.push(A(`Edit “${grp.name}”`,grp.kind==="dynamic"?"Rules ⚡":"Games & edit","Edit category name, add or remove games, or change dynamic rules.",()=>pcCatOpen(grp),{cls:"pc-cat-item pc-cat-edit",ns:true}));
+      if(!matched.length)rows.push(infoRow("No games in this category yet","Press Edit above to add games or set rules"));
+      else for(const g of matched)rows.push(pcGameChoiceRow(g,"pc-cat-item"));
+    }
+  }
+
+  const uncat=L.filter(g=>!groups.some(gr=>pcEdGroupMatch(gr,g))),uOpen=!!pcEdOpenVirtual.__uncategorized;
+  rows.push(hdr("__uncategorized","Uncategorized",uncat.length,false,uOpen,()=>{pcEdOpenVirtual.__uncategorized=!uOpen;bump()}));
+  if(uOpen){
+    if(!uncat.length)rows.push(infoRow("Every PC game is categorized",""));
+    else for(const g of uncat.slice(0,150))rows.push(pcGameChoiceRow(g,"pc-cat-item"));
+  }
+  return rows;
+}
 function hiddenRows(){if(!(window.Shelf&&Shelf.hiddenList))return [];const L=hidden||[];
   if(!L.length)return [{t:"action",label:"No hidden games",btn:"—",info:"Hide a game from its Details panel (Hide). It shows up here so you can bring it back.",run:()=>{},ns:true,dim:true}];
   const names=Object.fromEntries(consoleList().map(c=>[c.id,c.name]));
@@ -1065,7 +1322,7 @@ const CP_CTX={gp,api,shelf,toast:m=>toast(m),play:(k,d)=>play(k,d),bump:()=>bump
   leave:()=>{if(sub){leaveSub();play("back");render()}},
   shelves:()=>tileList().filter(c=>sysCfg(c.id).enabled!==false).map(c=>({id:c.id,name:c.name})),
   twice:(key,run,msg)=>twice(key,run,msg),android:()=>!!(window.bsPlatform&&bsPlatform.os==="android")};
-function leaveSub(){if(artAcct&&sub&&sub===artAcct.page){artBackTo();return}secDrop();const was=sub;sub=was&&was.up||null;grab=null;rowI=subRet||0;subRet=was&&was.upRet||0;if(was&&was.kind==="console"){const k=tileList().findIndex(c=>c.id===was.id);if(k>=0)ci=k}}
+function leaveSub(){if(artAcct&&sub&&sub===artAcct.page){artBackTo();return}secDrop();const was=sub;sub=was&&was.up||null;grab=null;rowI=subRet||0;subRet=was&&was.upRet||0;if(was&&was.kind==="console"){const k=libTileList().findIndex(c=>c.id===was.id);if(k>=0)ci=k}else if(was&&was.kind==="more"&&was.id==="lib-pc"){const k=libTileList().findIndex(c=>c._pcTile);if(k>=0)ci=k}}
 function openConsole(id){if(sub){openSub({kind:"console",id})}else{subRet=rowI;sub={kind:"console",id};rowI=0;focus="page";play("open");render()} /* from inside a sub-page (RetroAchievements' emulator rows): nested, so B comes back to it */if(id==="gc"&&!ipl&&api.findIpl&&iplCap())Promise.resolve(save()).then(()=>api.findIpl("gc")).then(r=>{ipl=r;bump()}).catch(()=>{});if(id==="sw2"&&sw2Row())Promise.resolve(save()).then(()=>api.sw2Builds("")).then(r=>{sw2b=r&&r.builds||[];bump()}).catch(()=>{sw2b=[];bump()})} /* Switch 2: the Eglantine builds for its Build row, looked for again each time the page opens */
 const sw2Row=()=>!!api.sw2Builds&&!(window.bsPlatform&&bsPlatform.os==="android");
 // (beta.3) Settings → Switch 2 → Builds. One choice among "Ask each time" and every build (the shelf's emulator is the
@@ -1089,7 +1346,7 @@ function customRows(){if(!pcSt)setTimeout(pcStatus,0);cfg.pc=cfg.pc||{epic:true,
   // (beta.12) every way in, on this page itself (Playnite used to sit two pages down, inside Add games): what a way finds
   // is listed on the Add games page, which opens once there's something to show
   rows.push({t:"head",text:"Bring games in"});
-  if(api.playnitePlan&&addWin()){pnLook();rows.push(A("Import from Playnite (experimental)",pnBtn,PN_INFO,viaAdd(pnRun),{ns:true,keys:"playnite import library launcher experimental",sub:pnSub}))}
+  if(api.playnitePlan&&addWin()){pnLook();rows.push(A("Import from Playnite",pnBtn,PN_INFO,viaAdd(pnRun),{ns:true,keys:"playnite import library launcher",sub:pnSub}))}
   rows.push(A("Add programs","Choose…","Decomps and recomps (Ship of Harkinian, 2 Ship 2 Harkinian, Zelda 64 Recompiled, a Mario 64 PC port…), PC ports, a game from another launcher: pick its program, or several at once (hold Ctrl or Shift). You check their names before they're added.",
     viaAdd(addSeveral),{ns:true,keys:"add program programs exe decomp decomps recomp recomps port ports harkinian 2ship sm64 zelda64 one several many bulk multiple game",sub:()=>({text:"Decomps, recomps, ports, any program"})}));
   rows.push(A("Scan a folder of games","Choose folder…","Point at the folder your PC games, decomps or ports are in (like D:\\Games). Each game folder in it becomes one game, its main program picked for you; you tick which ones to add.",
@@ -1161,7 +1418,7 @@ function sw2BuildRows(){sw2Want();const c=sysCfg("sw2"),fx=sw2Fixed(),L=sw2b||[]
 /* ---------- search ---------- */
 function allSettings(){const out=[];
   SECTIONS.forEach((s,si)=>{let k=0,grp="";const rs=expand(s).rows;rs.forEach(r=>{if(r.t==="head"){grp=r.text;return}if(!shown(r))return;const i=k++;
-    if(r.t==="consoles"){consoleList().forEach(c=>out.push({sec:si,console:c.id,label:c.name,where:"Games › Consoles",text:`${c.name} ${c.emulatorName||""} emulator console`}));return}
+    if(r.t==="consoles"){if(MORE["lib-pc"]){out.push({sec:si,more:"lib-pc",at:0,i:0,label:"PC games",where:"Library › PC",text:"PC games steam epic gog ubisoft ea xbox game pass store pc"});let k2=0,grp2="";expand(MORE["lib-pc"]).rows.forEach(r2=>{if(r2.t==="head"){grp2=r2.text;return}if(!shown(r2))return;const i2=k2++;if(r2.ns&&!r2.keys)return;out.push({sec:si,more:"lib-pc",at:0,i:i2,row:r2,label:r2.label,where:`${s.name} › PC${grp2?" › "+grp2:""}`,text:[r2.label,r2.info,r2.keys,s.name,"PC",grp2,r2.opts&&typeof r2.opts!=="function"?r2.opts.map(o=>o[1]).join(" "):""].join(" ")})})}consoleList().forEach(c=>out.push({sec:si,console:c.id,label:c.name,where:"Games › Consoles",text:`${c.name} ${c.emulatorName||""} emulator console`}));return}
     if(r.ns&&!r.keys)return;out.push({sec:si,i,row:r,label:r.label,where:`${s.g?s.g+" › ":""}${s.name}${grp?" › "+grp:""}`,text:[r.label,r.info,r.keys,s.name,grp,r.opts&&typeof r.opts!=="function"?r.opts.map(o=>o[1]).join(" "):""].join(" ")})})});
   // the sections' own sub-pages (Screen & TV, Art Studio, Advanced…): found here, opened on the row inside
   SECTIONS.forEach((s,si)=>{const top=rowsOf(expand(s));top.forEach((m,at)=>{const pg=m.pg&&MORE[m.pg];if(!pg)return;let k=0,grp="";expand(pg).rows.forEach(r=>{if(r.t==="head"){grp=r.text;return}if(!shown(r))return;const i=k++;if(r.ns&&!r.keys)return;
@@ -1192,7 +1449,7 @@ function typeChar(c){if(edit){edit.value+=c;paintEdit();return}query+=c;runSearc
 function backspace(){if(edit){edit.value=edit.value.slice(0,-1);paintEdit();return}query=query.slice(0,-1);runSearch();render()}
 function goResult(r){const e=r.go;results=null;closeOsk();preSearch=null;query="";focus="page";
   secI=e.sec;sub=null;
-  if(e.console){const k=tileList().findIndex(c=>c.id===e.console);if(k>=0)ci=k;subRet=0;
+  if(e.console){const k=libTileList().findIndex(c=>c.id===e.console);if(k>=0)ci=k;subRet=0;
     if(e.i===undefined){rowI=0;openConsole(e.console);return}
     sub={kind:"console",id:e.console};if(e.adv){subRet=Math.max(0,rowsOf(consolePage(e.console)).findIndex(r=>r.label==="Emulator & advanced"));sub={kind:"conadv",id:e.console,up:sub,upRet:0}}if(e.console==="gc"&&!ipl&&api.findIpl&&iplCap())Promise.resolve(save()).then(()=>api.findIpl("gc")).then(r=>{ipl=r;bump()}).catch(()=>{})} // the IPL row's Found / No IPL.bin line, as openConsole loads it
   if(e.svc){subRet=Math.max(0,rowsOf(expand(SECTIONS[e.sec])).findIndex(r=>r.status===e.svc));sub={kind:"svc",id:e.svc}}
@@ -1266,7 +1523,7 @@ async function act(){const r=curRow();if(!r)return;
   else if(r.t==="theme"){const o=optsOf(r),i=idxOf(r,o);if(!o.length)return;clearTimeout(themeT);shelf("setTheme",o[i][0]);play("open",1);toast("Theme: "+o[i][1])}
   else if(r.t==="choice"){const o=optsOf(r);if(!o.length)return;lastChange={r,d:1};r.set(o[(idxOf(r,o)+1)%o.length][0]);play("tick",1);changed(r)}
   else if(r.t==="slider")toast(device==="pad"?"Use ◀ ▶ to adjust":"Use ← → to adjust");
-  else if(r.t==="consoles"){const c=tileList()[ci];if(c)openConsole(c.id)}
+  else if(r.t==="consoles"){const c=libTileList()[ci];if(c){if(c._pcTile)openPcFromGrid();else openConsole(c.id)}}
   else if(r.t==="result")goResult(r);
   else if(r.t==="text")startEdit(r);
   else if(r.t==="path"){const p=await pick({kind:r.kind==="file"?"file":"folder",title:r.pickTitle||r.label,filters:r.filters,defaultPath:r.get()||undefined});if(p){r.set(p);changed(r)}}
@@ -1414,40 +1671,50 @@ async function addOne(){const p=await pick({kind:"file",title:"Choose the game's
   const title=String(exe).split(/[\\/]/).pop().replace(/\.[^.]+$/,"").replace(/[_\-.]+/g," ").replace(/\s+/g," ").trim()||"Game";
   pc.custom.push({id:Date.now().toString(36),title,exe,args:""});changed({rescan:true});toast(`Added ${title}. Rename it in Custom games if you like.`)}
 async function addPlaynite(dir){ADD.busy=true;ADD.list=null;ADD.pn=null;addReset();
-  try{const P=await api.playnitePlan(dir);ADD.pn=P;ADD.pnOn={pc:true};Object.keys(P.consoles||{}).forEach(k=>{ADD.pnOn[k]=true});ADD.pnPick=new Set(P.pc.filter(g=>g.there!==false).map(g=>g.key))}
+  try{const P=await api.playnitePlan(dir);ADD.pn=P;ADD.pnOn={owned:(P.ownedCount||0)>0,cats:(P.categoryCount||0)>0,pc:(P.pc||[]).length>0,toPc:true};Object.keys(P.consoles||{}).forEach(k=>{ADD.pnOn[k]=true});ADD.pnPick=new Set(P.pc.filter(g=>g.there!==false).map(g=>g.key))}
   catch(e){toast(errMsg(e))}finally{ADD.busy=false;addReset()}}
-async function pnImport(){const P=ADD.pn;if(!P||ADD.busy)return;ADD.busy=true;const pc=pcCfg(),have=new Set(pc.custom.map(c=>String(c.exe).toLowerCase())),covers=[];let n=0,dirs=0;
+async function pnImport(){const P=ADD.pn;if(!P||ADD.busy)return;ADD.busy=true;const pc=pcCfg(),have=new Set(pc.custom.map(c=>String(c.exe).toLowerCase())),covers=[];let n=0,dirs=0,ownedOn=false,catsAdded=0;
   try{
+    if(ADD.pnOn.owned&&(P.ownedCount||0)>0){pc.owned=true;ownedOn=true}
+    if(ADD.pnOn.cats&&(P.categoryCount||0)>0&&api.importPlayniteCats){
+      try{const cr=await api.importPlayniteCats();if(cr){pcCatCfg().groups=Array.isArray(cr.groups)?cr.groups:pcGroups();pcEditCache=null;catsAdded=(cr.added||0)+(cr.updated||0)}}
+      catch(e){toast(errMsg(e))}
+    }
     if(ADD.pnOn.pc)for(const g of P.pc){if(!ADD.pnPick.has(g.key)||have.has(String(g.exe).toLowerCase()))continue;const id="pn-"+addSlug(g.key).slice(0,40);
-      pc.custom.push({id,title:g.title,exe:g.exe,args:g.args||"",src:"playnite"});have.add(String(g.exe).toLowerCase());n++;if(g.cover)covers.push({id,file:g.cover});
+      pc.custom.push({id,title:g.title,exe:g.exe,args:g.args||"",src:"playnite",...(ADD.pnOn.toPc!==false?{shelf:"pc"}:{})});have.add(String(g.exe).toLowerCase());n++;if(g.cover)covers.push({id,file:g.cover});
       if(g.favorite){const fav=cfg.ui.favorites=Array.isArray(cfg.ui.favorites)?cfg.ui.favorites:[];const fid="custom-"+addSlug(id);if(!fav.includes(fid))fav.push(fid)}}
     pc.pnDirs=pc.pnDirs||{};
     for(const [sys,c] of Object.entries(P.consoles||{})){if(!ADD.pnOn[sys]||!cfg.systems[sys])continue;const sc=sysCfg(sys);
       for(const d of c.dirs||[])if(!sc.romDirs.some(x=>x.toLowerCase()===d.toLowerCase())){sc.romDirs.push(d);(pc.pnDirs[sys]=pc.pnDirs[sys]||[]).push(d);dirs++}
       sc.enabled=true;if(!sc.emulator&&c.emulatorDir&&api.emulatorIn){const e=await Promise.resolve(api.emulatorIn(c.emulatorDir,sys)).catch(()=>null);if(e)sc.emulator=e}}
-    changed({rescan:true});await save();if(covers.length&&api.gameCovers)api.gameCovers(covers).catch(()=>{});
-    play("open");toast(`From Playnite: ${n} game${n===1?"":"s"} on the Custom shelf${dirs?`, ${dirs} games folder${dirs===1?"":"s"} for your consoles`:""}`);ADD.pn=null}
+    changed({rescan:true});await save();await shelf("pcGroupsChanged");if(covers.length&&api.gameCovers)api.gameCovers(covers).catch(()=>{});
+    const parts=[];
+    if(ownedOn)parts.push(`${P.ownedCount} uninstalled store game${P.ownedCount===1?"":"s"}`);
+    if(catsAdded)parts.push(`${catsAdded} categor${catsAdded===1?"y":"ies"}`);
+    if(n)parts.push(`${n} PC game${n===1?"":"s"}`);
+    if(dirs)parts.push(`${dirs} console folder${dirs===1?"":"s"}`);
+    play("open");toast(parts.length?`From Playnite: ${parts.join(", ")}`:"Nothing new selected to import from Playnite");ADD.pn=null}
   finally{ADD.busy=false;addReset()}}
 function pnUndo(){const pc=pcCfg(),n=pc.custom.filter(c=>c.src==="playnite").length;pc.custom.splice(0,pc.custom.length,...pc.custom.filter(c=>c.src!=="playnite"));let d=0;
   for(const [sys,L] of Object.entries(pc.pnDirs||{})){if(!cfg.systems[sys])continue;const sc=sysCfg(sys),rm=new Set(L.map(x=>x.toLowerCase())),b=sc.romDirs.length;sc.romDirs=sc.romDirs.filter(x=>!rm.has(x.toLowerCase()));d+=b-sc.romDirs.length}
   pc.pnDirs={};changed({rescan:true});toast(`Removed ${n} imported game${n===1?"":"s"}${d?` and ${d} games folder${d===1?"":"s"}`:""}`);addReset()}
-// (beta.12) the Playnite row's parts, shared by the Custom games page and the Add games page
+// (beta.12) the Playnite row's parts, shared by the PC games page, the Custom games page and the Add games page
 const addWin=()=>!window.bsPlatform||!bsPlatform.os||bsPlatform.os==="windows"||bsPlatform.os==="web";
 function pnLook(){if(ADD.pnFound===undefined&&api.playniteFind&&addWin()){ADD.pnFound=null;Promise.resolve(api.playniteFind()).then(f=>{ADD.pnFound=f||false;addReset()}).catch(()=>{ADD.pnFound=false;addReset()})}}
 const pnBtn=()=>ADD.pnFound?"Import…":ADD.pnFound===false?"Find…":"…";
 const pnSub=()=>ADD.pnFound?{text:"Found in "+folderName(ADD.pnFound.app)}:ADD.pnFound===false?{text:"Not found · choose its folder"}:{text:"Looking for Playnite…"};
-const PN_INFO="Brings your Playnite library over in one go: games you added there by hand, with their covers, onto the Custom shelf, and your emulated games' folders onto their console's shelf. Steam, Epic, GOG Galaxy and other store games are left out: Boxshelf reads those stores itself. Experimental: it couldn't be tried with every Playnite version, so tell us if something's missing.";
+const PN_INFO="Brings your Playnite library into Boxshelf: uninstalled store games (with metadata and covers), Playnite categories, manual PC programs, and emulated console folders.";
 async function pnRun(){if(ADD.pnFound)return addPlaynite();const p=await pick({kind:"folder",title:"Choose Playnite's folder (the one with Playnite.DesktopApp.exe)"}),d=typeof p==="string"?p:p&&p.path;if(d)return addPlaynite(d)}
-// a way in started from the Custom games page: the Add games page opens as soon as it's looking or has found something
+// a way in started from the PC / Custom games page: the Add games page opens as soon as it's looking or has found something
 // (not while the file window is still up, and not at all when nothing was picked)
 function viaAdd(fn){return async()=>{const my=openId,l0=ADD.list,p0=ADD.pn,at=secI+"|"+(sub?sub.kind+":"+sub.id:""); /* (beta.12) where you started it: moved elsewhere meanwhile, the results wait on Add games instead of pulling you there */
-  const go=()=>{if(!isOpen||openId!==my||(sub&&sub.kind==="more"&&sub.id==="addgames")||at!==secI+"|"+(sub?sub.kind+":"+sub.id:""))return;if(ADD.busy||(ADD.list&&ADD.list!==l0&&ADD.list.length)||(ADD.pn&&ADD.pn!==p0))openSub({kind:"more",id:"addgames"})};
+  const go=()=>{if(!isOpen||openId!==my||(sub&&sub.kind==="more"&&sub.id==="addgames")||at!==secI+"|"+(sub?sub.kind+":"+sub.id:""))return;if(ADD.busy||(ADD.list&&ADD.list!==l0&&ADD.list.length)||(ADD.pn&&ADD.pn!==p0)){MORE.addgames=MORE.addgames||{id:"addgames",name:"Add games",lead:"Every way to put games on the Custom shelf. You see what was found before anything is added.",rows:[{t:"dyn",fn:addRows}]};openSub({kind:"more",id:"addgames"})}};
   const t=setInterval(go,150);try{await fn()}finally{clearInterval(t);go()}}}
 function addRows(){if(ADD.rows)return ADD.rows;const R=[],win=addWin();pnLook();
   R.push(A("Add several programs","Choose…","Pick many games' programs at once (hold Ctrl or Shift in the file window). You check their names before they're added.",addSeveral,{ns:true}),
     A("Scan a folder","Choose folder…","Point at the folder your games are in (like D:\\Games). Each game folder in it becomes one game, its main program picked for you; you tick which ones to add.",addScan,{ns:true}));
   // (beta.12: no search words on this page's copies of the Custom games page's rows, so search lists each once)
-  if(api.playnitePlan&&win)R.push(A("Import from Playnite (experimental)",pnBtn,PN_INFO,pnRun,{ns:true,sub:pnSub}));
+  if(api.playnitePlan&&win)R.push(A("Import from Playnite",pnBtn,PN_INFO,pnRun,{ns:true,sub:pnSub}));
   R.push(A("Add one program","Browse…","Any program: a recomp, a PC port, a game from another launcher. It gets a case on the Custom shelf and starts from its own folder.",addOne,{ns:true,keys:"add custom game recomp port program exe one"}));
   if(ADD.busy)R.push(infoRow("Looking…","",{text:""}));
   if(ADD.list&&ADD.list.length){const L=ADD.list;R.push(H(`Found ${L.length} game${L.length===1?"":"s"}`,{em:()=>`${L.filter(x=>x.on&&!x.have).length} ticked`}));
@@ -1455,9 +1722,14 @@ function addRows(){if(ADD.rows)return ADD.rows;const R=[],win=addWin();pnLook();
     R.push(A("Add the ticked games",()=>{const n=L.filter(x=>x.on&&!x.have).length;return n?`Add ${n}`:"Add"},"Puts the ticked games on the Custom shelf. Covers are found for them like for any PC game, and each can be renamed or given another cover from its Details.",addCommit,{ns:true}),
       A("Clear this list","Clear","Forgets this list without adding anything.",()=>{ADD.list=null;addReset()},{ns:true}))}
   if(ADD.pn){const P=ADD.pn,name=id=>((consoleList().find(c=>c.id===id)||{}).name||id);R.push(H("From Playnite",{em:()=>`${P.total} games in Playnite`}));
-    R.push({t:"toggle",label:"PC games",info:"Games you added to Playnite by hand: each gets a case on the Custom shelf with its program, launch options and cover.",ns:true,nosave:true,get:()=>!!ADD.pnOn.pc,set:v=>{ADD.pnOn.pc=!!v;addReset()},sub:()=>({text:`${P.pc.length} game${P.pc.length===1?"":"s"}`})});
+    if((P.ownedCount||0)>0){const stList=(P.ownedStores||[]).join(", ");
+      R.push({t:"toggle",label:"Uninstalled store games",info:"Enables 'Show games you haven't installed' so your full Playnite store library appears on the PC shelf with details, covers and install links.",ns:true,nosave:true,get:()=>!!ADD.pnOn.owned,set:v=>{ADD.pnOn.owned=!!v},sub:()=>({text:`${P.ownedCount} game${P.ownedCount===1?"":"s"}`+(stList?` · ${stList}`:"")})})}
+    if((P.categoryCount||0)>0&&api.importPlayniteCats){
+      R.push({t:"toggle",label:"Playnite categories",info:"Imports your Playnite categories as PC shelf filter groups.",ns:true,nosave:true,get:()=>!!ADD.pnOn.cats,set:v=>{ADD.pnOn.cats=!!v},sub:()=>({text:`${P.categoryCount} categor${P.categoryCount===1?"y":"ies"}`})})}
+    R.push({t:"toggle",label:"Manual PC games",info:"Games you added to Playnite by hand: each gets a case with its program, launch options and cover.",ns:true,nosave:true,get:()=>!!ADD.pnOn.pc,set:v=>{ADD.pnOn.pc=!!v;addReset()},sub:()=>({text:`${P.pc.length} game${P.pc.length===1?"":"s"}`})});
+    if(ADD.pnOn.pc&&P.pc.length)R.push({t:"toggle",label:"Put manual PC games on the PC shelf",info:"On: adds imported PC programs to the PC shelf. Off: puts them on the Custom shelf.",ns:true,nosave:true,get:()=>ADD.pnOn.toPc!==false,set:v=>{ADD.pnOn.toPc=!!v}});
     for(const [sys,c] of Object.entries(P.consoles||{}))R.push({t:"toggle",label:`${name(sys)} games`,info:`Adds ${c.dirs.join(", ")} as ${name(sys)} games folders${c.emulatorDir?`, and Playnite's emulator if ${name(sys)} has none yet`:""}.`,ns:true,nosave:true,get:()=>!!ADD.pnOn[sys],set:v=>{ADD.pnOn[sys]=!!v},sub:()=>({text:`${c.count} game${c.count===1?"":"s"} · ${c.dirs.length} folder${c.dirs.length===1?"":"s"}`})});
-    const s=P.skipped||{},left=[s.store?`${s.store} store game${s.store===1?"":"s"} (Boxshelf reads those stores itself)`:"",s.hidden?`${s.hidden} hidden`:"",s.link?`${s.link} started by a link`:"",s.nothing?`${s.nothing} with nothing to start`:""].filter(Boolean);
+    const s=P.skipped||{},left=[s.store?((P.ownedCount||0)>0?`${s.store} installed store game${s.store===1?"":"s"} (read directly from their launchers)`:`${s.store} store game${s.store===1?"":"s"} (Boxshelf reads those stores itself)`):"",s.hidden?`${s.hidden} hidden`:"",s.link?`${s.link} started by a link`:"",s.nothing?`${s.nothing} with nothing to start`:""].filter(Boolean);
     if(left.length)R.push(infoRow("Left out","",{text:left.join(" · ")}));
     R.push(A("Import",()=>`Import`,"Adds what's ticked above. Remove what was imported (below) takes it all away again.",pnImport,{ns:true}));
     if(ADD.pnOn.pc&&P.pc.length){R.push(H("Its PC games"));P.pc.forEach(g=>R.push({t:"toggle",label:g.title,info:g.exe,ns:true,nosave:true,get:()=>ADD.pnPick.has(g.key),set:v=>{v?ADD.pnPick.add(g.key):ADD.pnPick.delete(g.key)},sub:()=>({text:g.there===false?"Its program isn't on this PC":g.exe.split(/[\\/]/).pop(),cls:g.there===false?"warn":""})}))}}
@@ -1685,7 +1957,9 @@ function route(page,o){if(!page)return;o=o||{};if(RG_SUB&&RG_SUB[page]&&MORE[RG_
   if(page==="coversearch"&&o.id){coverSearch={id:String(o.id),title:String(o.title||""),term:String(o.term||o.title||"")};
     MORE.coversearch={id:"coversearch",name:"Search for a cover",lead:`Covers for ${coverSearch.title} under another name.`,rows:[{t:"dyn",fn:coverSearchRows}]};
     goSecId(/^(steam|epic)-/.test(coverSearch.id)?"pc":"custom");focus="page";rowI=0;openSub({kind:"more",id:"coversearch"});return}
+  if(page==="pc-edit"&&MORE["pc-edit"]){goSecId("pc");focus="page";rowI=0;inMore("pc-edit");return}
   // (beta.9) any page of its own by its id (Android's Ports & custom APKs, Video previews…): opened in the section that holds it
+  if(page==="lib-pc"&&MORE["lib-pc"]){goSecId("consoles");focus="page";rowI=0;const k=libTileList().findIndex(c=>c._pcTile);if(k>=0)ci=k;openSub({kind:"more",id:"lib-pc"});return}
   if(MORE[page]&&!PAGE_MAP[page]){const s=SECTIONS.find(x=>x&&Array.isArray(x.rows)&&x.rows.some(r=>r&&r.pg===page));if(s){goSecId(s.id);focus="page";rowI=0;openSub({kind:"more",id:page});return}}
   if(page==="rename"&&o.ref){const file=String(o.fileTitle||o.title||""),cur=String(o.title||"");renameState={ref:o.ref,name:cur,saved:cur,file,renamed:!!o.fileTitle&&o.fileTitle!==cur};
     MORE.rename={id:"rename",name:`Rename ${cur}`.slice(0,60),lead:o.fileTitle&&o.fileTitle!==cur?`Its file's name: ${o.fileTitle}`:"Give this game the name you want on your shelf.",rows:[{t:"dyn",fn:renameRows}]};
@@ -1700,13 +1974,13 @@ function route(page,o){if(!page)return;o=o||{};if(RG_SUB&&RG_SUB[page]&&MORE[RG_
   if(page==="artgame"||page==="artstudio"){goSecId("art");focus="page";rowI=0;if(!api.artStudio||!o.systemId)return;inMore("art-studio");sRet=-1;stack=[];
     if(page==="artgame"&&o.file){stack=[{v:"games",sys:o.systemId,i:0,y:0,zone:"grid"}];studio={v:"pick",sys:o.systemId,file:o.file,title:o.title||"",part:"front",i:-1,y:0};sDirect=studio}
     else studio={v:"games",sys:o.systemId,i:0,y:0};sSig="";return}
-  if(consoleList().some(c=>c.id===page)){goSecId("consoles");ci=tileList().findIndex(c=>c.id===page);subRet=0;sub={kind:"console",id:page};rowI=0;focus="page";if(page==="gc"&&api.findIpl&&iplCap())api.findIpl("gc").then(r=>{ipl=r;bump()}).catch(()=>{});return}
+  if(consoleList().some(c=>c.id===page)){goSecId("consoles");ci=libTileList().findIndex(c=>c.id===page);subRet=0;sub={kind:"console",id:page};rowI=0;focus="page";if(page==="gc"&&api.findIpl&&iplCap())api.findIpl("gc").then(r=>{ipl=r;bump()}).catch(()=>{});return}
   const m=PAGE_MAP[page];if(!m)return;if(m.svc){goSecId("acct");focus="page";rowI=0;subRet=Math.max(0,rowsOf(sec()).findIndex(r=>r.status===m.svc));sub={kind:"svc",id:m.svc};return}const [id,label]=Array.isArray(m)?m:[m];goSecId(id);focus="page";rowI=0;if(label){const is=r=>r.label===label||r.was===label; /* (was: a row a platform renamed keeps its old name for links) */let k=rowsOf(sec()).findIndex(is);
-    if(k<0){const pg=rowsOf(sec()).map(r=>r.pg).filter(Boolean).find(g=>rowsOf(expand(MORE[g])).some(is));if(pg){inMore(pg);k=rowsOf(sec()).findIndex(is)}} // a row that lives on one of the section's sub-pages
+    if(k<0){const pgs=rowsOf(sec()).map(r=>r.pg).filter(Boolean);if(SECTIONS[secI]&&SECTIONS[secI].id==="consoles"&&MORE["lib-pc"])pgs.push("lib-pc");const pg=pgs.find(g=>rowsOf(expand(MORE[g])).some(is));if(pg){inMore(pg);k=rowsOf(sec()).findIndex(is)}} // a row that lives on one of the section's sub-pages
     if(k<0){const j=SECTIONS.findIndex(s=>rowsOf(expand(s)).some(is));if(j>=0){goSec(j);focus="page";k=rowsOf(sec()).findIndex(is)}} // (a row a platform moved to another section)
     if(k>=0)rowI=k}}
 // a deep link into one of the current section's sub-pages: B comes back to the row that opens it
-function inMore(id){const at=rowsOf(sec()).findIndex(r=>r.pg===id);if(at<0)return;subRet=at;sub={kind:"more",id};rowI=0}
+function inMore(id){let at=rowsOf(sec()).findIndex(r=>r.pg===id);if(at<0&&id==="lib-pc"&&MORE["lib-pc"])at=Math.max(0,rowsOf(sec()).findIndex(r=>r.t==="consoles"));if(at<0)return;subRet=at;sub={kind:"more",id};rowI=0}
 function prep(inf,opts){opts=opts||{};ensureDom();openId++;info=inf;cfg=clone(inf.config);ensureCfg();colRowsBy.clear();ADD.rows=null;COV.n=null;sw2Rm=false;sDirect=0;
   /* (beta.12) a RomM pairing left showing when Settings closed: its poll stopped with that visit, so it's cancelled, not shown stale */if(RM.pair&&RM.pair.on){RM.pair=null;try{api.rommPairCancel().catch(()=>{})}catch{}} /* (beta.8) rows built for the last visit held that visit's copy of the settings */
   studioClear();sRet=0;sInfo=null;sInfoBusy=false;sGames={};sCands={};sSets={};sBusy={};needRescan=false;raChanged=false;pending=false;raEmu=null;emuAsk=null;listSig="";edit=null;grab=null;results=null;query="";preSearch=null;sub=null;secI=0;rowI=0;ci=0;focus="side";infoOpen=false;det=null;ipl=null;pathOk={};status={};askT={};displays=null;outputs=null;hidden=null;readWhere=null;readOld=null;mInfo=null;mInfoBusy=false;mGames={};mCands={};mBusy={};mMsg={};
@@ -1714,7 +1988,7 @@ function prep(inf,opts){opts=opts||{};ensureDom();openId++;info=inf;cfg=clone(in
   try{const g=window.BS_activePad?window.BS_activePad():[...(navigator.getGamepads?navigator.getGamepads():[])].find(x=>x&&x.connected);if(g)padId=g.id}catch{}
   document.body.classList.toggle("bss-reduce",rmOn());
   applyTint();build();kidOpen=false;kidOpts=opts;if(kidLocked()){SECTIONS=[kidLockSection()];sideSig="";focus="page";rowI=0;return} /* (beta.14) Kid mode: the PIN first */route(opts.page,opts)}
-function show(inf,opts){if(window.Shelf&&Shelf.previewStop)Shelf.previewStop(); /* (beta.7: a playing preview ends when Settings opens) */prep(inf,opts);E.osk.classList.remove("on");root.classList.add("on");root.setAttribute("aria-hidden","false");isOpen=true;active=true;cover(true);fit();render();startPoll();loadAsync();
+function show(inf,opts){if(window.Shelf&&Shelf.previewStop)Shelf.previewStop(); /* (beta.7: a playing preview ends when Settings opens) */pcEditCache=null;pcCatRowsCache.clear();pcEdQ="";prep(inf,opts);E.osk.classList.remove("on");root.classList.add("on");root.setAttribute("aria-hidden","false");isOpen=true;active=true;cover(true);fit();render();startPoll();loadAsync();
 }
 // (beta.10) how many games the last library scan found (every console's, from Shelf.gameCounts), for the rescan's "Found N new games"
 function libTotal(){const m=shelf("gameCounts");if(!m||typeof m!=="object")return null;let n=0;for(const k in m)if(typeof m[k]==="number")n+=m[k];return n}
@@ -1749,7 +2023,7 @@ let legacySnap="",legacyDl=0;
 const legacyKey=()=>JSON.stringify([cfg.systems,cfg.steam,cfg.apps,cfg.ui.artLibrary,cfg.ui.shelfOrder]);
 function resume(){if(!isOpen)return;if(legacyKey()!==legacySnap||(Setup.downloads?Setup.downloads():0)!==legacyDl)needRescan=true;
   // listSig: rebuild the row elements too, or they'd keep the previous build's row objects (a console page's rows capture their config)
-  ensureCfg();listSig="";build();root.classList.add("on");active=true;cover(true);hidden=null;const h=shelf("hiddenList");Promise.resolve(h).then(l=>{hidden=Array.isArray(l)?l:[];bump()}).catch(()=>{});
+  ensureCfg();listSig="";build();root.classList.add("on");active=true;cover(true);hidden=null;pcEditCache=null;const h=shelf("hiddenList");Promise.resolve(h).then(l=>{hidden=Array.isArray(l)?l:[];bump()}).catch(()=>{});
   const n=rowsOf(sec()).length;rowI=Math.min(rowI,Math.max(0,n-1));fit();render();startPoll()}
 
 /* ---------- Art Studio (1.67) ---------- */
@@ -2814,12 +3088,13 @@ function renderPage(){
       if(r.t==="head"){if(r.text){const d=document.createElement("div");d.className="bss-head";d.innerHTML=`<span>${esc(r.text)}</span>${r.em?`<em>${esc(r.em()||"")}</em>`:""}`;d._r=r;list.append(d)}return}
       const idx=k++;
       if(r.t==="consoles"){const wrap=document.createElement("div");wrap.className="bss-consoles";
-        tileList().forEach((c,j)=>{const d=document.createElement("div");d.className="bss-ctile "+(conState(c)||"none");d.innerHTML=`<b>${esc(c.name)}</b><span>${esc(emuShownName(c))}</span><em>${esc(conStatus(c))}</em>`;
+        libTileList().forEach((c,j)=>{const d=document.createElement("div");const st=c._pcTile?pcTileState():conState(c),subT=c._pcTile?"Steam, Epic & more":emuShownName(c),stat=c._pcTile?pcTileStatus():conStatus(c);
+          d.className="bss-ctile "+(st||"none");d.innerHTML=`<b>${esc(c.name)}</b><span>${esc(subT)}</span><em>${esc(stat)}</em>`;
           d.onmouseenter=()=>{if(device==="mouse"&&focus!=="osk"&&!edit&&!(focus==="page"&&rowI===idx&&ci===j)){focus="page";rowI=idx;ci=j;render()}};
-          d.onclick=()=>{if(edit)commitEdit();ci=j;rowI=idx;focus="page";openConsole(c.id)};wrap.append(d)});
+          d.onclick=()=>{if(edit)commitEdit();ci=j;rowI=idx;focus="page";if(c._pcTile)openPcFromGrid();else openConsole(c.id)};wrap.append(d)});
         list.append(wrap);rowEls[idx]=wrap;gridEl=wrap;return}
       const R=r.t==="result"?r.row:r,d=document.createElement("div"),editing=edit&&sameRow(edit.row,r)&&idx===rowI;
-      d.className="bss-row"+(r.t==="theme"?" theme":"")+(editing?" editing":"")+(r.dim?" dis":"");
+      d.className="bss-row"+(r.t==="theme"?" theme":"")+(editing?" editing":"")+(r.dim?" dis":"")+(r.cls?" "+r.cls:"");
       d.innerHTML=`<div class="lbl"><span class="nm">${r.t==="result"?hi(r.label):esc(r.label)}</span>${r.t==="result"?`<span class="where">${esc(r.where)}</span>`:'<span class="sub"></span>'}</div><span class="chg"></span><div class="bss-val"></div>`;
       d._r=r;d._sub=d.querySelector(".sub")||{className:"",_h:""};d._val=d.querySelector(".bss-val");
       // the handheld (Android, 0.3.4): no info column; the focused row shows its own explanation under its name (android.css)
@@ -2841,7 +3116,7 @@ function renderPage(){
   rowEls.forEach(el=>{if(el&&el!==gridEl&&el._r)updateRow(el,el._r)});
   E.list.querySelectorAll(".bss-pairbox").forEach(el=>{const h=el._fn?el._fn():pairHtml();if(el._h!==h){el._h=h;el.innerHTML=h}});
   E.list.querySelectorAll(".bss-head").forEach(h=>{const r=h._r;if(r&&r.em){const em=h.querySelector("em"),t=r.em()||"";if(em&&em.textContent!==t)em.textContent=t}});
-  if(gridEl)tileList().forEach((c,j)=>{const t=gridEl.children[j];if(!t)return;const cls="bss-ctile "+(conState(c)||"none"),st=conStatus(c);if(!t.classList.contains("cur")&&t.className!==cls)t.className=cls;const em=t.querySelector("em");if(em.textContent!==st)em.textContent=st});
+  if(gridEl)libTileList().forEach((c,j)=>{const t=gridEl.children[j];if(!t)return;const cs=c._pcTile?pcTileState():conState(c),cls="bss-ctile "+(cs||"none"),st=c._pcTile?pcTileStatus():conStatus(c);if(!t.classList.contains("cur")&&t.className!==cls)t.className=cls;const em=t.querySelector("em");if(em.textContent!==st)em.textContent=st});
   // the highlight and the scroll position: no rebuild for a move
   const on=focus==="page"||focus==="edit"||(focus==="osk"&&!!edit);
   rowEls.forEach((el,i)=>{if(!el||el===gridEl)return;el.classList.toggle("cur",on&&i===rowI);el.classList.toggle("pre",on&&i===rowI-1)});
@@ -2861,10 +3136,10 @@ function defLabel(R){if(R.t==="toggle")return R.d?"On":"Off";if(R.t==="slider")r
 function renderInfo(){const r=curRow(),s=sec();E.info.classList.toggle("open",infoOpen&&!!r);let st="",meta=[];
   if((focus==="search"||focus==="osk")&&!edit){E.ih.textContent="Search";E.ip.textContent=device==="pad"?"Use the keyboard below. Results update as you type; press "+startWord()+" (or Done) to go to them.":"Just type — results update as you go. Down or Enter moves into the results, Esc clears.";E.im.textContent="";E.is.innerHTML="";E.it.innerHTML="";return}
   if(!r){E.ih.textContent=s.name;E.ip.textContent=s.lead||"";E.im.textContent="";E.is.innerHTML="";E.it.innerHTML=`<div class="pv">${device==="pad"?"Right or "+btnName("a"):"→ or Enter"} opens this page</div>`;return}
-  const R=r.t==="result"?r.row:r,c=r.t==="consoles"?tileList()[ci]:null;
+  const R=r.t==="result"?r.row:r,c=r.t==="consoles"?libTileList()[ci]:null;
   E.ih.textContent=c?c.name:r.label;
-  E.ip.textContent=c?`Uses ${c.emulatorName||"its emulator"}. ${conStatus(c)}.`:(r.info||"");
-  if(c)st=stHtml(conState(c)==="ok"?"ok":conState(c)==="warn"?"warn":"none",conStatus(c));
+  E.ip.textContent=c?(c._pcTile?"Steam, Epic, GOG, Ubisoft, EA, Xbox, Playnite, categories and bulk PC covers — all PC shelf settings in one place.":`Uses ${c.emulatorName||"its emulator"}. ${conStatus(c)}.`):(r.info||"");
+  if(c){const cs=c._pcTile?pcTileState():conState(c),stat=c._pcTile?pcTileStatus():conStatus(c);st=stHtml(cs==="ok"?"ok":cs==="warn"?"warn":"none",stat)}
   E.im.textContent=R&&(typeof R.more==="function"?R.more():R.more)||"";
   if(R&&R.status){const x=svcState(R.status);st=svcChip(R.status);if(x.at&&(x.state==="ok"||x.state==="fail"))meta.push(["",`Checked ${when(x.at)}`])}
   if(R&&R.emu){st=emuChip(R.emu);const e=emuOf(R.emu);if(e&&e.state!=="unsupported"&&e.state!=="no-emulator")meta.push(["pv",emuAsk===R.emu?`${btnLabel("a")} again opens ${e.emulator||"the emulator"}`:`${btnLabel("a")} shows how · then opens ${e.emulator||"the emulator"}`])}
@@ -2979,7 +3254,7 @@ function input(a,rep){
     else if(a==="b"){close();return}
   }else{
     if(grab){if(a==="up")moveOrder(-1);else if(a==="down")moveOrder(1);else if(a==="a"||a==="b"){grab=null;play("tick",1)}else if(a==="lt"||a==="rt"){}render();return}
-    if(r&&r.t==="consoles"&&(a==="up"||a==="down"||a==="left"||a==="right")){const L=consoleList().length,G=E.root.classList.contains("narrow")?3:4;
+    if(r&&r.t==="consoles"&&(a==="up"||a==="down"||a==="left"||a==="right")){const L=libTileList().length,G=E.root.classList.contains("narrow")?3:4;
       if(a==="right"){if(ci<L-1){ci++;play("tick",1)}render();return}
       if(a==="left"){if(ci%G>0){ci--;play("tick",-1);render();return}if(rep){return}focus="side";render();return}
       if(a==="down"&&ci+G<L){ci+=G;play("tick",1);render();return}

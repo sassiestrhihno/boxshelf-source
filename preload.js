@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld('boxshelf', {
   launchPc: id => call('launch:pc', { id }), // (beta.4) Epic, Quiver and hand-added games, by id
   findQuiver: () => call('pc:findQuiver'),
   pcStatus: () => call('pc:status'),
+  importSteamCats: () => call('pc:importSteamCats'),
+  importPlayniteCats: () => call('pc:importPlayniteCats'),
   // (beta.5) a PC game's cover picker
   pcCoverOptions: (id, term) => call('pccover:options', { id, term }),
   pcCoverUse: (id, key) => call('pccover:use', { id, key }),

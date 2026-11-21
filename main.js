@@ -54,6 +54,7 @@ const racores = require('./main/racores'); // (beta.7) RetroArch cores downloade
 const previews = require('./main/previews'); // (beta.7) video previews
 const ytclips = require('./main/ytclips'); // (beta.8) console trailers: YouTube trailers kept as short clips
 const addgames = require('./main/addgames'); // (beta.7) Add games: several at once, a folder, Playnite
+const pccats = require('./main/pccats');
 const x360 = require('./main/x360');
 const n3ds = require('./main/n3ds');
 const kyty = require('./main/kyty'); // PS5: Kyty's launch settings and the KytyJets preset
@@ -1913,6 +1914,45 @@ handle('launch:pc', async ({ id }) => { coversForGame(); /* (beta.14) */
 // (beta.5) a PC game's cover picker (main/pccovers.js): the page names the game by id and an option by key only
 const pcLookup = id => { id = String(id || ''); const m = /^steam-(\d{1,10})$/.exec(id); if (m) return { id, appid: m[1], title: '' }; const g = pcgames.byId(id); return g ? { id, title: g.title } : null; };
 const pcGameOf = id => { const g = pcLookup(id); if (!g) throw new Error("That game isn't on the shelf any more."); return g; };
+function mergePcGroups(existing, incoming) {
+  const out = Array.isArray(existing) ? existing.map(g => ({ ...g, ids: [...(g.ids || [])] })) : [];
+  let added = 0, updated = 0;
+  for (const g of Array.isArray(incoming) ? incoming : []) {
+    if (!g || !g.id || !g.name) continue;
+    const hit = out.find(x => x.id === g.id || x.name.toLowerCase() === g.name.toLowerCase());
+    if (hit) {
+      hit.ids = [...new Set([...(hit.ids || []), ...(g.ids || [])])];
+      if (g.kind === 'dynamic' && g.rule) { hit.kind = 'dynamic'; hit.rule = g.rule; }
+      updated++;
+    } else if (out.length < 50) {
+      out.push(g);
+      added++;
+    }
+  }
+  return { groups: out, added, updated };
+}
+handle('pc:importSteamCats', async () => {
+  const libs = lastLib || await buildLibrary();
+  const pcs = (libs || []).filter(s => s && s.kind === 'steam').flatMap(s => s.games || []).filter(g => g && g.kind === 'steam');
+  const r = pccats.importSteam([cfg.steam && cfg.steam.path, steamMain].filter(Boolean), pcs);
+  if (!r.file) throw new Error('Could not find Steam collections (cloud-storage-namespace-1.json).');
+  const merged = mergePcGroups(cfg.pc && cfg.pc.groups, r.groups);
+  const curFav = new Set(Array.isArray(cfg.ui && cfg.ui.favorites) ? cfg.ui.favorites.map(String) : []);
+  let favAdded = 0;
+  for (const fid of r.favorites || []) if (!curFav.has(fid)) { curFav.add(fid); favAdded++; }
+  applyCfg({ ...cfg, pc: { ...(cfg.pc || {}), groups: merged.groups }, ui: { ...(cfg.ui || {}), favorites: [...curFav] } });
+  return { ok: true, added: merged.added, updated: merged.updated, favAdded, groups: cfg.pc.groups, favorites: cfg.ui.favorites };
+});
+handle('pc:importPlayniteCats', async () => {
+  const found = addgames.find('');
+  if (!found) throw new Error('Playnite wasn\'t found.');
+  const libs = lastLib || await buildLibrary();
+  const pcs = (libs || []).filter(s => s && s.kind === 'steam').flatMap(s => s.games || []).filter(g => g && g.kind === 'steam');
+  const r = await pccats.importPlaynite(found, pcs, f => addgames.read(f));
+  const merged = mergePcGroups(cfg.pc && cfg.pc.groups, r.groups);
+  applyCfg({ ...cfg, pc: { ...(cfg.pc || {}), groups: merged.groups } });
+  return { ok: true, added: merged.added, updated: merged.updated, groups: cfg.pc.groups };
+});
 let pcCoverT = 0; // (beta.9: one shelf refresh for a run of covers, not one per cover)
 // (beta.12) a chosen cover gets a new address each time (the same file name used to give the same bsfile:// address, so
 // a second pick showed the old picture from the cache and the shelf saw nothing new), and the shelf's rescan is a fresh
