@@ -164,6 +164,20 @@ body.shine-off .sheen{display:none}
 .g{display:inline-grid;place-items:center;min-width:22px;height:18px;padding:0 5px;border-radius:5px;border:1px solid rgba(255,255,255,.55);font-size:10px;font-weight:600;line-height:1}
 .g.shape{border:0;padding:0;min-width:18px}
 .g.shape svg{width:19px;height:19px}
+.hints.h-off{display:none!important}
+.hints.h-pills{background:transparent!important;border-color:transparent!important;backdrop-filter:none!important;padding:0;gap:6px 8px}
+.hints.h-pills .hint{background:rgba(12,14,22,.62);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(12px)}
+.hints.h-buttons{background:transparent!important;border-color:transparent!important;backdrop-filter:none!important;padding:0;gap:6px 10px}
+.hints.h-buttons .hint{background:transparent;text-shadow:0 1px 6px rgba(0,0,0,.9)}
+.hints.h-buttons .hint:hover{background:rgba(255,255,255,.12)}
+.hints.h-small{padding:4px 6px;gap:2px 4px}
+.hints.h-small .hint{font-size:10.5px;padding:3px 7px;gap:5px}
+.hints.h-small .g{min-width:18px;height:15px;font-size:9px;padding:0 4px}
+.hints.h-small .g.shape svg{width:15px;height:15px}
+.hints.h-large{padding:8px 12px;gap:6px 10px}
+.hints.h-large .hint{font-size:14.5px;padding:7px 14px;gap:9px}
+.hints.h-large .g{min-width:26px;height:22px;font-size:12px;padding:0 7px}
+.hints.h-large .g.shape svg{width:23px;height:23px}
 
 .letter-flash{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);font-size:min(22vh,180px);font-weight:700;pointer-events:none;opacity:0;z-index:7;text-shadow:0 10px 60px rgba(0,0,0,.5)}
 .letter-flash.go{animation:flash .9s ease-out}

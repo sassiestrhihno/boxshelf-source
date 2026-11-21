@@ -275,8 +275,9 @@
     if (S.eat) { if (k === S.eat && e.repeat) { e.preventDefault(); e.stopImmediatePropagation(); return; } S.eat = ''; }
     if (window.BS_TOUR && BS_TOUR.on()) return; // (the tour has the keys, this screen included)
     if (!S.open) {
-      const slash = k === '/' && !e.ctrlKey && !e.altKey && !e.metaKey, ctrlF = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (k === 'f' || k === 'F');
-      if (!slash && !ctrlF) return;
+      const fk = (window.Shelf && Shelf.keyFor && Shelf.keyFor('find')) || '/';
+      const findKey = String(k || '').toLowerCase() === fk && !e.ctrlKey && !e.altKey && !e.metaKey, ctrlF = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (k === 'f' || k === 'F');
+      if (!findKey && !ctrlF) return;
       if (typing(e.target) || !window.Shelf || !Shelf.getMode || Shelf.getMode() !== 'browse' || (Shelf.quickMenuOpen && Shelf.quickMenuOpen())) return;
       e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) open('kbd');
       return;

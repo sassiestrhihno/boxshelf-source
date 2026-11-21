@@ -3823,40 +3823,61 @@ async function preloadModels(){
 }
 addEventListener("pointermove",()=>{if(attract)wake()},{capture:true,passive:true});
 // (beta.7) in Details the bar shows only what Details does (Play, Inspect, moving along, Back), not the shelf's whole list
+const KEY_DEF={flip:"f",fav:"h",hide:"x",details:"i",inspect:"v",shuffle:"r",find:"/",museum:"m",categories:"l",sort:"g",settings:"s",customize:"t"};
+function keyFor(id){const kb=uiNow().keybinds;const v=kb&&typeof kb==="object"&&typeof kb[id]==="string"?kb[id].trim().toLowerCase():"";return v||KEY_DEF[id]||""}
+function keyMatches(eKey,id){const want=keyFor(id);return !!want&&String(eKey||"").toLowerCase()===want}
+function keyCap(k){
+  k=String(k||"");if(k===" ")return "Space";
+  const m={pageup:"PgUp",pagedown:"PgDn",delete:"Del",insert:"Ins",tab:"Tab"};
+  const lk=k.toLowerCase();if(m[lk])return m[lk];
+  if(lk.length===1)return lk.toUpperCase();
+  return lk.replace(/^./,c=>c.toUpperCase());
+}
+function applyHintsUi(u){
+  u=u||uiNow();const el=$("hints");if(!el)return;
+  const st=u.hintsStyle||"bar",sz=u.hintsSize||"normal";
+  el.classList.remove("h-pills","h-buttons","h-off","h-small","h-large");
+  if(st==="pills")el.classList.add("h-pills");
+  else if(st==="buttons")el.classList.add("h-buttons");
+  else if(st==="off")el.classList.add("h-off");
+  if(sz==="small")el.classList.add("h-small");
+  else if(sz==="large")el.classList.add("h-large");
+  renderHints.sig="";renderHints();
+}
 const notDet=()=>mode!=="details",inDet=()=>mode==="details";
 const HINTS=[
-  {act:()=>letter(1),pad:["L1","R1"],kbd:["Z","C"],label:"Letter",when:notDet},
-  {act:()=>sysStep(1),pad:["L2","R2"],kbd:["↑","↓"],label:"System",when:notDet},
-  {act:()=>flip(),pad:["tri"],kbd:["F"],label:"Flip",when:notDet},
-  {act:()=>toggleFav(),pad:["tri"],kbd:["H"],label:"♥ hold",when:notDet},
-  {act:()=>mode==="details"?closeDetails():openDetails(),pad:["sq"],kbd:["I"],label:"Details",when:notDet},
-  {act:()=>play(),pad:["x"],kbd:["Enter"],label:"Play"},
-  {act:()=>openInspect(),pad:["R3"],kbd:["V"],label:"Inspect"},
-  {act:()=>shuffle(),pad:["L3"],kbd:["R"],label:"Shuffle",when:notDet},
-  {act:()=>window.BS_FIND&&BS_FIND.open(),pad:["L3"],kbd:["/"],label:"Find",lo:ANDROID,when:notDet}, /* (beta.12) Find a game (find.js); lo: Android's narrower bar leaves it out (the Search button is beside Menu there) */
-  {act:()=>openMuseum(),pad:["⧉"],kbd:["M"],label:"Museum hold",when:notDet},
-  {act:()=>openSort(),pad:["☰"],kbd:["G"],label:"Sort hold",when:notDet},
-  {act:()=>Setup.open(),pad:["☰"],kbd:["S"],label:"Settings",when:notDet},
+  {id:"letter",act:()=>letter(1),pad:["L1","R1"],kbd:["Z","C"],label:"Letter",when:notDet},
+  {id:"system",act:()=>sysStep(1),pad:["L2","R2"],kbd:["↑","↓"],label:"System",when:notDet},
+  {id:"flip",act:()=>flip(),pad:["tri"],kbd:["F"],label:"Flip",when:notDet},
+  {id:"fav",act:()=>toggleFav(),pad:["tri"],kbd:["H"],label:"♥ hold",when:notDet},
+  {id:"details",act:()=>mode==="details"?closeDetails():openDetails(),pad:["sq"],kbd:["I"],label:"Details",when:notDet},
+  {id:"play",act:()=>play(),pad:["x"],kbd:["Enter"],label:"Play"},
+  {id:"inspect",act:()=>openInspect(),pad:["R3"],kbd:["V"],label:"Inspect"},
+  {id:"shuffle",act:()=>shuffle(),pad:["L3"],kbd:["R"],label:"Shuffle",when:notDet},
+  {id:"find",act:()=>window.BS_FIND&&BS_FIND.open(),pad:["L3"],kbd:["/"],label:"Find",lo:ANDROID,when:notDet}, /* (beta.12) Find a game (find.js); lo: Android's narrower bar leaves it out (the Search button is beside Menu there) */
+  {id:"museum",act:()=>openMuseum(),pad:["⧉"],kbd:["M"],label:"Museum hold",when:notDet},
+  {id:"sort",act:()=>openSort(),pad:["☰"],kbd:["G"],label:"Sort hold",when:notDet},
+  {id:"settings",act:()=>Setup.open(),pad:["☰"],kbd:["S"],label:"Settings",when:notDet},
   {act:()=>dTab(1),pad:["L1","R1"],kbd:["Q","E"],label:DV2?"Sections":"Tabs",when:inDet}, // (beta.7) (beta.12: Windows' Details is one page in sections)
   {act:()=>closeDetails(),pad:["o"],kbd:["Esc"],label:"Back",when:inDet}
 ];
 // The controller version of the bar: tap / hold pairs share one entry
 const PAD_HINTS=[
-  {act:()=>sysStep(1),pad:["L2","R2"],label:"System"},
-  {act:()=>flip(),pad:["tri"],label:"Flip",hold:"♥",when:()=>mode!=="details"},
+  {id:"system",act:()=>sysStep(1),pad:["L2","R2"],label:"System"},
+  {id:"flip",act:()=>flip(),pad:["tri"],label:"Flip",hold:"♥",when:()=>mode!=="details"},
   // in Details, Y is the trailer / achievements (the bar said "Flip · hold ♥" there, and holding Y doesn't favourite)
-  {act:()=>detailsY(),pad:["tri"],label:"Flip",dy:1,when:()=>mode==="details"},
-  {act:()=>mode==="details"?closeDetails():openDetails(),pad:["sq"],label:"Details",when:()=>ANDROID&&notDet()}, /* (beta.12: on Windows / Linux the bar shows Minus for Details, below; X / Square still opens it) */
-  {act:()=>play(),pad:["x"],label:"Play"},
-  {act:()=>openInspect(),pad:["R3"],label:"Inspect"},
-  {act:()=>shuffle(),pad:["L3"],label:"Shuffle",when:notDet},
-  {act:()=>window.BS_FIND&&BS_FIND.open(),pad:["L3"],label:"",hold:"Find",lo:ANDROID,when:notDet}, /* (beta.12) the left stick's click held: Find a game (lo: on the Thor's narrower bar it gives way, as Shuffle does; the Search button is beside Menu there) */
-  {act:()=>Setup.open(),pad:["⧉"],label:"Settings",when:()=>ANDROID&&notDet()},
-{act:()=>openDetails(),pad:["⧉"],label:"Details",when:()=>!ANDROID&&notDet()}, /* (beta.12, Windows / Linux: Minus opens Details; Settings is in the quick menu) */
-  {act:()=>openMuseum(),pad:["⧉"],label:"",hold:"Museum",when:notDet},
-  {act:()=>qmOpen(),pad:["☰"],label:"Menu",when:notDet},
+  {id:"flip",act:()=>detailsY(),pad:["tri"],label:"Flip",dy:1,when:()=>mode==="details"},
+  {id:"details",act:()=>mode==="details"?closeDetails():openDetails(),pad:["sq"],label:"Details",when:()=>ANDROID&&notDet()}, /* (beta.12: on Windows / Linux the bar shows Minus for Details, below; X / Square still opens it) */
+  {id:"play",act:()=>play(),pad:["x"],label:"Play"},
+  {id:"inspect",act:()=>openInspect(),pad:["R3"],label:"Inspect"},
+  {id:"shuffle",act:()=>shuffle(),pad:["L3"],label:"Shuffle",when:notDet},
+  {id:"find",act:()=>window.BS_FIND&&BS_FIND.open(),pad:["L3"],label:"",hold:"Find",lo:ANDROID,when:notDet}, /* (beta.12) the left stick's click held: Find a game (lo: on the Thor's narrower bar it gives way, as Shuffle does; the Search button is beside Menu there) */
+  {id:"settings",act:()=>Setup.open(),pad:["⧉"],label:"Settings",when:()=>ANDROID&&notDet()},
+{id:"details",act:()=>openDetails(),pad:["⧉"],label:"Details",when:()=>!ANDROID&&notDet()}, /* (beta.12, Windows / Linux: Minus opens Details; Settings is in the quick menu) */
+  {id:"museum",act:()=>openMuseum(),pad:["⧉"],label:"",hold:"Museum",when:notDet},
+  {id:"menu",act:()=>qmOpen(),pad:["☰"],label:"Menu",when:notDet},
   {act:()=>panelScroll($("details"),1),pad:["R"],label:"Scroll",when:()=>mode==="details"},
-  {act:()=>openSort(),pad:["☰"],label:"",hold:"Sort",when:notDet},
+  {id:"sort",act:()=>openSort(),pad:["☰"],label:"",hold:"Sort",when:notDet},
   {act:()=>dTab(1),pad:["L1","R1"],label:DV2?"Sections":"Tabs",when:inDet}, // (beta.7)
   {act:()=>closeDetails(),pad:["o"],label:"Back",when:inDet}
 ];
@@ -3919,10 +3940,12 @@ const showPad=()=>inputMode==="pad"||(!!padSeen&&(inputMode!=="kbd"||!kbdEver));
 function renderHints(){pvGuard();bsCtxSoon();
   try{paintMenuGlyph();if(NOTE.el)noteKeys();if(qm.open)qsHints();if(mode==="achv")achHints();if(mode==="customize")custSwitchText();if(mode==="shot")svPaint()}catch{} // the quick menu's own hint bar follows a switch between pad and keyboard too
   const usePad=showPad();const g=curGame();if(DV2&&mode==="details")dvCapGlyph(usePad);
-  const es=!g&&!!emptyShelf();const sig=usePad+"|"+glyphStyle()+"|"+(g&&g.kind)+"|"+!!(g&&g.pick)+"|"+es+"|"+(mode==="details")+"|"+(mode==="details"?detailsYLab().join():"");if(sig===renderHints.sig&&$("hints").childElementCount)return;renderHints.sig=sig; // only rebuilt when something it shows changed
+  const u=uiNow(),hh=new Set(Array.isArray(u.hintsHidden)?u.hintsHidden:[]);
+  const es=!g&&!!emptyShelf();const sig=usePad+"|"+glyphStyle()+"|"+(g&&g.kind)+"|"+!!(g&&g.pick)+"|"+es+"|"+(mode==="details")+"|"+(mode==="details"?detailsYLab().join():"")+"|"+JSON.stringify([u.hintsStyle,u.hintsSize,u.hintsHidden,u.keybinds]);if(sig===renderHints.sig&&$("hints").childElementCount)return;renderHints.sig=sig; // only rebuilt when something it shows changed
   const h=$("hints");h.innerHTML="";
-  (usePad?PAD_HINTS:HINTS).forEach(hn=>{if(hn.when&&!hn.when(rawItem()))return;const b=document.createElement("button");b.type="button";b.className="hint"+(/Letter|Shuffle/.test(hn.label)||hn.lo?" hint-lo":"");
-    const keys=(usePad?hn.pad.map(glyph):hn.kbd.map(k=>`<span class="g">${k}</span>`)).join("");
+  (usePad?PAD_HINTS:HINTS).forEach(hn=>{if(hn.id&&hh.has(hn.id))return;if(hn.when&&!hn.when(rawItem()))return;const b=document.createElement("button");b.type="button";b.className="hint"+(/Letter|Shuffle/.test(hn.label)||hn.lo?" hint-lo":"");
+    const kList=(!usePad&&hn.id&&KEY_DEF[hn.id])?[keyCap(keyFor(hn.id))]:hn.kbd;
+    const keys=(usePad?hn.pad.map(glyph):kList.map(k=>`<span class="g">${k}</span>`)).join("");
     const label=hn.label==="Play"&&(es||(g&&g.kind==="setup"))?"Set up":hn.label==="Play"&&g&&(g.kind==="app"||g.kind==="emulator")?"Open":hn.label==="Play"&&g&&g.kind==="random"?(g.pick?"Play":"Pick a game"):hn.label;
     const dy=hn.dy?detailsYLab():null,hold=dy?dy[1]:hn.hold,lab=dy?dy[0]:usePad?label:label==="♥ hold"?"♥ Favorite":label.replace(/ hold$/,"");
     b.innerHTML=`<span class="keys">${keys}</span>`+(lab?`<span class="lab"></span>`:"")+(usePad&&hold?`<span class="hold"><i>hold</i> </span>`:"");
@@ -4059,19 +4082,19 @@ addEventListener("keydown",e=>{
   else if(mode==="details"&&(k==="q"||k==="Q"||k==="e"||k==="E")){if(!e.repeat){dMenuClose(true);dTab(k==="q"||k==="Q"?-1:1)}} // (beta.7) Q / E: Details' tabs
   else if(k==="q"||k==="Q"||k==="PageUp")skip(-1);else if(k==="e"||k==="E"||k==="PageDown")skip(1);
   else if(k==="z"||k==="Z")letter(-1);else if(k==="c"||k==="C")letter(1);
-  else if(k==="f"||k==="F"){if(!e.repeat)flip()}
-  else if(k==="i"||k==="I"){if(!e.repeat)(mode==="details"?closeDetails():openDetails())}
-  else if((k==="t"||k==="T")&&mode==="details"){if(!e.repeat)openTrailer()}
+  else if(keyMatches(k,"flip")){if(!e.repeat)flip()}
+  else if(keyMatches(k,"details")){if(!e.repeat)(mode==="details"?closeDetails():openDetails())}
+  else if((k==="t"||k==="T")&&mode==="details"&&keyFor("customize")==="t"){if(!e.repeat)openTrailer()}
   else if((k==="["||k==="]")&&mode==="details"&&!$("dShots").hidden)showShot(shotSel+(k==="]"?1:-1));
-  else if(k==="v"||k==="V"){if(!e.repeat)openInspect()}
-  else if(k==="r"||k==="R"){if(!e.repeat)shuffle()}
-  else if(k==="h"||k==="H"){if(!e.repeat&&(mode==="browse"||mode==="details"))toggleFav()}
-  else if(k==="m"||k==="M"){if(!e.repeat)openMuseum()}
+  else if(keyMatches(k,"inspect")){if(!e.repeat)openInspect()}
+  else if(keyMatches(k,"shuffle")){if(!e.repeat)shuffle()}
+  else if(keyMatches(k,"fav")){if(!e.repeat&&(mode==="browse"||mode==="details"))toggleFav()}
+  else if(keyMatches(k,"museum")){if(!e.repeat)openMuseum()}
   else if(k==="o"||k==="O"){if(!e.repeat&&(mode==="browse"||mode==="details"))openEmulator()}
-  else if(k==="g"||k==="G"){if(!e.repeat)openSort()}
+  else if(keyMatches(k,"sort")){if(!e.repeat)openSort()}
   else if(k==="Home"||k==="p"||k==="P"){if(e.repeat){}else if((mode==="browse"||mode==="details")&&api.openShelfMenu&&cfgInfo&&cfgInfo.config.ui.homeMenu!==false)api.openShelfMenu();else if(k==="Home"&&(mode==="browse"||mode==="details"))go(0)}
-  else if(k==="s"||k==="S"){if(!e.repeat&&(mode==="browse"||mode==="details"))Setup.open()}
-  else if(k==="t"||k==="T"){if(!e.repeat)toggleCustomize()}
+  else if(keyMatches(k,"settings")){if(!e.repeat&&(mode==="browse"||mode==="details"))Setup.open()}
+  else if(keyMatches(k,"customize")){if(!e.repeat)toggleCustomize()}
   else if(k==="F11"){bsF11()}
   else if(k==="Enter"){
     // On the shelf, Enter always plays (even if a button still has focus from a click).
@@ -4846,8 +4869,9 @@ function applyUi_(u){
   if("dimMinutes" in u){if(!(+u.dimMinutes>0))dimWake();dimAt=performance.now()}
   if("attractMinutes" in u||"attract" in u){lastInputAt=performance.now();if(attract)wake()} // a new wait starts from now
   if("effects" in u||"performance" in u){if("performance" in u&&window.Perf)Perf.set(u.performance||"auto");applyEffects();if(window.ThemeFx&&ThemeFx.refresh)ThemeFx.refresh()}
+  if("hintsStyle" in u||"hintsSize" in u||"hintsHidden" in u||"keybinds" in u)applyHintsUi(uiNow());
 }
-function applyUiAll(){const u=uiNow();applyUi_({safeArea:u.safeArea,reduceMotion:u.reduceMotion,clock:u.clock,clock24:u.clock24,confirmButton:u.confirmButton,scrollSpeed:u.scrollSpeed,audioOut:u.audioOut,dimMinutes:u.dimMinutes})}
+function applyUiAll(){const u=uiNow();applyUi_({safeArea:u.safeArea,reduceMotion:u.reduceMotion,clock:u.clock,clock24:u.clock24,confirmButton:u.confirmButton,scrollSpeed:u.scrollSpeed,audioOut:u.audioOut,dimMinutes:u.dimMinutes,hintsStyle:u.hintsStyle,hintsSize:u.hintsSize,hintsHidden:u.hintsHidden,keybinds:u.keybinds})}
 function applyUi(partial){if(!partial||typeof partial!=="object")return;try{if(cfgInfo){const ui=cfgInfo.config.ui;for(const k of Object.keys(partial))ui[k]=partial[k]}applyUi_(partial)}catch(e){console.warn("applyUi",e)}}
 // Hidden games: the list for Settings (from the whole scan, hidden ones included) and the switch itself
 function hiddenList(){const hid=hiddenSet();if(!hid.size||!lastLib)return [];const out=[];lastLib.forEach(s=>(s.games||[]).forEach(g=>{if(hid.has(String(g.id)))out.push({id:String(g.id),title:g.title,system:s.name})}));return out.sort((a,b)=>a.system.localeCompare(b.system)||a.title.localeCompare(b.title))}
@@ -5180,7 +5204,7 @@ window.Shelf={
   setBackground:()=>updateBg(),setTheme:v=>{themeOverride=v;applyTheme()},setMuseumLight:v=>Shelf_setMusLight&&Shelf_setMusLight(v),
   // 1.55 Settings: live previews / changes for safeArea, clock, clock24, reduceMotion, attractMinutes, dimMinutes,
   // confirmButton, scrollSpeed, audioOut, openInto (read at the next start), effects / performance
-  applyUi,hiddenList,setHidden,audioOutputs,
+  applyUi,hiddenList,setHidden,audioOutputs,keyFor,
   gameCounts:()=>{const o={};(lastLib||[]).forEach(s=>{if(s&&s.id)o[s.id]=(s.games||[]).length});return o}, // Settings' console pages and tiles ("13 games")
   caseRatio:id=>{const s=STYLE[id];return s&&s.ratio>0?s.ratio:null}, // (beta.14) the Art Studio's "On your shelf" case takes the shelf's own shape (a DS case, not a tall box)
   caseShape:id=>{const s=STYLE[id];return s?{ratio:s.ratio,depth:s.depth,pack:packOf(s)}:null}, // (beta.14) a console's case: width / height, thickness / width and what it's made of

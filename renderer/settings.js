@@ -223,6 +223,7 @@ function build(){
       {when:()=>!!api.customThemeCreate,keys:"custom own themes picture wallpaper photo image background make create folder"}),
     C("Clock","ui.clock",[["full","Day, date and time"],["time","Time only"],["off","Hidden"]],"full","What shows in the top corner of the shelf.",{keys:"time date",live:v=>applyUi({clock:v})}),
     T("24-hour clock","ui.clock24",false,"Shows 18:30 instead of 6:30 PM.",{keys:"time 24 hour",live:v=>applyUi({clock24:v})}),
+    M("Shelf shortcuts & bar","shelf-hints","Choose which shortcuts show on the main screen, remap keyboard keys, and adjust bar size and background.","Customize the bottom shortcut bar and keyboard hotkeys on the main shelf.",[{t:"dyn",fn:shelfHintsRows}],{keys:"shortcuts hints bar remap keys buttons size background hide show hotkeys atalhos barra botoes tamanho fundo remapear",sub:()=>{const st=gp("ui.hintsStyle")||"bar",sz=gp("ui.hintsSize")||"normal";return {text:`${({bar:"Bar",pills:"Floating",buttons:"Buttons only",off:"Hidden"})[st]||"Bar"} · ${({small:"Small",normal:"Normal",large:"Large"})[sz]||"Normal"}`}}}),
     // a second screen (the AYN Thor's bottom screen): only offered when the device has one (Android: android-bottom.js)
     C("Bottom screen","ui.bottomScreen",[["on","On"],["off","Off"]],"on","The small screen under the shelf shows the game you're on: its case to turn and open with a finger, its details, trophies and big touch buttons. While a game is playing the bottom screen is always handed to the game, so DS and 3DS emulators and bottom-screen mods get all of it.",{when:()=>!!(api.bottomScreen&&api.bottomScreen.available()),keys:"bottom screen second display dual thor touch ds 3ds",live:v=>api.bottomScreen.set(v!=="off"),
       // (0.4.0) what the native side really does (off by default on devices that aren't AYN's: a TV or a cast isn't a bottom screen)
@@ -756,6 +757,44 @@ async function emuAct(sys){const e=emuOf(sys);if(!e||e.state==="unsupported"||e.
   if(e.state==="no-emulator"){openConsole(sys);return}
   if(emuAsk===sys&&api.launchEmulator){emuAsk=null;await save();toast(`Opening ${e.emulator||"the emulator"}…`);try{await api.launchEmulator(sys)}catch(err){toast(errMsg(err))}render();return}
   emuAsk=sys;infoOpen=true;play("open");render()}
+let remapWait=null;
+const SH_DEF={flip:"f",fav:"h",hide:"x",details:"i",inspect:"v",shuffle:"r",find:"/",museum:"m",categories:"l",sort:"g",settings:"s",customize:"t"};
+const SH_VIS=[["letter","Letter"],["system","System"],["flip","Flip"],["fav","♥ Favorite"],["hide","Hide"],["details","Details"],["play","Play"],["inspect","Inspect"],["shuffle","Shuffle"],["find","Find"],["museum","Museum"],["categories","Categories"],["sort","Sort"],["settings","Settings"]];
+const SH_REMAP=[["flip","Flip case"],["fav","♥ Favorite"],["hide","Hide game"],["details","Details"],["inspect","3D Inspect"],["shuffle","Shuffle"],["find","Find game"],["museum","Museum"],["categories","PC categories"],["sort","Sort & filter"],["settings","Settings"],["customize","Customize"]];
+const SH_MODS=new Set(["shift","control","alt","meta","capslock","numlock","scrolllock"]);
+const SH_RESERVED=new Set(["escape","enter","backspace","arrowup","arrowdown","arrowleft","arrowright","f11","tab"]);
+function shKeyName(k){
+  k=String(k||"");if(k===" ")return "Space";
+  const m={pageup:"PgUp",pagedown:"PgDn",delete:"Del",insert:"Ins",tab:"Tab"};
+  const lk=k.toLowerCase();if(m[lk])return m[lk];
+  return lk.length===1?lk.toUpperCase():lk.replace(/^./,c=>c.toUpperCase());
+}
+function shelfHintsRows(){
+  const ui=cfg.ui=cfg.ui||{};if(!Array.isArray(ui.hintsHidden))ui.hintsHidden=[];if(!ui.keybinds||typeof ui.keybinds!=="object")ui.keybinds={};
+  const out=[
+    H("Appearance"),
+    C("Bar style","ui.hintsStyle",[["bar","With background"],["pills","Floating buttons"],["buttons","Buttons only"],["off","Hidden"]],"bar","How the shortcut bar at the bottom looks: a full glass bar, floating pill buttons, bare buttons with no background, or hidden completely.",{ns:true,live:v=>applyUi({hintsStyle:v})}),
+    C("Shortcut size","ui.hintsSize",[["small","Small"],["normal","Normal"],["large","Large"]],"normal","How big the shortcut buttons and text appear on the shelf.",{ns:true,live:v=>applyUi({hintsSize:v}),when:()=>gp("ui.hintsStyle")!=="off"}),
+    H("Show on the main screen"),
+  ];
+  for(const [id,label] of SH_VIS){
+    out.push(T(label,"",true,`Show or hide the ${label} button on the bottom shortcut bar.`,{
+      get:()=>!ui.hintsHidden.includes(id),
+      set:v=>{const set=new Set(ui.hintsHidden);if(v)set.delete(id);else set.add(id);ui.hintsHidden=[...set];applyUi({hintsHidden:[...ui.hintsHidden]})},
+      ns:true,
+    }));
+  }
+  out.push(H("Keyboard shortcuts (press Enter, then the new key)"));
+  for(const [id,label] of SH_REMAP){
+    const curK=ui.keybinds[id]||SH_DEF[id];
+    out.push(A(label,()=>remapWait===id?"Press a key…":shKeyName(curK),`Press Enter, then press the new key for ${label}. Backspace resets to default (${shKeyName(SH_DEF[id])}), Esc cancels.`,()=>{remapWait=remapWait===id?null:id;bump()},{ns:true}));
+  }
+  out.push(H(""),A("Reset shortcuts to default","Reset","Restores default bar style, size, visible shortcuts and keyboard hotkeys. Press twice.",()=>twice("shreset",()=>{
+    ui.hintsStyle="bar";ui.hintsSize="normal";ui.hintsHidden=[];ui.keybinds={};remapWait=null;
+    scheduleSave();applyUi({hintsStyle:"bar",hintsSize:"normal",hintsHidden:[],keybinds:{}});toast("Shortcuts reset to default");bump();
+  },"Press again to reset"),{ns:true,ask:"shreset"}));
+  return out;
+}
 function hiddenRows(){if(!(window.Shelf&&Shelf.hiddenList))return [];const L=hidden||[];
   if(!L.length)return [{t:"action",label:"No hidden games",btn:"—",info:"Hide a game from its Details panel (Hide). It shows up here so you can bring it back.",run:()=>{},ns:true,dim:true}];
   const names=Object.fromEntries(consoleList().map(c=>[c.id,c.name]));
@@ -1065,7 +1104,7 @@ const CP_CTX={gp,api,shelf,toast:m=>toast(m),play:(k,d)=>play(k,d),bump:()=>bump
   leave:()=>{if(sub){leaveSub();play("back");render()}},
   shelves:()=>tileList().filter(c=>sysCfg(c.id).enabled!==false).map(c=>({id:c.id,name:c.name})),
   twice:(key,run,msg)=>twice(key,run,msg),android:()=>!!(window.bsPlatform&&bsPlatform.os==="android")};
-function leaveSub(){if(artAcct&&sub&&sub===artAcct.page){artBackTo();return}secDrop();const was=sub;sub=was&&was.up||null;grab=null;rowI=subRet||0;subRet=was&&was.upRet||0;if(was&&was.kind==="console"){const k=tileList().findIndex(c=>c.id===was.id);if(k>=0)ci=k}}
+function leaveSub(){remapWait=null;if(artAcct&&sub&&sub===artAcct.page){artBackTo();return}secDrop();const was=sub;sub=was&&was.up||null;grab=null;rowI=subRet||0;subRet=was&&was.upRet||0;if(was&&was.kind==="console"){const k=tileList().findIndex(c=>c.id===was.id);if(k>=0)ci=k}}
 function openConsole(id){if(sub){openSub({kind:"console",id})}else{subRet=rowI;sub={kind:"console",id};rowI=0;focus="page";play("open");render()} /* from inside a sub-page (RetroAchievements' emulator rows): nested, so B comes back to it */if(id==="gc"&&!ipl&&api.findIpl&&iplCap())Promise.resolve(save()).then(()=>api.findIpl("gc")).then(r=>{ipl=r;bump()}).catch(()=>{});if(id==="sw2"&&sw2Row())Promise.resolve(save()).then(()=>api.sw2Builds("")).then(r=>{sw2b=r&&r.builds||[];bump()}).catch(()=>{sw2b=[];bump()})} /* Switch 2: the Eglantine builds for its Build row, looked for again each time the page opens */
 const sw2Row=()=>!!api.sw2Builds&&!(window.bsPlatform&&bsPlatform.os==="android");
 // (beta.3) Settings → Switch 2 → Builds. One choice among "Ask each time" and every build (the shelf's emulator is the
@@ -1718,7 +1757,7 @@ function show(inf,opts){if(window.Shelf&&Shelf.previewStop)Shelf.previewStop(); 
 }
 // (beta.10) how many games the last library scan found (every console's, from Shelf.gameCounts), for the rescan's "Found N new games"
 function libTotal(){const m=shelf("gameCounts");if(!m||typeof m!=="object")return null;let n=0;for(const k in m)if(typeof m[k]==="number")n+=m[k];return n}
-async function close(){if(closing||!isOpen)return;closing=true;let id=-1,rescan=false,ra=false;
+async function close(){remapWait=null;if(closing||!isOpen)return;closing=true;let id=-1,rescan=false,ra=false;
   {const P=window.BS_SETPAGES;if(P)for(const k in P)try{P[k].hide&&P[k].hide()}catch{}if(E.cp){E.cp._on=false;E.cp.innerHTML="";E.cp._h=""}} /* (beta.14) the Sound page's previews stop */
   try{if(edit)cancelEdit();active=false;stopPoll();cover(false);
     // a classic page still up over Settings (the companion's Play closes Settings from there): it goes too, or it would
@@ -2970,6 +3009,7 @@ function input(a,rep){
     else if(a==="right"&&results&&results.length){focus="page";rowI=0}
     else if(a==="start"){close();return} /* (beta.8: Start closes Settings everywhere, search included) */
     render();return}
+  if(remapWait){if(a==="b"){remapWait=null;play("back");render()}return}
   const n=rowsOf(sec()).length,r=curRow();
   if(a==="start"){close();return}
   if(focus==="side"){
@@ -3015,6 +3055,22 @@ function input(a,rep){
 }
 // keys arrive from app.js while Settings is open (mode "setup")
 function key(e){if(!active){return}
+  if(remapWait){
+    e.preventDefault();
+    const raw=String(e.key||""),lk=raw===" "?" ":raw.toLowerCase();
+    if(SH_MODS.has(lk))return;
+    const id=remapWait;
+    if(lk==="escape"){remapWait=null;play("back");render();return}
+    cfg.ui=cfg.ui||{};if(!cfg.ui.keybinds||typeof cfg.ui.keybinds!=="object")cfg.ui.keybinds={};
+    const item=SH_REMAP.find(x=>x[0]===id),label=item?item[1]:id;
+    if(lk==="backspace"){delete cfg.ui.keybinds[id];remapWait=null;scheduleSave();applyUi({keybinds:{...cfg.ui.keybinds}});play("tick",1);toast(`${label}: ${shKeyName(SH_DEF[id])}`);render();return}
+    if(SH_RESERVED.has(lk)||!lk||lk.length>16){play("error");toast("That key is reserved");return}
+    const prevK=cfg.ui.keybinds[id]||SH_DEF[id];
+    const hit=SH_REMAP.find(([oid])=>oid!==id&&(cfg.ui.keybinds[oid]||SH_DEF[oid])===lk);
+    if(hit){if(prevK===SH_DEF[hit[0]])delete cfg.ui.keybinds[hit[0]];else cfg.ui.keybinds[hit[0]]=prevK}
+    if(lk===SH_DEF[id])delete cfg.ui.keybinds[id];else cfg.ui.keybinds[id]=lk;
+    remapWait=null;scheduleSave();applyUi({keybinds:{...cfg.ui.keybinds}});play("open");toast(`${label}: ${shKeyName(lk)}`);render();return;
+  }
   {const ae=document.activeElement;if(ae&&/^(INPUT|TEXTAREA)$/.test(ae.tagName)&&ae.closest&&ae.closest(".bsx")){if(e.key==="Enter"||e.key==="Escape"){e.preventDefault();device="key";input(e.key==="Enter"?"a":"b")}return}} /* (beta.14) typing into a box on a soundpage.js page (Rename) */
   if(focus==="edit"){device="key";if(e.key==="Enter"||e.key==="Tab"){e.preventDefault();const inp=E.list.querySelector(".bss-edit");if(inp&&edit)edit.value=inp.value;commitEdit()}else if(e.key==="Escape"){e.preventDefault();cancelEdit()}return}
   if(device!=="key"){device="key";oskSig=""}

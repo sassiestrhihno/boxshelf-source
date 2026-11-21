@@ -55,7 +55,8 @@ function defaults() {
     ui: { sound: true, startFullscreen: true, buttons: 'auto', performance: 'auto', quitCombo: true, quitComboKeys: 'l3+r3', soundTheme: 'aero', volume: .7, ambient: false, ambientLevel: .02, music: 'off', musicLevel: .4, rumble: true, soundRev: 4, autoCovers: false, autoManuals: false, artLibrary: '', attract: true, attractMinutes: 3, attractPace: 'normal', attractWander: true,shuffleAll: true, favorites: [], collections: [], background: 'blur', theme: 'spectrum', sort: 'az', filter: 'all', museumLight: 'gallery', homeMenu: true, homeLayout: 'side', hideTaskbar: true, seamless: true, screenMode: '', windowBounds: null, uiScale: 1, previews: 'off', previewSound: false, previewYoutube: true, previewClips: true, previewDirs: [], previewDelay: 5, previewDelay5: false, previewHint: false, clipHint: false, deckHint: false, leaveHint: false, lastSeenVersion: '', // (beta.7) video previews; lastSeenVersion: the version whose What's new was shown: off / details / shelf (Details and behind the shelf); the first run asks
       // 1.55 Settings
       updateCheck: true, // (1.82) Settings → System → Check for new betas
-      openInto: 'last', display: '', safeArea: 100, clock: 'full', clock24: false, reduceMotion: false, dimMinutes: 0, confirmButton: 'auto', scrollSpeed: 'normal', artRegion: 'auto', audioOut: '', hidden: [], museumStyle: { walkIn: true } }
+      openInto: 'last', display: '', safeArea: 100, clock: 'full', clock24: false, reduceMotion: false, dimMinutes: 0, confirmButton: 'auto', scrollSpeed: 'normal', artRegion: 'auto', audioOut: '', hidden: [], museumStyle: { walkIn: true },
+      hintsStyle: 'bar', hintsSize: 'normal', hintsHidden: [], keybinds: {} }
   };
 }
 
@@ -281,6 +282,20 @@ function sanitize(cfg) {
   if ('tvFavs' in ui) { const seen = new Set(); ui.tvFavs = (Array.isArray(ui.tvFavs) ? ui.tvFavs : []).filter(v => typeof v === 'string' && v && v.length <= 600 && !seen.has(v) && seen.add(v)).slice(0, 500); }
   if ('tvLast' in ui) { const t = isObj(ui.tvLast) ? ui.tvLast : {}, o = {}; for (const k of ['ads', 'trailers', 'recent', 'mix']) if (typeof t[k] === 'string' && t[k] && t[k].length <= 600) o[k] = t[k]; ui.tvLast = o; }
   { const seen = new Set(), out = []; for (const v of Array.isArray(ui.hidden) ? ui.hidden : []) { if (typeof v !== 'string' && typeof v !== 'number') continue; const s = String(v).slice(0, 2048); if (!s || seen.has(s)) continue; seen.add(s); out.push(s); if (out.length >= 5000) break; } ui.hidden = out; }
+  if (!['bar', 'pills', 'buttons', 'off'].includes(ui.hintsStyle)) ui.hintsStyle = 'bar';
+  if (!['small', 'normal', 'large'].includes(ui.hintsSize)) ui.hintsSize = 'normal';
+  { const HINT_IDS = new Set(['letter', 'system', 'flip', 'fav', 'hide', 'details', 'play', 'inspect', 'shuffle', 'find', 'museum', 'categories', 'sort', 'settings']);
+    ui.hintsHidden = [...new Set((Array.isArray(ui.hintsHidden) ? ui.hintsHidden : []).filter(x => typeof x === 'string' && HINT_IDS.has(x)))].slice(0, 30); }
+  { const REMAP_IDS = new Set(['flip', 'fav', 'hide', 'details', 'inspect', 'shuffle', 'find', 'museum', 'categories', 'sort', 'settings', 'customize']);
+    const RESERVED = new Set(['escape', 'enter', 'backspace', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'f11', 'control', 'shift', 'alt', 'meta', 'tab']);
+    const kb = isObj(ui.keybinds) ? ui.keybinds : {}, out = {};
+    for (const [id, v] of Object.entries(kb)) {
+      if (!REMAP_IDS.has(id) || typeof v !== 'string') continue;
+      const k = v === ' ' ? ' ' : v.trim().toLowerCase();
+      if (!k || k.length > 16 || RESERVED.has(k)) continue;
+      out[id] = k;
+    }
+    ui.keybinds = out; }
   if (isObj(cfg.steam) && typeof cfg.steam.hideTools !== 'boolean') cfg.steam.hideTools = true;
   cfg.art = sanitizeArt(cfg.art, ui);
   return cfg;
