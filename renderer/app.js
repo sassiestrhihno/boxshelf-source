@@ -78,10 +78,78 @@ function argsPreview(tpl,rom){return (tpl||"").replace(/\{rom\}/g,rom||"")}
 // Shuffle, attract mode and letter jumps all skip them; the scan itself stays whole (lastLib) for the Settings list.
 let lastLib=null;
 function hiddenSet(){const h=cfgInfo&&cfgInfo.config.ui.hidden;return new Set(Array.isArray(h)?h.map(String):[])}
+function versionStacks(){const v=cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.versions;return Array.isArray(v)?v:[]}
+const VER_STORE_PC={steam:"Steam",epic:"Epic",gog:"GOG",ubisoft:"Ubisoft",ea:"EA",xbox:"Xbox PC",battlenet:"Battle.net",quiver:"Quiver",playnite:"Playnite",custom:"PC (Custom)"};
+const VER_STORE_RANK={steam:0,gog:1,epic:2,xbox:3,ea:4,ubisoft:5,battlenet:6};
+function normalizeVerTitle(raw){
+  let s=String(raw||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  if(!s.trim())return "";
+  s=s.replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g," ").replace(/^([^,:-]+),\s*(the|an|a)(?=\s*[-:–—]|$)/i,"$2 $1");
+  s=s.replace(/\b(?:ver(?:sion)?\.?\s*\d+(?:\.\d+)*|v\d+(?:\.\d+)*|rev(?:ision)?(?:\.\s*|\s+)[a-z0-9]+|build\s*\d+)\b/g," ");
+  s=s.replace(/[&+]/g," and ").replace(/['’`]/g,"").replace(/[:\-–—_/\\.,!?*~|]+/g," ");
+  s=s.replace(/\b(?:game of the year edition|goty edition|definitive edition|complete edition|ultimate edition|enhanced edition|collector'?s edition|anniversary edition|special edition|director'?s cut|hd remaster|pc port|remastered|remake|recompiled|recomp|decompiled|decomp|edition|goty)\b/g," ");
+  return s.replace(/\s+/g," ").trim().replace(/^(?:the|an|a)\s+/,"").trim();
+}
+function verEditionTag(title){
+  const s=String(title||""),m=s.match(/\b(HD Remaster|Game of the Year Edition|GOTY Edition|GOTY|Definitive Edition|Complete Edition|Ultimate Edition|Enhanced Edition|Collector'?s Edition|Anniversary Edition|Special Edition|Director'?s Cut|Remastered|Remake|Recompiled|Recomp|PC Port|Classic)\b/i);
+  if(m)return m[1].toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()).replace(/\bOf\b/g,"of").replace(/\bThe\b/g,"the").replace(/\bGoty\b/i,"GOTY").replace(/\bHd\b/i,"HD").replace(/\bPc\b/i,"PC");
+  const ym=s.match(/\(((?:19|20)\d{2})\)/);return ym?ym[1]:"";
+}
+function verMemberRank(g){
+  if(!g)return 99;
+  if(g.source==="owned"){const st=String(g.store||"").toLowerCase();return 30+(st in VER_STORE_RANK?VER_STORE_RANK[st]:8)}
+  if(g.kind==="steam"){if(g.source==="custom"||g.source==="quiver")return 10;const st=String(g.source||"steam").toLowerCase();return st in VER_STORE_RANK?VER_STORE_RANK[st]:8}
+  return 20;
+}
+function versionLabelOf(g,shelfName){
+  if(!g)return "Version";
+  if(g.kind==="steam"){
+    const ed=verEditionTag(g.title);
+    if(g.source==="owned")return [VER_STORE_PC[g.store]||g.store||"Playnite",ed,"Not installed"].filter(Boolean).join(" · ");
+    const base=(g.source&&(VER_STORE_PC[g.source]||PC_SRC[g.source]))||(shelfName&&!/^(pc|custom)$/i.test(String(shelfName))?`${shelfName} · PC`:"Steam");
+    return [base,ed].filter(Boolean).join(" · ");
+  }
+  const sys=String(shelfName||g.system||"ROM").trim(),reg=g.region&&g.region!=="Unknown"?String(g.region).trim():"",revM=String(g.file||g.title||"").match(/\((Rev[ ._-]?[\w.]+|v\d[\w.]*)\)/i),rev=revM?revM[1].replace(/^rev[ ._-]?/i,"Rev "):"";
+  return [sys,reg,rev].filter(Boolean).join(" · ")||"ROM";
+}
 function prepare(list){
-  const hid=hiddenSet();
-  const out=addsShelves(list).map(s0=>{
-    const all=s0.games||[],games=hid.size?all.filter(g=>!hid.has(String(g.id))):all,s={...s0,games,_hiddenN:all.length-games.length};
+  const hid=hiddenSet(),rawList=addsShelves(list);
+  const byId=new Map();
+  for(const s0 of rawList){if(!s0||s0.id==="media")continue;for(const g of (s0.games||[])){if(!g||g.id==null||(g.kind!=="rom"&&g.kind!=="steam"))continue;const id=String(g.id);if(!hid.has(id)&&!byId.has(id))byId.set(id,{g,sh:s0})}}
+  const verMap=new Map(),autoKeyMap=new Map(),stackedHide=new Set(),manualIds=new Set();
+  for(const st of versionStacks()){
+    if(!st||!Array.isArray(st.members))continue;
+    const ms=[],seenM=new Set();
+    for(const m of st.members){const id=m&&typeof m.id==="string"?m.id:"";if(!id||seenM.has(id))continue;const e=byId.get(id);if(!e)continue;seenM.add(id);ms.push({m,e})}
+    if(ms.length<2)continue;
+    const pri=ms.find(x=>x.m.id===st.primary)||ms[0];
+    const ordered=[pri,...ms.filter(x=>x!==pri)];
+    verMap.set(String(pri.e.g.id),ordered.map(x=>({id:String(x.e.g.id),label:x.m.label||versionLabelOf(x.e.g,x.e.sh.name),game:x.e.g,shelf:x.e.sh})));
+    for(const x of ms){manualIds.add(String(x.e.g.id));if(x!==pri)stackedHide.add(String(x.e.g.id))}
+  }
+  if(!(cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.autoStack===false)){
+    const skip=new Set(Array.isArray(cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.versionsUngrouped)?cfgInfo.config.ui.versionsUngrouped.map(x=>String(x).trim().toLowerCase()):[]);
+    const auto=new Map();
+    for(const [id,e] of byId.entries()){
+      if(manualIds.has(id))continue;
+      const k=normalizeVerTitle(e.g.title);if(!k||k.length<2||skip.has(k))continue;
+      if(!auto.has(k))auto.set(k,[]);auto.get(k).push({id,e});
+    }
+    for(const [k,ms] of auto.entries()){
+      if(ms.length<2)continue;
+      ms.sort((a,b)=>verMemberRank(a.e.g)-verMemberRank(b.e.g)||String(a.e.sh.name||"").localeCompare(String(b.e.sh.name||""))||String(a.e.g.title||"").localeCompare(String(b.e.g.title||"")));
+      const lbls=ms.map(x=>versionLabelOf(x.e.g,x.e.sh.name)),cnt=new Map(),seenL=new Map();
+      for(const l of lbls)cnt.set(l,(cnt.get(l)||0)+1);
+      const vers=ms.map((x,idx)=>{let l=lbls[idx];if((cnt.get(l)||0)>1){const n=(seenL.get(l)||0)+1;seenL.set(l,n);l=`${l} (${n})`}return {id:x.id,label:l,game:x.e.g,shelf:x.e.sh}});
+      verMap.set(ms[0].id,vers);autoKeyMap.set(ms[0].id,k);
+      for(let j=1;j<ms.length;j++)stackedHide.add(ms[j].id);
+    }
+  }
+  const outById=new Map();
+  const out=rawList.map(s0=>{
+    const all=s0.games||[],unstacked=stackedHide.size?all.filter(g=>!stackedHide.has(String(g.id))):all;
+    const games=(hid.size?unstacked.filter(g=>!hid.has(String(g.id))):unstacked).map(g=>{const id=String(g.id),vs=verMap.get(id),ak=autoKeyMap.get(id);return vs?{...g,_versions:vs,...(ak?{_autoStackKey:ak}:{})}:g});
+    const s={...s0,games,_hiddenN:unstacked.length-games.length};
     const items=games.map(g=>{const seed=hash(g.title);return {...g,seed,hue:g.kind==="app"?(APP_HUE[g.appId]||seed%360):seed%360,scene:g.kind==="app"?"media":undefined}});
     if(s.kind==="console"&&s.hasEmulator&&!(cfgInfo&&cfgInfo.config.ui.emuCase===false)){ // ((beta.11) Settings → Shelf → Emulator case off: no "Open <emulator>" case)
       const t=`Open ${s.emulatorName}`;const seed=hash(t+s.id);
@@ -96,8 +164,9 @@ function prepare(list){
       const seed=hash("random"+s.id),style=STYLE[s.id]||STYLE.media;
       items.unshift({kind:"random",id:"rnd-"+s.id,title:"Surprise me",seed,hue:300,scene:"media",art:{front:Covers.randomFront(style)}});
     }
-    return {...s,items};
+    const built={...s,items};outById.set(built.id,built);return built;
   });
+  for(const vers of verMap.values())for(const v of vers)if(v.shelf&&outById.has(v.shelf.id))v.shelf=outById.get(v.shelf.id);
   return orderShelves(out);
 }
 // Your shelf order (Settings → Display → Shelf order); shelves you haven't placed keep the default order, after the rest
@@ -643,9 +712,9 @@ function metaFor(g){
   if(g.kind==="setup")return [`No ${s?s.name+" ":""}games yet`,`${okWord()} opens ${s?s.name:"its"} settings to add a games folder`];
   if(g.kind==="random")return g.pick?["Surprise pick",(g.pick.sh||shelves[g.pick.shelf]).name,rerollWord()]:["Shuffle","Lands on a random game"];
   if(g.kind==="app")return ["Streaming app"];
-  if(g.kind==="steam")return [PC_SRC[g.source]||"Steam",g.minutes?`${(g.minutes/60).toFixed(1)} h played`:"Not played yet"];
+  if(g.kind==="steam")return [PC_SRC[g.source]||"Steam",g.minutes?`${(g.minutes/60).toFixed(1)} h played`:"Not played yet",Array.isArray(g._versions)&&g._versions.length>1?`${g._versions.length} versions`:""].filter(Boolean);
   const r=raFor(g);
-  return [g.region,g.ext&&g.ext.toUpperCase(),fmtSize(g.sizeBytes),g.discs&&g.discs.length>1?`${g.discs.length} discs`:"",hasManual(g)?"Manual":"",r?(r.mastered==="mastered"?"★ Mastered":`★ ${r.earned}/${r.total}`):""].filter(Boolean);
+  return [g.region,g.ext&&g.ext.toUpperCase(),fmtSize(g.sizeBytes),g.discs&&g.discs.length>1?`${g.discs.length} discs`:"",hasManual(g)?"Manual":"",Array.isArray(g._versions)&&g._versions.length>1?`${g._versions.length} versions`:"",r?(r.mastered==="mastered"?"★ Mastered":`★ ${r.earned}/${r.total}`):""].filter(Boolean);
 }
 function updateInfo(){pvBackSchedule();
   bsSelectSoon();
@@ -1057,6 +1126,7 @@ function fillDetails(){
   if(g.kind==="rom"){chip(i.release?String(i.release).slice(0,4):i.year);chip(i.genres&&i.genres.split(";")[0].trim());chip(i.players?(i.players==="1"?"1 player":`${i.players} players`):null);chip(i.esrb?i.esrb.replace(/ - .*$/,""):null,"esrb");chip(i.rating?`★ ${(+i.rating).toFixed(1)}`:null,"score");chip(i.metacritic?`Metacritic ${i.metacritic}`:null,"score");if(g.compat)chip(`Xenia: ${g.compat}`,/playable|gameplay/i.test(g.compat)?"score":"esrb")}
   else if(g.kind==="steam"){chip(PC_SRC[g.source]||"Steam");chip(yearOf(g));chip(genreOf(g));chip(i.metacritic?`Metacritic ${i.metacritic}`:null,"score");chip(g.minutes?`${(g.minutes/60).toFixed(1)} h played`:"Not played yet")}
   else if(g.kind==="app")chip("Streaming app");else if(g.kind==="emulator")chip("Emulator");else if(g.kind==="random")chip("Shuffle");
+  if(Array.isArray(g._versions)&&g._versions.length>1)chip(`${g._versions.length} versions`);
   // your history with this game (launches / time / last played), kept by Boxshelf
   // (beta.7) as tiles under the header: time played, last played, launches (Steam's own hours for a Steam game)
   {const hs=HIST[g.id],st=$("dStats");st.innerHTML="";const show=g.kind==="rom"||g.kind==="steam";st.hidden=!show;
@@ -1098,6 +1168,7 @@ function fillDetails(){
   {const pc=g.kind==="steam"&&!!api.pcCoverOptions,b=$("dBoxArt"),p=$("dBoxArtPc");if(b)b.hidden=!(g.kind==="rom"&&api.artStudio&&g.file);if(p)p.hidden=!pc;} /* (beta.9) a PC game's Box art sits beside Play (it has no manual or Inspect), not in More */{const b=$("dRename");if(b)b.hidden=!(api.renameGame&&((g.kind==="rom"&&g.file)||g.kind==="steam"));} /* (beta.5: PC games too, through the cover picker) */
   {const b=$("dCols");if(b)b.hidden=!isGame(g)||g.kind==="app";}
   {const b=$("dAddTo");if(b)b.hidden=!addCan(g);if(b&&!b.hidden){const c=$("dCols");if(c)c.hidden=true}} /* (beta.14) Add to… (Windows / Linux, not in Kid mode); it covers My shelves, so the older My shelves button steps aside */
+  {const b=$("dVersions");if(b)b.hidden=!(!ANDROID&&isGame(g)&&(g.kind==="rom"||g.kind==="steam")&&!kidOn())}
   {const b=$("dChooseManual");if(b){b.hidden=!(g.kind==="rom"&&api.manualStudio&&g.file);b.textContent=hasManual(g)?"Choose manual…":"Find a manual…";b.title=!hasManual(g)&&g.manualMiss?`Boxshelf looked online on ${new Date(g.manualMiss).toLocaleDateString()} and found no manual for this game. Search or add one here.`:""}}
   {const b=$("dGameEmu");if(b){const own=g.kind==="rom"?gameEmu(g):"";b.hidden=!(g.kind==="rom"&&api.gameEmulator);b.textContent=own?(emuLabel(own).length>16?emuLabel(own).slice(0,15)+"…":emuLabel(own)):"Emulator";b.title=own?`Runs in ${own} (just this game). Press to change.`:`Runs in the shelf's ${s.emulatorName||"emulator"}. Press to pick a different build for just this game.`;b.classList.toggle("own",!!own)}}
   if(DV2)dvFill(g); // (beta.12) the sections only the Windows Details has: Your play, Status, Favourite, Your copy, the placard
@@ -1462,7 +1533,7 @@ function closeDetails(silent){if(mode!=="details")return;dMenuClose(true);ASND.o
 // build to start it in, the game's last pick first. A build that can't open a .nup game is greyed out. Pad (up / down,
 // A, B), keys (arrows, Enter, Esc), mouse and touch. Resolves to the exe, "" when there are no builds to choose from
 // (the shelf's emulator, as before), or null for Back.
-let bp=null,nextBuild=null;
+let bp=null,nextBuild=null,nextVersion=null;
 // (Settings → Switch 2 → Build set to one build (askBuild false): Play starts in it, or in the game's own Details choice)
 const needsBuild=(g,s)=>!!(g&&s&&g.kind==="rom"&&s.id==="sw2"&&api.sw2Builds&&!(nextBuild&&nextBuild.id===g.id)&&!(cfgInfo&&((cfgInfo.config.systems||{}).sw2||{}).askBuild===false));
 async function pickBuild(g){
@@ -1494,7 +1565,27 @@ async function pickBuild(g){
 }
 function bpRender(){if(bp)bp.rows.forEach((r,j)=>r.classList.toggle("on",j===bp.i))}
 function bpMove(d){if(!bp)return;const n=bp.rows.length;let j=bp.i;for(let k=0;k<n;k++){j=(j+d+n)%n;if(!bp.rows[j].disabled)break}if(j!==bp.i){bp.i=j;play_("tick",{dir:d});bpRender()}}
-function bpChoose(){if(bp&&!bp.rows[bp.i].disabled)bpDone(bp.builds[bp.i].add?BP_ADD:bp.builds[bp.i].exe)}
+function bpChoose(){if(!bp||bp.rows[bp.i].disabled)return;const x=bp.builds[bp.i];bpDone(x.add?BP_ADD:("value"in x?x.value:x.exe))}
+async function pickVersion(g){
+  const list=Array.isArray(g&&g._versions)?g._versions:[];
+  if(list.length<2)return null;
+  if(bp||(mode!=="browse"&&mode!=="details"))return null;
+  return new Promise(res=>{
+    const el=document.createElement("div");el.className="buildpick";
+    const card=document.createElement("div");card.className="bp-card";card.setAttribute("role","dialog");card.setAttribute("aria-label","Play which version?");
+    const t=document.createElement("div");t.className="bp-title";t.textContent="Play which version?";
+    const sub=document.createElement("div");sub.className="bp-game";sub.textContent=g.title;card.append(t,sub);
+    const builds=list.map(v=>({value:v}));
+    const rows=list.map((v,j)=>{const row=document.createElement("button");row.type="button";row.className="bp-row";
+      const n=document.createElement("b");n.textContent=v.label||versionLabelOf(v.game,v.shelf&&v.shelf.name);
+      const d=document.createElement("span");d.textContent=v.game&&v.game.source==="owned"?(v.shelf&&v.shelf.id&&v.shelf.id!=="pc"?`${v.shelf.name} · Install`:"Install"):((v.shelf&&v.shelf.name)||"");row.append(n,d);
+      row.addEventListener("click",()=>{if(bp){bp.i=j;bpChoose()}});row.addEventListener("pointerenter",()=>{if(bp&&inputMode==="pointer"){bp.i=j;bpRender()}});card.append(row);return row});
+    const f=document.createElement("div");f.className="bp-foot";f.textContent=`${btnWord("a")} start · ${btnWord("back")} back`;card.append(f);
+    el.append(card);el.addEventListener("click",e=>{if(e.target===el)bpDone(null)});document.body.append(el);
+    bp={el,rows,builds,i:0,res,prev:mode};mode="build";bpRender();
+    requestAnimationFrame(()=>el.classList.add("on"));sfx.flip();
+  });
+}
 const BP_ADD="\u0000add";
 async function bpAdd(){const f=await api.pick({kind:"file",title:"Choose a Switch 2 emulator (eglantine.exe, lichii.exe, orchid.exe…)",filters:/Win/.test(navigator.platform)?[{name:"Programs",extensions:["exe"]}]:undefined}).catch(()=>null),x=typeof f==="string"?f:f&&f.path;
   if(!x)return;try{await api.sw2AddBuild(x);toast("Emulator added");
@@ -1601,11 +1692,15 @@ function play(){
   if(raw.kind==="setup"){const s=shelfFor(raw)||cur();play_("panel");Setup.open({page:raw.addGames?"addgames":s?s.id:"consoles"});return}
   if(raw.kind==="random"){if(raw.pick)playPick(raw);else shuffle();return}
   if(cur()===HOME){playPick({pick:{shelf:shelves.indexOf(shelfFor(raw)),game:raw}});return}
-  const g=raw;
-  const s=cur().col||shelfFor(g)!==cur()?(g._sh||shelfFor(g)):cur(); // (beta.10) on a collection shelf: the game's own console (build picker, boot video and slide, its name). (beta.14) A game added to another shelf (+ Add to…) too
+  let g=raw;
+  let s=cur().col||shelfFor(g)!==cur()?(g._sh||shelfFor(g)):cur(); // (beta.10) on a collection shelf: the game's own console (build picker, boot video and slide, its name). (beta.14) A game added to another shelf (+ Add to…) too
+  let chosenVer=null;
+  if(nextVersion&&nextVersion.primaryId===raw.id){chosenVer=nextVersion.v;g={...chosenVer.game,_sh:chosenVer.shelf,_versions:undefined};s=chosenVer.shelf}
+  else if(Array.isArray(g._versions)&&g._versions.length>1){pickVersion(g).then(v=>{if(!v)return;nextVersion={primaryId:raw.id,v};play()});return}
   // Switch 2: which build first (before the boot slide starts); Back on the list leaves you on the shelf
-  if(needsBuild(g,s)){pickBuild(g).then(exe=>{if(exe==null)return;nextBuild={id:g.id,exe};play()});return}
-  if(g.kind==="rom"&&biosWarn(s))return; // (beta.14) a BIOS this console can't start without is missing: a card first (Play anyway goes on)
+  if(needsBuild(g,s)){const cv=chosenVer;pickBuild(g).then(exe=>{if(exe==null){nextVersion=null;return}nextBuild={id:g.id,exe};if(cv)nextVersion={primaryId:raw.id,v:cv};play()});return}
+  if(g.kind==="rom"&&biosWarn(s)){if(chosenVer)nextVersion={primaryId:raw.id,v:chosenVer};return} // (beta.14) a BIOS this console can't start without is missing: a card first (Play anyway goes on)
+  nextVersion=null;
   const boot=g.kind==="rom"&&s.bootOnLaunch&&!s.useIpl,vid=boot&&!!(themes[s.id]||{}).boot;
   // your boot video (Customize) plays first when this console has one and its switch is on; otherwise the boot slide
   // covers the emulator starting (it stays until the game's window is up, then fades to black), and with the slide off
@@ -2219,6 +2314,8 @@ api.onRunReady&&api.onRunReady(()=>{if(mode==="launch"){$("launch").classList.ad
 function insProgress(sec){const el0=$("insert");if(el0.classList.contains("slide")||!el0.classList.contains("on"))return; /* the slide's line runs on its own fixed time */const el=$("insert");let b=el.querySelector(".ins-bar");if(!b){b=document.createElement("div");b.className="l-bar ins-bar";b.innerHTML="<i></i>";el.querySelector(".ins-text").appendChild(b)}const i=b.querySelector("i");i.style.animation="none";void i.offsetWidth;i.style.animation=`load ${Math.max(2,+sec||6)}s cubic-bezier(.3,0,.2,1) forwards`;b.classList.add("on")}
 async function launchNow(g,underInsert){padAtSteam=false; /* (beta.12) only the Steam launch below sets it: an unwatched Steam game's flag must not fire after a later Epic / EA game */if(PV){pvStop();pvBackStop()} /* (beta.7: no preview over a starting game) */try{api.log&&api.log(`launch: ${g&&g.title} (last input: ${typeof inputMode!=="undefined"?inputMode:"?"}, screen: ${mode}${smoothTest.on?", during the smoothness test":""})`)}catch{}
   if(smoothTest.on)return; // nothing starts while the smoothness test runs
+  if(nextVersion&&g&&nextVersion.primaryId===g.id){const v=nextVersion.v;nextVersion=null;g={...v.game,_sh:v.shelf,_versions:undefined}}
+  else if(Array.isArray(g&&g._versions)&&g._versions.length>1&&!underInsert){const v=await pickVersion(g);if(!v)return;g={...v.game,_sh:v.shelf,_versions:undefined}}
   // (Switch 2 started from somewhere other than Play, e.g. the museum: which build first)
   if(needsBuild(g,g._sh||shelfFor(g))&&!underInsert){const exe=await pickBuild(g);if(exe==null)return;nextBuild={id:g.id,exe}}
   const emu=nextBuild&&nextBuild.id===g.id?nextBuild.exe:"";nextBuild=null;
@@ -4736,11 +4833,11 @@ async function refresh(keepPlace,lib){
   // they are (rebuilding it made every case and cover load in again, a visible stutter right after startup)
   /* (beta.12) a game with an icon (Quiver's, a PC game's) counts its chosen cover too: only the cover made from its icon is
      left out (it was drawn here). A cover picked for it used to change nothing in this signature, so its case kept the old one */
-  const slotSig=l=>l.map(g=>g.id+"|"+g.title+"|"+(g.art&&((g.art.icon?"i:"+g.art.icon+"|":"")+(g.art.madeFromIcon?"":g.art.front||""))||"")+"|"+(g.art&&g.art.spine||"")+"|"+(g.art&&g.art.back||"")+"|"+(isFav(g)?1:0)).join("\n"); /* (beta.14: the back too — a back picked in Art Studio never reached the case, which kept the old one while Inspect showed the new) */
+  const slotSig=l=>l.map(g=>g.id+"|"+g.title+"|"+(g.art&&((g.art.icon?"i:"+g.art.icon+"|":"")+(g.art.madeFromIcon?"":g.art.front||""))||"")+"|"+(g.art&&g.art.spine||"")+"|"+(g.art&&g.art.back||"")+"|"+(isFav(g)?1:0)+(g._versions?"|v:"+g._versions.map(v=>v.id+"="+v.label).join(","):"")).join("\n"); /* (beta.14: the back too — a back picked in Art Studio never reached the case, which kept the old one while Inspect showed the new) */
   /* (beta.14) only pictures changed for games already on the shelf (box art arriving while you rest): the cases stay and just
      those swap their front, spine or back in place, as artUpdated / artPlaced do (Android: decoded first, one per frame).
      Rebuilding took every case down and loaded every cover again. A picture taken away, or any other change, still rebuilds */
-  const artOf=g=>{const a=(g&&g.art)||{};return [a.madeFromIcon?"":a.front||"",a.spine||"",a.back||""]},baseSig=l=>l.map(g=>g.id+"|"+g.title+"|"+g.kind+"|"+(g.art&&g.art.icon||"")+"|"+(isFav(g)?1:0)+"|"+!!(g.romm&&g.romm.cloud)).join("\n");
+  const artOf=g=>{const a=(g&&g.art)||{};return [a.madeFromIcon?"":a.front||"",a.spine||"",a.back||""]},baseSig=l=>l.map(g=>g.id+"|"+g.title+"|"+g.kind+"|"+(g.art&&g.art.icon||"")+"|"+(isFav(g)?1:0)+"|"+!!(g.romm&&g.romm.cloud)+(g._versions?"|v:"+g._versions.map(v=>v.id+"="+v.label).join(","):"")).join("\n");
   const artSwap=keepPlace&&slots.length&&cur()&&cur().items.length===slots.length&&sel===slots.findIndex(x=>x.g.id===prevItem)&&baseSig(cur().items)===baseSig(slots.map(x=>x.g))&&cur().items.every((g,i)=>{const a=artOf(g),b=artOf(slots[i].g);return a.every((u,k)=>u===b[k]||!!u)});
   if(keepPlace&&slots.length&&cur()&&cur().items.length===slots.length&&slotSig(cur().items)===slotSig(slots.map(x=>x.g))&&sel===slots.findIndex(x=>x.g.id===prevItem)){cur().items.forEach((g,i)=>{const o=slots[i].g;if(o.kind==="random"&&g.kind==="random"){cur().items[i]=o;return} /* keep the Shuffle tile's own object: it holds the pick being shown (and its fold-away timer) */if(o.art&&o.art.madeFromIcon&&o.art.front&&g.art&&!g.art.front){g.art.front=o.art.front;g.art.madeFromIcon=true}slots[i].g=g});renderTabs();updateInfo();bootMark("kept-shelf")}
   else if(artSwap){let selNew=false;cur().items.forEach((g,i)=>{const s=slots[i],o=s.g;if(o.kind==="random"&&g.kind==="random"){cur().items[i]=o;return}const a=artOf(g),b=artOf(o);if(o.art&&o.art.madeFromIcon&&o.art.front&&g.art&&!g.art.front){g.art.front=o.art.front;g.art.madeFromIcon=true}s.g=g;if(!s.el)return;
@@ -4902,6 +4999,7 @@ async function chooseGameEmu(g){if(!g||g.kind!=="rom"||!api.gameEmulator)return;
 (function(){const c=$("dActEnd");if(!c||$("dCols"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dCols";b.textContent="My shelves";b.title="Put this game on shelves of your own (Settings → Library → My shelves makes and names them)";b.addEventListener("click",()=>{const g=curGame();if(!g||!isGame(g)||!window.Setup)return;closeDetails(true);Setup.open({page:"collections",id:g.id,title:g.title})});c.before(b)})();
 // (beta.14, Windows / Linux) Details → ··· → Add to…: the quick menu's Add to… list (Favourites, My shelves, any console shelf)
 (function(){const c=$("dActEnd");if(!c||$("dAddTo")||ANDROID)return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dAddTo";b.hidden=true;b.textContent="Add to…";b.title="Put this game on another shelf too (it stays on its own), on one of My shelves or in Favourites";b.addEventListener("click",()=>addFromDetails());c.before(b)})();
+(function(){const c=$("dActEnd");if(!c||$("dVersions")||ANDROID)return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dVersions";b.hidden=true;b.textContent="Versions / Group…";b.title="Group different versions of this game across PC and consoles under one case";b.addEventListener("click",()=>{const g=curGame();if(!g||!isGame(g)||!(g.kind==="rom"||g.kind==="steam")||!window.Setup)return;const s=g._sh||shelfFor(g);closeDetails(true);play_("panel");Setup.open({page:"gameversions",id:g.id,title:g.title,shelfId:s?s.id:"",label:versionLabelOf(g,s&&s.name),autoKey:g._autoStackKey||"",autoVersions:Array.isArray(g._versions)?g._versions.map(v=>({id:v.id,title:(v.game&&v.game.title)||g.title,shelfName:(v.shelf&&v.shelf.name)||"",label:v.label||""})):null})});c.before(b)})();
 // (beta.14, Windows / Linux) Details → Change trailer: where this game's trailer comes from (a page in Settings: the trailers
 // found for it, a YouTube link of your own, or none; main/trailers.js). Shown by dvFill for a console game while previews are on
 (function(){const c=$("dActEnd");if(ANDROID||!c||$("dTrailerPick"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dTrailerPick";b.textContent="Change trailer";b.hidden=true;b.title="Pick this game's trailer: a gameplay clip, an official trailer, a YouTube link of your own, or none";
@@ -4942,7 +5040,7 @@ function dvBuild(){
   const fav=dvMk("button","btn d-ico dv-round dv-fav",DV_ICO.heart);fav.type="button";fav.id="dFav";fav.setAttribute("aria-pressed","false");
   fav.addEventListener("click",()=>{Promise.resolve(toggleFav()).then(dvFavPaint,dvFavPaint)});
   const mb=$("dMoreBtn");mb.classList.add("dv-round");mb.setAttribute("aria-label","More");mb.title="More: the manual, the case, the emulator, box art, rename, My shelves, hide";mb.before(fav);
-  {const ae=$("dActEnd");if(ae)["dManual","dInspect","dGameEmu","dBoxArt","dBoxArtPc","dRename","dAddTo","dCols","dHide","dChooseManual","dEmu","dTrailerPick"].forEach(id=>{const b=$(id);if(b)ae.before(b)})}
+  {const ae=$("dActEnd");if(ae)["dManual","dInspect","dGameEmu","dBoxArt","dBoxArtPc","dRename","dVersions","dAddTo","dCols","dHide","dChooseManual","dEmu","dTrailerPick"].forEach(id=>{const b=$(id);if(b)ae.before(b)})}
   hero.append(acts,menu);
   const tr=$("dTrailer");tr.innerHTML='<span class="dv-vfull"><span class="dv-trg" id="dvTrG"></span><span id="dvTrL">Pause</span><span class="dv-tr2" id="dvTr2"></span></span>'; /* (beta.14: dvTr2, the volume and full-screen keys beside it) */tr.setAttribute("aria-label","Pause the trailer");tr.title="Pause (Y: full screen)"; /* (beta.12: A pauses / plays it here; Y is full screen) */
   const vid=dvMk("div","dv-vid");vid.id="dvVid";const none=dvMk("span","dv-none");none.id="dvNone";vid.append($("dMedia"),none,tr,dvSndBuild());boxSync(); /* (beta.12: the speaker and volume bar; the box's sound follows its picture) */
@@ -4986,7 +5084,7 @@ function dvBuild(){
   row("man","Manual","Open",()=>dvPress(hasManual(curGame())?"dManual":"dChooseManual"));
   row("art","Box art","Change",()=>dvPress("dBoxArt"));
   dv.crow.setup.hidden=true;cL.append(rows,$("dHow"));
-  [["dvRen","Rename on the shelf","dRename"],["dvAdd","Add to another shelf…","dAddTo"],["dvCol","Add to one of My shelves","dCols"],["dvHide","Hide from the shelf","dHide"]].forEach(([id,l,t])=>{const b=dvMk("button","dv-act");b.type="button";b.id=id;b.textContent=l;b.dataset.for=t;b.addEventListener("click",()=>dvPress(t));cR.append(b)});
+  [["dvRen","Rename on the shelf","dRename"],["dvVer","Versions / Group…","dVersions"],["dvAdd","Add to another shelf…","dAddTo"],["dvCol","Add to one of My shelves","dCols"],["dvHide","Hide from the shelf","dHide"]].forEach(([id,l,t])=>{const b=dvMk("button","dv-act");b.type="button";b.id=id;b.textContent=l;b.dataset.for=t;b.addEventListener("click",()=>dvPress(t));cR.append(b)});
   cR.append(d.querySelector(".d-adv"));copy.append(cL,cR);
   navT.append(bump("dv-rb",1));
   const foot=dvMk("div","dv-foot");foot.setAttribute("aria-hidden","true"); /* (the panel fades out under the hint bar) */
@@ -5060,7 +5158,7 @@ function dvCopy(g){const R=dv.crow,a=g.art||{},s=shelfFor(g)||{},man=Array.isArr
   const cm=$("dChooseManual");set("man",man.length?`${man.length} pages`:g.manualMiss?"None found online":"Not found yet",man.length>0);btn("man",man.length>0||(!!cm&&!cm.hidden),man.length?"Open":"Find");
   const parts=[a.front&&"front",a.back&&"back",a.spine&&"spine",a.disc&&lcWord(s.id?mediaWord(s.id):"Disc")].filter(Boolean),w=parts.length>1?parts.slice(0,-1).join(", ")+" and "+parts[parts.length-1]:parts[0]||"";
   set("art",w?w[0].toUpperCase()+w.slice(1):"No scan yet",parts.length===4);const ba=$("dBoxArt");btn("art",!!ba&&!ba.hidden);
-  ["dvRen","dvAdd","dvCol","dvHide"].forEach(id=>{const b=$(id),t=b&&$(b.dataset.for);if(b)b.hidden=!t||t.hidden})} /* (beta.14: dvAdd shows where Add to… does, dvCol where it doesn't: Android, Kid mode) */
+  ["dvRen","dvVer","dvAdd","dvCol","dvHide"].forEach(id=>{const b=$(id),t=b&&$(b.dataset.for);if(b)b.hidden=!t||t.hidden})} /* (beta.14: dvAdd shows where Add to… does, dvCol where it doesn't: Android, Kid mode) */
 // Set up for me: what Settings → the console's page knows (asked once a game, when Your copy shows)
 function dvSetup(g){const r=dv.crow.setup;if(!r)return;const s=g&&g.kind==="rom"?shelfFor(g):null;if(!s||!s.emulator||!api.emuSetupStatus){r.hidden=true;return}
   const put=st=>{if(curGame()!==g||mode!=="details")return;const ok=!!(st&&st.supported);r.hidden=!ok;if(!ok)return;const done=!!st.done,t=r.querySelector(".t");
@@ -5112,6 +5210,7 @@ function dvFill(g){const d=$("details");if(!d.classList.contains("dv2")||!g)retu
     if(rom)ch.append(dv.achChip);
     const age=rom&&i.esrb?String(i.esrb).replace(/ - .*$/,"").trim():"";chip(age?(age.length<=4?"Rated "+age:age):"","esrb");
     if(rom&&g.compat)chip(`Xenia: ${g.compat}`,/playable|gameplay/i.test(g.compat)?"score":"")} /* (other tiles keep fillDetails' own chips) */
+  if(Array.isArray(g._versions)&&g._versions.length>1){const c=dvMk("span","chipx");c.textContent=`${g._versions.length} versions`;$("dChips").append(c)}
   // Overview's facts, Playnite-style: a row per fact the game has (a PC game keeps fillDetails' list)
   if(rom){const grid=$("dGrid");grid.textContent="";
     [["Developer",i.dev],["Publisher",i.pub&&i.pub!==i.dev?i.pub:""],["Released",i.release||i.year?fmtRelease(i.release,i.year):""],["Genre",i.genres?String(i.genres).replace(/;/g,", "):""],["Series",i.series],
@@ -5158,6 +5257,8 @@ window.Shelf={
   previewStop:()=>{if(PV){pvStop();pvBackStop()}},setCollections:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.collections=list;reHome()},
   // (beta.14) Settings → My shelves → Automatic shelves switched (ui.autoShelves), and the genres / consoles a shelf can fill itself from
   setAutoShelves:o=>{if(!cfgInfo||!o||typeof o!=="object")return;cfgInfo.config.ui.autoShelves=Object.assign({},o);reHome()},autoChoices:()=>autoChoices(),
+  allGamesList:()=>{const src=Array.isArray(lastLib)?lastLib:allShelves,out=[];for(const s of src){if(!s||s.kind==="home"||s.id==="media"||s.col)continue;const gs=Array.isArray(s.games)?s.games:(s._base||s.items||[]);for(const g of gs){if(!g||(g.kind!=="rom"&&g.kind!=="steam"))continue;out.push({id:String(g.id),title:String(g.title||""),shelfId:s.id,shelfName:s.name||s.id,kind:g.kind,source:g.source||"",store:g.source==="owned"?(g.store||""):(g.source||""),installed:g.source!=="owned",region:g.region||"",label:versionLabelOf(g,s.name||s.id)})}}return out},
+  setVersions:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.versions=list;reshelfWanted=true},
   homeButton:()=>{if(qm.open){qmClose();return "closed"}qmOpen();return qm.open?"opened":"busy"},quickMenuOpen:()=>!!qm.open, // the Thor's Home key while Boxshelf is the Home app
   _mus:{set:(k,v)=>musSetOpt(k,v),style:()=>musStyle(),hist:h=>{HIST=Object.assign({},HIST,h||{})},tv:()=>({ch:tvS.ch,n:tvS.list.length,list:tvS.list.slice(0,4).map(e=>String(e.key).slice(0,12)),i:tvS.i,ads:tvS.ads.length,bad:[...tvS.bad],guide:!!tvS.guide}),games:()=>allShelves.filter(sh=>sh.kind==="console").flatMap(sh=>ownItems(sh).filter(isGame).map(g=>({id:g.id,title:g.title,sys:sh.id})))}, // museum test hooks (the harness can't see these names)
   refresh,flushSaves,toast,shuffle,cleanLogo,attractNow:()=>{lastInputAt=-1e9;attractCheck()},sound:(o)=>{if(o&&o.enabled!=null){soundOn=!!o.enabled;musTvVol()}if(o&&o.volume!=null&&cfgInfo){cfgInfo.config.ui.volume=+o.volume;paintVol()}if(window.Sound){Sound.set(o);if(o.preview)Sound.play(o.preview);if(o.music!=null||o.musicLevel!=null){if(o.music!=null)mmTrack=String(o.music);if(o.musicLevel!=null)mmLevel=+o.musicLevel;ambient(mmWant)}else if(o.enabled===true)ambient(mmWant)}},raReload:()=>{RA.shelf={};RA.game.clear();raInit()},

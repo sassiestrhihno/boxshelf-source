@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld('boxshelf', {
   pcCoverReset: id => call('pccover:reset', { id }),
   pcCoverMissing: () => call('pccover:missing'), // (beta.9) custom games with no cover chosen yet
   renameGame: o => call('game:rename', o), // (beta.5) { systemId, file } or { id }, and title ('' = back to the file's name)
+  findVersionGroups: () => call('versions:findDuplicates'),
   themes: () => call('themes:list'),
   setTheme: (systemId, kind, file) => call('themes:set', { systemId, kind, file }),
   removeTheme: (systemId, kind) => call('themes:remove', { systemId, kind }),

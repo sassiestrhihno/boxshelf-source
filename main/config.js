@@ -52,7 +52,7 @@ function defaults() {
     // Art Studio: styles = per console shelf style (a console without one follows defaultArtStyle(ui), i.e. the old Box art
     // region / Prefer HD settings, so nothing changes until a style is chosen); locks = per game parts auto-fetch never touches
     art: { styles: {}, locks: {} },
-    ui: { sound: true, startFullscreen: true, buttons: 'auto', performance: 'auto', quitCombo: true, quitComboKeys: 'l3+r3', soundTheme: 'aero', volume: .7, ambient: false, ambientLevel: .02, music: 'off', musicLevel: .4, rumble: true, soundRev: 4, autoCovers: false, autoManuals: false, artLibrary: '', attract: true, attractMinutes: 3, attractPace: 'normal', attractWander: true,shuffleAll: true, favorites: [], collections: [], background: 'blur', theme: 'spectrum', sort: 'az', filter: 'all', museumLight: 'gallery', homeMenu: true, homeLayout: 'side', hideTaskbar: true, seamless: true, screenMode: '', windowBounds: null, uiScale: 1, previews: 'off', previewSound: false, previewYoutube: true, previewClips: true, previewDirs: [], previewDelay: 5, previewDelay5: false, previewHint: false, clipHint: false, deckHint: false, leaveHint: false, lastSeenVersion: '', // (beta.7) video previews; lastSeenVersion: the version whose What's new was shown: off / details / shelf (Details and behind the shelf); the first run asks
+    ui: { sound: true, startFullscreen: true, buttons: 'auto', performance: 'auto', quitCombo: true, quitComboKeys: 'l3+r3', soundTheme: 'aero', volume: .7, ambient: false, ambientLevel: .02, music: 'off', musicLevel: .4, rumble: true, soundRev: 4, autoCovers: false, autoManuals: false, artLibrary: '', attract: true, attractMinutes: 3, attractPace: 'normal', attractWander: true,shuffleAll: true, favorites: [], collections: [], versions: [], autoStack: true, versionsUngrouped: [], background: 'blur', theme: 'spectrum', sort: 'az', filter: 'all', museumLight: 'gallery', homeMenu: true, homeLayout: 'side', hideTaskbar: true, seamless: true, screenMode: '', windowBounds: null, uiScale: 1, previews: 'off', previewSound: false, previewYoutube: true, previewClips: true, previewDirs: [], previewDelay: 5, previewDelay5: false, previewHint: false, clipHint: false, deckHint: false, leaveHint: false, lastSeenVersion: '', // (beta.7) video previews; lastSeenVersion: the version whose What's new was shown: off / details / shelf (Details and behind the shelf); the first run asks
       // 1.55 Settings
       updateCheck: true, // (1.82) Settings → System → Check for new betas
       openInto: 'last', display: '', safeArea: 100, clock: 'full', clock24: false, reduceMotion: false, dimMinutes: 0, confirmButton: 'auto', scrollSpeed: 'normal', artRegion: 'auto', audioOut: '', hidden: [], museumStyle: { walkIn: true } }
@@ -230,6 +230,28 @@ function sanitize(cfg) {
   { const a = isObj(ui.shelfAdds) ? ui.shelfAdds : {}, out = {};
     for (const [k, v] of Object.entries(a).slice(0, 100)) { if (!/^[a-z0-9_-]{1,24}$/.test(k) || !Array.isArray(v)) continue; const ids = [...new Set(v.filter(x => typeof x === 'string' && x && x.length <= 1024))].slice(0, 2000); if (ids.length) out[k] = ids; }
     ui.shelfAdds = out; }
+  // Game versions: grouped/stacked versions of the same game [{ id, primary, members: [{ id, label }] }]
+  { const used = new Set(), out = [];
+    for (const v of Array.isArray(ui.versions) ? ui.versions : []) {
+      if (!isObj(v) || typeof v.id !== 'string' || !v.id.trim()) continue;
+      const ms = [], seenM = new Set();
+      for (const m of Array.isArray(v.members) ? v.members : []) {
+        const id = isObj(m) && typeof m.id === 'string' ? m.id.slice(0, 1024) : '';
+        if (!id || seenM.has(id) || used.has(id)) continue;
+        seenM.add(id);
+        const lbl = typeof m.label === 'string' ? m.label.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+        ms.push({ id, ...(lbl ? { label: lbl } : {}) });
+        if (ms.length >= 20) break;
+      }
+      if (ms.length < 2) continue;
+      ms.forEach(m => used.add(m.id));
+      const pri = typeof v.primary === 'string' && ms.some(m => m.id === v.primary) ? v.primary : ms[0].id;
+      out.push({ id: v.id.trim().slice(0, 64), primary: pri, members: ms });
+      if (out.length >= 500) break;
+    }
+    ui.versions = out;
+    if (typeof ui.autoStack !== 'boolean') ui.autoStack = true;
+    ui.versionsUngrouped = [...new Set((Array.isArray(ui.versionsUngrouped) ? ui.versionsUngrouped : []).filter(x => typeof x === 'string' && x.trim() && x.length <= 120).map(x => x.trim().toLowerCase()))].slice(0, 500); }
   // (beta.4) games added by hand: plain paths and names only, a sane number of them
   if (isObj(cfg.pc)) { const s = (v, n) => typeof v === 'string' ? v.trim().slice(0, n) : '';
     cfg.pc.custom = (Array.isArray(cfg.pc.custom) ? cfg.pc.custom : []).filter(c => isObj(c) && s(c.exe, 1024)).slice(0, 2000).map(c => ({ id: s(c.id, 80) || s(c.title, 80) || s(c.exe, 80), title: s(c.title, 120), exe: s(c.exe, 1024), args: s(c.args, 1000), ...(s(c.src, 20) ? { src: s(c.src, 20) } : {}), ...(typeof c.shelf === 'string' && /^[a-z0-9_-]{1,24}$/.test(c.shelf) && c.shelf !== 'custom' ? { shelf: c.shelf } : {}) })); // (beta.7: src 'playnite' marks an import, for Remove what was imported; up to 2000 games) (beta.10: shelf 'pc' = on the PC shelf instead of Custom; beta.14: or a console's id, main.js checks it's a known one)

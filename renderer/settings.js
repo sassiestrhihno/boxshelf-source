@@ -484,7 +484,9 @@ function regroup(S){
       pc?M("PC games","lib-pc","Steam, Epic, GOG, Ubisoft, EA and Xbox: which stores' games go on the PC shelf.",pc.lead,whole("pc"),{keys:"steam epic gog ubisoft ea xbox game pass store pc",ns:true}):null,
       cu?M("Custom games","lib-custom","Decomps and recomps, PC ports, Playnite and Quiver Launcher games, any program: the Custom shelf.",cu.lead,whole("custom"),{keys:"custom decomp recomp port playnite quiver program exe add games",ns:true}):null,
       ap&&ap.rows.length?M("Media apps","lib-apps","Stremio and Nuvio on the Media shelf.",ap.lead,whole("apps"),{keys:"stremio nuvio media apps",ns:true}):null,
-      take("shelf","My shelves"),take("shelf","Console order"),take("art","Hidden games")];
+      take("shelf","My shelves"),
+      M("Game versions","lib-versions","Group multiple versions or platforms of the same game under one box, or auto-detect matching titles.","Group different versions or platforms of a game under one case, or check for duplicates across your whole library.",[{t:"dyn",fn:verManageRows}],{keys:"versions stack group duplicates recomp port",ns:true,sub:()=>{const n=verStacks().length+verAutoGroups().length;return n?{text:`${n} grouped`}:null}}),
+      take("shelf","Console order"),take("art","Hidden games")];
     const mo=more("consoles",[take("consoles","Find emulators again"),take("consoles","RocketLauncher"),take("consoles","Start games through RocketLauncher"),take("consoles","Front end RocketLauncher is told"),take("display","Seamless play"),...rest("consoles")]);
     out.push({g:"",id:"consoles",name:"Library",ic:"games",alias:["pc","custom","apps","library"],badge:(secOf("consoles")||{}).badge,dot:()=>attnList().some(x=>!x.tip)?"warn":null,
       lead:"Your consoles, their emulators and your games: where Boxshelf finds them and what goes on the shelves.",rows:[...rows,mo].filter(Boolean)})}
@@ -1674,6 +1676,174 @@ function colManageRows(){const L=colList(),out=[];
   for(const c of L){let r=colRowsBy.get("open|"+c.id);if(!r){r=A(c.name,"",`Open ${c.name}: search for games to add, take games off, rename or delete it.`,()=>openMyShelf(c),{ns:true,open:true,keys:"my shelf collection"});colRowsBy.set("open|"+c.id,r)}
     r.label=c.name;r.btn=c.rule&&c.rule.kind?"Automatic":`${c.ids.length} game${c.ids.length===1?"":"s"}`;out.push(r)}
   return out}
+let verScan={busy:false,checked:false,list:[],pick:new Set(),rows:new Map()};
+let gvState=null;
+const verStacks=()=>{cfg.ui=cfg.ui||{};if(!Array.isArray(cfg.ui.versions))cfg.ui.versions=[];return cfg.ui.versions};
+const verUngrouped=()=>{cfg.ui=cfg.ui||{};if(!Array.isArray(cfg.ui.versionsUngrouped))cfg.ui.versionsUngrouped=[];return cfg.ui.versionsUngrouped};
+function verSkipKey(k,add){
+  k=String(k||"").trim().toLowerCase();if(!k)return;
+  const L=verUngrouped(),i=L.indexOf(k);
+  if(add&&i<0)L.push(k);else if(!add&&i>=0)L.splice(i,1);
+}
+function verNormTitle(raw){
+  let s=String(raw||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  if(!s.trim())return "";
+  s=s.replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g," ").replace(/^([^,:-]+),\s*(the|an|a)(?=\s*[-:–—]|$)/i,"$2 $1");
+  s=s.replace(/\b(?:ver(?:sion)?\.?\s*\d+(?:\.\d+)*|v\d+(?:\.\d+)*|rev(?:ision)?(?:\.\s*|\s+)[a-z0-9]+|build\s*\d+)\b/g," ");
+  s=s.replace(/[&+]/g," and ").replace(/['’`]/g,"").replace(/[:\-–—_/\\.,!?*~|]+/g," ");
+  s=s.replace(/\b(?:game of the year edition|goty edition|definitive edition|complete edition|ultimate edition|enhanced edition|collector'?s edition|anniversary edition|special edition|director'?s cut|hd remaster|pc port|remastered|remake|recompiled|recomp|decompiled|decomp|edition|goty)\b/g," ");
+  return s.replace(/\s+/g," ").trim().replace(/^(?:the|an|a)\s+/,"").trim();
+}
+function verAutoGroups(byId){
+  if(gp("ui.autoStack")===false)return [];
+  byId=byId||verGamesMap();const used=verUsedIds(),skip=new Set(verUngrouped()),groups=new Map(),order={steam:0,gog:1,epic:2,xbox:3,ea:4,ubisoft:5,battlenet:6};
+  const rank=g=>g.installed===false?30+(String(g.store||"").toLowerCase() in order?order[String(g.store||"").toLowerCase()]:8):g.kind==="steam"?(g.source==="custom"||g.source==="quiver"?10:(String(g.source||"steam").toLowerCase() in order?order[String(g.source||"steam").toLowerCase()]:8)):20;
+  for(const g of byId.values()){
+    if(!g||!g.id||used.has(String(g.id)))continue;
+    const k=verNormTitle(g.title);if(!k||k.length<2||skip.has(k))continue;
+    if(!groups.has(k))groups.set(k,[]);groups.get(k).push(g);
+  }
+  const out=[];
+  for(const [key,ms] of groups.entries()){
+    if(ms.length<2)continue;
+    ms.sort((a,b)=>rank(a)-rank(b)||String(a.shelfName||"").localeCompare(String(b.shelfName||""))||a.title.localeCompare(b.title));
+    const cnt=new Map(),seen=new Map();ms.forEach(m=>cnt.set(m.label,(cnt.get(m.label)||0)+1));
+    const members=ms.map(m=>{let l=m.label||m.shelfName||"Version";if((cnt.get(l)||0)>1){const n=(seen.get(l)||0)+1;seen.set(l,n);l=`${l} (${n})`}return {id:String(m.id),title:m.title,shelfName:m.shelfName||"",label:l}});
+    out.push({key,primary:members[0].id,title:ms[0].title,members});
+  }
+  return out.sort((a,b)=>a.title.localeCompare(b.title,undefined,{sensitivity:"base"}));
+}
+function verCommit(){scheduleSave();shelf("setVersions",clone(verStacks()));shelf("reshelf");bump()}
+function verGamesMap(){const m=new Map(),L=window.Shelf&&Shelf.allGamesList?Shelf.allGamesList():allGamesList();for(const g of Array.isArray(L)?L:[])if(g&&g.id!=null&&!m.has(String(g.id)))m.set(String(g.id),g);return m}
+function verUsedIds(exceptId){const s=new Set();for(const st of verStacks()){if(!st||(exceptId&&st.id===exceptId))continue;for(const m of st.members||[])if(m&&m.id)s.add(String(m.id))}return s}
+function verRow(map,k,mk){let r=map.get(k);if(!r){r=mk();map.set(k,r)}return r}
+async function verRunCheck(){
+  if(verScan.busy||!api.findVersionGroups)return;
+  verScan.busy=true;bump();
+  try{
+    const res=await api.findVersionGroups(),used=verUsedIds();
+    for(const k of [...verScan.rows.keys()])if(k.startsWith("cand|"))verScan.rows.delete(k);
+    verScan.list=(Array.isArray(res)?res:[]).filter(g=>g&&Array.isArray(g.members)&&g.members.filter(m=>m&&!used.has(m.id)).length>=2);
+    verScan.pick=new Set(verScan.list.map(g=>g.key));verScan.checked=true;play("tick",1);
+  }catch(e){toast(errMsg(e));play("error")}
+  finally{verScan.busy=false;bump()}
+}
+function verStackSelected(){
+  const L=verStacks(),used=verUsedIds(),chosen=verScan.list.filter(g=>verScan.pick.has(g.key));
+  let n=0;
+  for(const grp of chosen){
+    const members=[];
+    for(const m of grp.members||[]){if(!m||!m.id||used.has(m.id)||members.some(x=>x.id===m.id))continue;members.push({id:String(m.id),...(m.label?{label:String(m.label).slice(0,60)}:{})})}
+    if(members.length<2)continue;
+    members.forEach(m=>used.add(m.id));
+    verSkipKey(grp.key,false);
+    L.push({id:"v"+Date.now().toString(36)+(n?"-"+n:""),primary:members[0].id,members});n++;
+  }
+  verScan.list=verScan.list.filter(g=>!verScan.pick.has(g.key));verScan.pick.clear();
+  if(n){verCommit();play("open");toast(n===1?"Stacked 1 game":`Stacked ${n} games`)}else bump();
+}
+function openGameVersions(o,viaRoute){
+  o=o||{};const byId=verGamesMap(),cur=byId.get(String(o.id))||{id:String(o.id),title:String(o.title||"Game"),shelfName:o.shelfId||"",label:o.label||"Version"};
+  const hasMan=verStacks().some(x=>x&&Array.isArray(x.members)&&x.members.some(m=>m.id===String(cur.id)));
+  const ag=!hasMan&&Array.isArray(o.autoVersions)&&o.autoVersions.length>1?o.autoVersions:(!hasMan?(verAutoGroups(byId).find(g=>g.members.some(m=>m.id===String(cur.id)))||{}).members:null);
+  const autoKey=o.autoKey||verNormTitle(cur.title);
+  gvState={gid:String(cur.id),title:String(o.title||cur.title||"Game"),q:"",autoKey,isAuto:!!(ag&&ag.length>1),draft:ag&&ag.length>1?ag.map(m=>({id:String(m.id),label:String(m.label||"Version")})):[{id:String(cur.id),label:String(o.label||cur.label||"Version")}],draftPrimary:String((ag&&ag[0]&&ag[0].id)||cur.id),byId,rows:new Map()};
+  MORE.gameversions={id:"gameversions",name:`Versions: ${gvState.title}`.slice(0,60),lead:"Group different versions or platforms of this game under one shelf box.",rows:[{t:"dyn",fn:gvRows}]};
+  if(viaRoute){goSecId("consoles");focus="page";rowI=0}
+  openSub({kind:"more",id:"gameversions"});
+}
+function verManageRows(){
+  const s=verScan,L=verStacks(),byId=verGamesMap(),autos=verAutoGroups(byId),out=[];
+  out.push(verRow(s.rows,"autoStack",()=>T("Stack same-game versions automatically","ui.autoStack",true,"Automatically group multiple store copies, editions or platforms of the same game (e.g. Steam and Epic) under one box on the shelf.",{live:()=>{shelf("reshelf");bump()},ns:true,keys:"automatic stack versions stores steam epic duplicate"})));
+  out.push(H("Auto-detect duplicates"));
+  const chk=verRow(s.rows,"chk",()=>A("Find same-game versions","","Scan PC stores, custom games and emulated consoles for matching game titles that aren't stacked yet.",verRunCheck,{ns:true,keys:"find same game versions check duplicates"}));
+  chk.btn=s.busy?"Checking…":"Check now";chk.dim=!!s.busy;out.push(chk);
+  if(s.checked){
+    if(!s.list.length)out.push(verRow(s.rows,"none",()=>infoRow("No ungrouped matching versions found","",{text:"Games with the same normalized title across PC and consoles appear here."})));
+    else{
+      out.push(H("Matches found",{em:()=>`${s.list.length}`}));
+      for(const grp of s.list){
+        const subText=grp.members.map(m=>m.label).join(" · ")+` · ${grp.members.length} versions`;
+        const row=verRow(s.rows,"cand|"+grp.key,()=>T(grp.title,"",true,`Stack these ${grp.members.length} versions together under one box.`,{
+          get:()=>s.pick.has(grp.key),set:v=>{if(v)s.pick.add(grp.key);else s.pick.delete(grp.key)},live:()=>bump(),nosave:true,ns:true,
+          sub:()=>({text:subText}),keys:"stack candidate duplicate version "+grp.title.toLowerCase()}));
+        row.label=grp.title;out.push(row);
+      }
+      const nSel=s.list.filter(g=>s.pick.has(g.key)).length;
+      const mg=verRow(s.rows,"merge",()=>A("Stack all selected","","Group every checked game above into stacked versions at once.",verStackSelected,{ns:true,keys:"stack all selected bulk merge"}));
+      mg.btn=`Stack (${nSel})`;mg.dim=nSel===0;out.push(mg);
+    }
+  }
+  const totalGrp=L.length+autos.length;
+  out.push(H("Grouped games",{em:()=>totalGrp?`${totalGrp}`:""}));
+  if(!totalGrp)out.push(verRow(s.rows,"empty",()=>infoRow("No grouped games yet","",{text:"Use Check now above or open Details → ··· → Versions / Group… on any game."})));
+  else{
+    for(const st of L){
+      const pri=byId.get(st.primary)||byId.get(st.members[0]&&st.members[0].id);
+      const title=pri?pri.title:(st.members[0]&&st.members[0].id)||st.id;
+      const subText=(st.members||[]).map(m=>m.label||((byId.get(m.id)||{}).label)||m.id).join(" · ");
+      const r=verRow(s.rows,"st|"+st.id,()=>A(title,"Manage…","Change the primary box, rename version labels, add/remove versions, or ungroup.",()=>openGameVersions({id:st.primary,title}),{ns:true,sub:()=>({text:subText}),keys:"grouped version stack "+title.toLowerCase()}));
+      r.label=title;out.push(r);
+    }
+    for(const ag of autos){
+      const subText=ag.members.map(m=>m.label).join(" · ");
+      const r=verRow(s.rows,"auto|"+ag.key,()=>A(ag.title,"Manage…","Auto-grouped across stores/platforms. Change primary box, rename labels, or ungroup.",()=>openGameVersions({id:ag.primary,title:ag.title,autoKey:ag.key,autoVersions:ag.members}),{ns:true,sub:()=>({text:subText}),keys:"auto grouped version "+ag.title.toLowerCase()}));
+      r.label=ag.title;out.push(r);
+    }
+  }
+  return out;
+}
+function gvRows(){
+  const s=gvState;if(!s)return [];
+  const L=verStacks(),st=L.find(x=>x&&Array.isArray(x.members)&&x.members.some(m=>m.id===s.gid));
+  const members=st?st.members:s.draft,curPri=()=>st?st.primary:s.draftPrimary;
+  const defLbl=id=>{const g=s.byId.get(id);return (g&&g.label)||(g&&g.shelfName)||"Version"};
+  const getLbl=id=>{const m=(st?st.members:s.draft).find(x=>x.id===id);return (m&&m.label)||defLbl(id)};
+  const promote=()=>{const stacks=verStacks();let cur=stacks.find(x=>x&&x.members.some(m=>m.id===s.gid));if(!cur&&s.draft.length>=2){verSkipKey(s.autoKey,false);cur={id:"v"+Date.now().toString(36),primary:s.draftPrimary,members:clone(s.draft)};stacks.push(cur);s.isAuto=false}return cur};
+  const setPri=id=>{const cur=verStacks().find(x=>x&&x.members.some(m=>m.id===s.gid))||(s.draft.length>=2?promote():null);if(cur){cur.primary=id;verCommit()}else{s.draftPrimary=id;bump()}};
+  const rmMem=id=>{const stacks=verStacks();let idx=stacks.findIndex(x=>x&&x.members.some(m=>m.id===s.gid));if(idx<0&&s.draft.length>=2){promote();idx=stacks.findIndex(x=>x&&x.members.some(m=>m.id===s.gid))}if(idx<0)return;const cur=stacks[idx];cur.members=cur.members.filter(x=>x.id!==id);
+    if(cur.members.length<2){const keep=cur.members[0]||{id:s.gid,label:defLbl(s.gid)};stacks.splice(idx,1);s.gid=keep.id;s.draft=[keep];s.draftPrimary=keep.id;s.isAuto=false;verSkipKey(s.autoKey,true);toast("Versions ungrouped")}
+    else if(cur.primary===id){cur.primary=cur.members[0].id;if(s.gid===id)s.gid=cur.primary}
+    else if(s.gid===id)s.gid=cur.primary;verCommit()};
+  const ungroup=()=>{const stacks=verStacks(),idx=stacks.findIndex(x=>x&&x.members.some(m=>m.id===s.gid));let kept={id:s.gid,label:defLbl(s.gid)};if(idx>=0){const cur=stacks[idx];kept=cur.members.find(x=>x.id===s.gid)||cur.members[0];stacks.splice(idx,1)}else if(s.draft.length){kept=s.draft.find(x=>x.id===s.gid)||s.draft[0]}
+    s.gid=kept.id;s.draft=[kept];s.draftPrimary=kept.id;s.isAuto=false;verSkipKey(s.autoKey,true);toast("Versions ungrouped");verCommit()};
+  const addMem=g=>{const id=String(g.id),lbl=g.label||g.shelfName||"Version",stacks=verStacks(),cur=stacks.find(x=>x&&x.members.some(m=>m.id===s.gid));
+    if(cur){if(cur.members.length>=20||cur.members.some(x=>x.id===id))return;verSkipKey(s.autoKey,false);cur.members.push({id,label:lbl});toast(`Added ${g.title} (${lbl})`);verCommit()}
+    else{if(!s.draft.some(x=>x.id===id))s.draft.push({id,label:lbl});if(s.draft.length>=2){verSkipKey(s.autoKey,false);stacks.push({id:"v"+Date.now().toString(36),primary:s.draftPrimary,members:clone(s.draft)});s.isAuto=false;toast(`Stacked ${lbl} with ${s.title}`);verCommit()}else bump()}};
+  const out=[H("Included versions",{em:()=>`${members.length}`})];
+  for(const m of members){
+    const g=s.byId.get(m.id),title=(g&&g.title)||m.id,shelfName=(g&&g.shelfName)||"",isPri=curPri()===m.id;
+    const pr=verRow(s.rows,"pri|"+m.id,()=>A(title,"","Primary version supplies the box cover on the shelf.",()=>setPri(m.id),{ns:true,sub:()=>({text:[shelfName,curPri()===m.id?"Primary version":""].filter(Boolean).join(" · ")}),keys:"primary version "+title.toLowerCase()}));
+    pr.label=title;pr.btn=isPri?"Primary":"Make primary";pr.dim=!!isPri;out.push(pr);
+    const lb=verRow(s.rows,"lbl|"+m.id,()=>X("Version label","","Shown when choosing which version to play (e.g. PC, Switch, 2026).",
+      {get:()=>getLbl(m.id),set:v=>{const clean=String(v||"").replace(/\s+/g," ").trim().slice(0,60);const cur=verStacks().find(x=>x&&x.members.some(y=>y.id===s.gid))||(s.draft.length>=2?promote():null);const ms=cur?cur.members:s.draft;const mm=ms.find(y=>y.id===m.id);if(mm)mm.label=clean||defLbl(m.id)},live:()=>verCommit(),nosave:true,ns:true,keys:"version label"}));
+    out.push(lb);
+    if(members.length>=2)out.push(verRow(s.rows,"rm|"+m.id,()=>A("Remove from group","Remove","Take this version out of the group (keeps the game on its own shelf).",()=>rmMem(m.id),{ns:true,keys:"remove version"})));
+  }
+  if(st||s.draft.length>=2)out.push(verRow(s.rows,"ungroup",()=>A("Ungroup all","Ungroup","Separate all versions in this group back into individual shelf boxes.",ungroup,{ns:true,keys:"ungroup all versions"})));
+  out.push(H("Add another version"));
+  out.push(verRow(s.rows,"search",()=>X("Search games to add","","Type any part of a game title from PC or a console to stack with this game.",
+    {get:()=>s.q,set:v=>{s.q=String(v||"")},live:()=>bump(),nosave:true,ns:true,ph:"Ocarina, Zelda, Super Mario…",keys:"search add game version"})));
+  const used=verUsedIds();members.forEach(m=>used.add(m.id));
+  const pool=[...s.byId.values()].filter(g=>!used.has(g.id));
+  const q=s.q.trim().toLowerCase();
+  if(q){
+    const normQ=x=>String(x||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+    const qToks=normQ(q).split(" ").filter(Boolean);
+    const hits=pool.filter(g=>{const raw=(g.title+" "+(g.shelfName||"")+" "+(g.label||"")).toLowerCase();if(!qToks.length)return raw.includes(q);const nq=normQ(raw);return qToks.every(w=>nq.includes(w))})
+      .sort((a,b)=>{const aq=a.title.toLowerCase().indexOf(q),bq=b.title.toLowerCase().indexOf(q);if(aq>=0&&bq<0)return -1;if(bq>=0&&aq<0)return 1;return (aq>=0&&bq>=0?aq-bq:0)||a.title.localeCompare(b.title)});
+    if(!hits.length)out.push(verRow(s.rows,"nohit",()=>infoRow(`No game matches “${s.q.trim()}”`,"",{text:"Already-grouped games are excluded unless ungrouped first."})));
+    else for(const g of hits.slice(0,30)){const r=verRow(s.rows,"add|"+g.id,()=>A(g.title,"Stack","Add this version to the current group.",()=>addMem(g),{ns:true,sub:()=>({text:g.label||g.shelfName}),keys:"add version "+g.title.toLowerCase()}));r.label=g.title;out.push(r)}
+  }else{
+    const words=[...new Set(s.title.toLowerCase().replace(/[^a-z0-9\s]/g," ").split(/\s+/).filter(w=>w.length>=3&&!new Set(["the","and","for","with"]).has(w)))];
+    const sug=words.length?pool.map(g=>{const tl=g.title.toLowerCase(),sc=words.reduce((n,w)=>n+(tl.includes(w)?1:0),0);return {g,sc}}).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc||a.g.title.localeCompare(b.g.title)).map(x=>x.g):[];
+    if(sug.length){
+      out.push(H("Suggested matches",{em:()=>`${Math.min(12,sug.length)}`}));
+      for(const g of sug.slice(0,12)){const r=verRow(s.rows,"add|"+g.id,()=>A(g.title,"Stack","Suggested by title match: add this version to the group.",()=>addMem(g),{ns:true,sub:()=>({text:g.label||g.shelfName}),keys:"add suggested version"}));r.label=g.title;out.push(r)}
+    }else out.push(verRow(s.rows,"hint",()=>infoRow("Search above to add another version","",{text:"Any PC or console game can be stacked together."})));
+  }
+  return out;
+}
 function route(page,o){if(!page)return;o=o||{};if(RG_SUB&&RG_SUB[page]&&MORE[RG_SUB[page]])page=RG_SUB[page]; /* (beta.14) an old tab that is a page of its own now */
   if(page==="addgames"){MORE.addgames=MORE.addgames||{id:"addgames",name:"Add games",lead:"Every way to put games on the Custom shelf. You see what was found before anything is added.",rows:[{t:"dyn",fn:addRows}]};goSecId("custom");focus="page";rowI=0;openSub({kind:"more",id:"addgames"});return} // (beta.7) the Custom shelf's Add games tile
   if(page==="whatsnew"){goSecId("sys");focus="page";rowI=0;openSub({kind:"more",id:"whatsnew"});return} // (beta.7) the note card's See what's new / All the notes
@@ -1693,6 +1863,7 @@ function route(page,o){if(!page)return;o=o||{};if(RG_SUB&&RG_SUB[page]&&MORE[RG_
   if(page==="trailer"&&o.systemId&&o.file){const nm=String(o.name||o.title||"This game");trailerState={ref:{systemId:String(o.systemId),file:String(o.file),title:String(o.title||nm),youtube:o.youtube||null},list:[],cur:"",busy:true,link:"",rows:new Map()};
     MORE.trailer={id:"trailer",name:`Trailer: ${nm}`.slice(0,60),lead:"Where this game's trailer in Details (and behind the shelf) comes from.",rows:[{t:"dyn",fn:trailerRows}]};
     goSecId("consoles");focus="page";rowI=0;openSub({kind:"more",id:"trailer"});trailerLoad();return} /* (beta.14) Details → Change trailer */
+  if(page==="gameversions"&&o.id!=null){openGameVersions(o,true);return}
   // Details → Box art: straight to that game's mix (B goes up to its console's games, then the Art page)
   // Details → Choose manual…: straight to that game's manuals (B: the Manual row, then its console's games, then the Art page)
   if(page==="manualgame"||page==="manualstudio"){goSecId("art");focus="page";rowI=0;if(!api.manualStudio||!o.systemId)return;inMore("art-manuals");sRet=-1;stack=[];
@@ -1708,6 +1879,7 @@ function route(page,o){if(!page)return;o=o||{};if(RG_SUB&&RG_SUB[page]&&MORE[RG_
 // a deep link into one of the current section's sub-pages: B comes back to the row that opens it
 function inMore(id){const at=rowsOf(sec()).findIndex(r=>r.pg===id);if(at<0)return;subRet=at;sub={kind:"more",id};rowI=0}
 function prep(inf,opts){opts=opts||{};ensureDom();openId++;info=inf;cfg=clone(inf.config);ensureCfg();colRowsBy.clear();ADD.rows=null;COV.n=null;sw2Rm=false;sDirect=0;
+  verScan={busy:false,checked:false,list:[],pick:new Set(),rows:new Map()};gvState=null;
   /* (beta.12) a RomM pairing left showing when Settings closed: its poll stopped with that visit, so it's cancelled, not shown stale */if(RM.pair&&RM.pair.on){RM.pair=null;try{api.rommPairCancel().catch(()=>{})}catch{}} /* (beta.8) rows built for the last visit held that visit's copy of the settings */
   studioClear();sRet=0;sInfo=null;sInfoBusy=false;sGames={};sCands={};sSets={};sBusy={};needRescan=false;raChanged=false;pending=false;raEmu=null;emuAsk=null;listSig="";edit=null;grab=null;results=null;query="";preSearch=null;sub=null;secI=0;rowI=0;ci=0;focus="side";infoOpen=false;det=null;ipl=null;pathOk={};status={};askT={};displays=null;outputs=null;hidden=null;readWhere=null;readOld=null;mInfo=null;mInfoBusy=false;mGames={};mCands={};mBusy={};mMsg={};
   device=document.body.classList.contains("pad-input")?"pad":"key";
