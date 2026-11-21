@@ -127,10 +127,24 @@ async function logos(game, match) {
     c.lists[ck] = [Date.now(), list]; cacheSave(); return list;
   } catch (e) { if (e.code !== 'nokey') log('SteamGridDB:', e.message); return []; }
 }
+// A game's icons (square emblem / disc-label art), static only: offered for PC disc art in the picker.
+async function icons(game, match) {
+  if (!enabled()) return [];
+  try {
+    const id = await gameId(game, match); if (!id) return [];
+    const c = cacheGet(), ck = id + '|icons', hit = c.lists[ck];
+    if (hit && Date.now() - hit[0] < LIST_TTL) return hit[1];
+    const d = await api('/icons/game/' + id + '?types=static&nsfw=false&humor=false&epilepsy=false');
+    const okUrl = u => typeof u === 'string' && /^https:\/\/([a-z0-9-]+\.)*steamgriddb\.com\/[^\s"<>]+$/i.test(u) && u.length < 600;
+    const list = (Array.isArray(d) ? d : []).filter(g => g && okUrl(g.url) && !g.nsfw && !g.humor && +g.width > 0 && +g.height > 0)
+      .slice(0, 16).map(g => ({ url: g.url, thumbUrl: okUrl(g.thumb) ? g.thumb : null, ext: extOf(g.url, g.mime), w: +g.width, h: +g.height, style: String(g.style || ''), author: String((g.author && g.author.name) || '').slice(0, 40) }));
+    c.lists[ck] = [Date.now(), list]; cacheSave(); return list;
+  } catch (e) { if (e.code !== 'nokey') log('SteamGridDB:', e.message); return []; }
+}
 // Settings → Test: { ok } or { ok:false, error } (a word for the screen, never the key)
 async function test(k) {
   k = String(k || '').trim(); if (!k) return { ok: false, error: 'no key' };
   try { await api('/search/autocomplete/' + encodeURIComponent('zelda'), k); if (k === badKey) badKey = ''; return { ok: true }; }
   catch (e) { return { ok: false, error: e.code === 'auth' ? 'not accepted' : e.message }; }
 }
-module.exports = { init, posters, logos, test, enabled, gameId, grids, DIMS, _t: { cacheGet, reset: () => { cache = null; pausedUntil = 0; badKey = ''; }, paused: () => pausedUntil } };
+module.exports = { init, posters, logos, icons, test, enabled, gameId, grids, DIMS, _t: { cacheGet, reset: () => { cache = null; pausedUntil = 0; badKey = ''; }, paused: () => pausedUntil } };

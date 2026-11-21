@@ -130,7 +130,9 @@ let spineMat = null, standInSpine = null;
     n64: boxC({ mm: [178, 127], cart: [116, 75, 18.5] }),
     gb: boxC({ mm: [113, 136], cart: [57, 65, 9] }),
     gbc: boxC({ mm: [113, 136], cart: [57, 65, 9] }),
-    gba: boxC({ mm: [113, 136], cart: [57.5, 35, 9] })
+    gba: boxC({ mm: [113, 136], cart: [57.5, 35, 9] }),
+    pc: keepC({ mm: DVD, man: null, d: 120, disc: 'dvd', shell: '#1b1f27' }),
+    custom: keepC({ mm: DVD, man: null, d: 120, disc: 'dvd', shell: '#211b17' })
   };
   // the case for a console. st: its shelf style; an explicit pack there (systems-extra.js) wins, otherwise the bottom
   // screen's rule: sharp corners and thin = a jewel case, sharp corners and thick = a card box, rounded = a keep case

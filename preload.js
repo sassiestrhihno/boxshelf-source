@@ -62,9 +62,9 @@ contextBridge.exposeInMainWorld('boxshelf', {
   launchPc: id => call('launch:pc', { id }), // (beta.4) Epic, Quiver and hand-added games, by id
   findQuiver: () => call('pc:findQuiver'),
   pcStatus: () => call('pc:status'),
-  // (beta.5) a PC game's cover picker
-  pcCoverOptions: (id, term) => call('pccover:options', { id, term }),
-  pcCoverUse: (id, key) => call('pccover:use', { id, key }),
+  // (beta.5) a PC game's art picker (front, back, spine, disc)
+  pcCoverOptions: (id, term, part) => call('pccover:options', { id, term, part }),
+  pcCoverUse: (id, key, part) => call('pccover:use', { id, key, part }),
   steamExit: () => call('steam:exit'), // (beta.12) closes Steam (it lets go of a controller it took over)
   rocketFind: () => call('rocket:find'), // (beta.12, Windows) RocketLauncher
   rocketSystems: exe => call('rocket:systems', { exe }),
@@ -72,8 +72,8 @@ contextBridge.exposeInMainWorld('boxshelf', {
   rommStatus: () => call('romm:status'), rommPairStart: () => call('romm:pairStart'), rommPairPoll: () => call('romm:pairPoll'),
   rommPairCancel: () => call('romm:pairCancel'), rommPairCode: code => call('romm:pairCode', { code }), rommTest: () => call('romm:test'),
   rommSync: () => call('romm:sync'), rommForget: () => call('romm:forget'), rommCancel: () => call('romm:cancel'),
-  pcCoverOwn: id => call('pccover:own', { id }),
-  pcCoverReset: id => call('pccover:reset', { id }),
+  pcCoverOwn: (id, part) => call('pccover:own', { id, part }),
+  pcCoverReset: (id, part) => call('pccover:reset', { id, part }),
   pcCoverMissing: () => call('pccover:missing'), // (beta.9) custom games with no cover chosen yet
   renameGame: o => call('game:rename', o), // (beta.5) { systemId, file } or { id }, and title ('' = back to the file's name)
   themes: () => call('themes:list'),

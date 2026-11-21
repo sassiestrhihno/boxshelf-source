@@ -191,4 +191,4 @@ async function steamAnswers(p, log, ms = 6000) {
   return false;
 }
 
-module.exports = { scanSteam, scanSteamSafe, steamAnswers, probeLibraries, isTool, steamRoot, isMainSteam, libraryFolders, _t: { DEAD, answers } }; // (beta.12: libraryFolders for main/gamewatch.js)
+module.exports = { scanSteam, scanSteamSafe, steamAnswers, probeLibraries, isTool, steamRoot, isMainSteam, libraryFolders, findArt, _t: { DEAD, answers } }; // (beta.12: libraryFolders for main/gamewatch.js)

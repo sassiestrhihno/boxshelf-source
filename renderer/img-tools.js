@@ -12,6 +12,7 @@ wum.onModel(async job => {
     if (job.mode === 'cart') { const r = cart(bmp, job); bmp.close(); wum.done(r ? null : 'no cartridge made', r ? [r] : []); return; }
     if (job.mode === 'back') { const r = await back(bmp, job); bmp.close(); wum.done(r ? null : 'no back made', r ? [r] : []); return; }
     if (job.mode === 'madespine') { const r = await madeSpine(bmp, job); bmp.close(); wum.done(r ? null : 'no spine made', r ? [r] : []); return; }
+    if (job.mode === 'madedisc') { const r = await madeDisc(bmp, job); bmp.close(); wum.done(r ? null : 'no disc made', r ? [r] : []); return; }
     if (job.mode === 'spine') { const r = spine(bmp, job); bmp.close(); wum.done(r ? null : job.part === 'back' ? 'no back found' : 'no spine found', r ? [r] : []); return; }
     const w = bmp.width, h = bmp.height, half = Math.floor(w / 2), out = [];
     for (const side of ['left', 'right']) {
@@ -99,16 +100,17 @@ async function madeSpine(front, job) {
     // no transparency: a picture, not a logo; a squarish logo (stacked words, a badge) would be tiny across a thin spine:
     // the title in type reads better
     if (ink > .92 || logo.width / logo.height < 2.4) { logo.close(); logo = null; light = true; } }
-  // the console's own spine colour (job.lightBody: Nintendo, Xbox 360, PS5 are light; PS2 / PS3 / PSP / GameCube dark);
-  // a light logo on a light spine gets the dark one, tinted with the cover's colour, so it always reads
+  // the console's own spine colour (Switch/Switch 2: full Nintendo red spine; Nintendo, Xbox 360, PS5: light; PS2 / PS3 / PSP / GameCube: dark)
+  const isSwitch = /switch/i.test(String(band.label || ''));
   const dark = `rgb(${Math.round(fr * .22 + 10)},${Math.round(fg * .22 + 10)},${Math.round(fb * .22 + 12)})`;
-  const lightBody = logo ? !light : job.lightBody !== false;
-  const body = lightBody ? '#f2f2f0' : dark, ink2 = lightBody ? '#16161b' : '#ffffff';
+  const lightBody = isSwitch ? false : (logo ? !light : job.lightBody !== false);
+  const body = isSwitch ? (band.bg || '#e60012') : (lightBody ? '#f2f2f0' : dark), ink2 = isSwitch ? (band.fg || '#ffffff') : (lightBody ? '#16161b' : '#ffffff');
   g.fillStyle = body; g.fillRect(0, 0, W, H);
   // a soft sheen across the width, as on a printed spine
   const sh = g.createLinearGradient(0, 0, W, 0); sh.addColorStop(0, 'rgba(0,0,0,.18)'); sh.addColorStop(.18, 'rgba(255,255,255,.05)'); sh.addColorStop(.82, 'rgba(255,255,255,.03)'); sh.addColorStop(1, 'rgba(0,0,0,.2)'); g.fillStyle = sh; g.fillRect(0, 0, W, H);
   // the console's band, its name running down it
   const bh = Math.round(Math.max(W * 2.2, H * .15)); g.fillStyle = band.bg; g.fillRect(0, 0, W, bh);
+  if (isSwitch) { g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(0, bh - 2, W, 2); g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(0, bh, W, 1); }
   const down = (fn) => { g.save(); g.translate(W, 0); g.rotate(Math.PI / 2); fn(); g.restore(); }; // x = along the spine (down), y = across it (from the right edge)
   if (band.label) down(() => { g.fillStyle = band.fg; g.textAlign = 'center'; g.textBaseline = 'middle'; let fs = Math.round(W * .36); g.font = `800 ${fs}px ${F}`;
     while (fs > 8 && g.measureText(band.label.toUpperCase()).width > bh * .86) { fs--; g.font = `800 ${fs}px ${F}`; } g.fillText(band.label.toUpperCase(), bh / 2, W / 2 + 1); });
@@ -118,9 +120,16 @@ async function madeSpine(front, job) {
     while (fs > 7 && g.measureText(t).width > footH * .9) { fs--; g.font = `700 ${fs}px ${F}`; } g.fillText(t, H - footH / 2, W / 2 + 1); });
   // the logo or title in the space between
   const x0 = bh + Math.round(H * .025), x1 = H - footH - Math.round(H * .02), len = x1 - x0, across = W * .78;
-  if (logo) down(() => { const s = Math.min(len / logo.width, across / logo.height), w = logo.width * s, h = logo.height * s;
-    if (!light) { g.shadowColor = 'rgba(0,0,0,0)'; } else { g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = Math.round(W * .06); }
-    g.drawImage(logo, x0 + (len - w) / 2, (W - h) / 2, w, h); });
+  let drawLogo = logo;
+  if (logo && isSwitch && !light) {
+    const lc = document.createElement('canvas'); lc.width = logo.width; lc.height = logo.height;
+    const lx = lc.getContext('2d'); lx.drawImage(logo, 0, 0);
+    lx.globalCompositeOperation = 'source-in'; lx.fillStyle = ink2; lx.fillRect(0, 0, lc.width, lc.height);
+    drawLogo = lc;
+  }
+  if (drawLogo) down(() => { const s = Math.min(len / drawLogo.width, across / drawLogo.height), w = drawLogo.width * s, h = drawLogo.height * s;
+    if (!light && !isSwitch) { g.shadowColor = 'rgba(0,0,0,0)'; } else { g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = Math.round(W * .06); }
+    g.drawImage(drawLogo, x0 + (len - w) / 2, (W - h) / 2, w, h); });
   else down(() => { g.fillStyle = ink2; g.textAlign = 'center'; g.textBaseline = 'middle'; const t = String(job.title || '').trim(); let fs = Math.round(W * .44); g.font = `800 ${fs}px ${F}`;
     while (fs > 9 && g.measureText(t).width > len) { fs--; g.font = `800 ${fs}px ${F}`; }
     if (g.measureText(t).width > len) { // two lines, split near the middle at a space
@@ -186,5 +195,52 @@ function cart(bmp, job) {
   const sh = g.createLinearGradient(lx, ly, lx + lw, ly + lh); sh.addColorStop(0, 'rgba(255,255,255,.16)'); sh.addColorStop(.45, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(0,0,0,.12)');
   g.fillStyle = sh; g.fillRect(lx, ly, lw, lh); g.restore();
   rr(lx, ly, lw, lh, lr); g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = W * .006; g.stroke();
+  return c.toDataURL('image/png');
+}
+
+// A circular disc label made from a game's front cover and logo (used for PC games when no disc scan is on file).
+async function madeDisc(front, job) {
+  const S = 1024, c = document.createElement('canvas'); c.width = c.height = S; const g = c.getContext('2d'), r = S / 2;
+  let logo = null; try { logo = job.logo ? await createImageBitmap(new Blob([job.logo])) : null; } catch { logo = null; }
+  const band = job.band || { bg: '#11141a', fg: '#8fb4d9', label: 'PC' };
+  g.save();
+  g.beginPath(); g.arc(r, r, r - 8, 0, Math.PI * 2); g.clip();
+  const s = Math.max(S / front.width, S / front.height), dw = front.width * s, dh = front.height * s;
+  g.drawImage(front, (S - dw) / 2, (S - dh) / 2, dw, dh);
+  const ov = g.createRadialGradient(r, r, r * .18, r, r, r);
+  ov.addColorStop(0, 'rgba(10,12,18,.42)'); ov.addColorStop(.55, 'rgba(10,12,18,.12)'); ov.addColorStop(1, 'rgba(0,0,0,.48)');
+  g.fillStyle = ov; g.fillRect(0, 0, S, S);
+  const sh = g.createLinearGradient(0, 0, S, S);
+  sh.addColorStop(0, 'rgba(255,255,255,.18)'); sh.addColorStop(.42, 'rgba(255,255,255,0)'); sh.addColorStop(.58, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,.28)');
+  g.fillStyle = sh; g.fillRect(0, 0, S, S);
+  // Subtle inner polycarbonate ring + band pill near the bottom
+  g.strokeStyle = 'rgba(255,255,255,.28)'; g.lineWidth = 4;
+  g.beginPath(); g.arc(r, r, r * .23, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.arc(r, r, r - 10, 0, Math.PI * 2); g.stroke();
+  if (logo) {
+    const mw = S * .54, mh = S * .19, k = Math.min(mw / logo.width, mh / logo.height), lw = logo.width * k, lh = logo.height * k;
+    g.save(); g.shadowColor = 'rgba(0,0,0,.7)'; g.shadowBlur = 16; g.drawImage(logo, (S - lw) / 2, r * .46 - lh / 2, lw, lh); g.restore();
+    logo.close();
+  } else if (job.title) {
+    const F = 'Segoe UI, Lexend, Arial, sans-serif';
+    g.save(); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
+    g.shadowColor = 'rgba(0,0,0,.85)'; g.shadowBlur = 12;
+    let fs = 46; g.font = `800 ${fs}px ${F}`;
+    const t = String(job.title).trim();
+    while (fs > 22 && g.measureText(t).width > S * .66) { fs -= 2; g.font = `800 ${fs}px ${F}`; }
+    g.fillText(t, r, r * 1.46); g.restore();
+  }
+  if (band.label) {
+    const F = 'Segoe UI, Lexend, Arial, sans-serif';
+    g.save(); g.fillStyle = band.bg; g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 2;
+    g.beginPath(); g.roundRect(r - 46, S * .78, 92, 34, 17); g.fill(); g.stroke();
+    g.fillStyle = band.fg; g.font = `800 18px ${F}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(String(band.label).toUpperCase(), r, S * .78 + 18); g.restore();
+  }
+  g.restore();
+  // Clear transparent center hole
+  g.save(); g.globalCompositeOperation = 'destination-out';
+  g.beginPath(); g.arc(r, r, r * .145, 0, Math.PI * 2); g.fill();
+  g.restore();
   return c.toDataURL('image/png');
 }

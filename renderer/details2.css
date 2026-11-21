@@ -271,6 +271,12 @@ body:not(.pad-input) #app.dv2 .dv-mini:hover,body:not(.pad-input) #app.dv2 .dv-a
   writing-mode:vertical-rl;font-size:calc(9 * var(--u));font-weight:700;letter-spacing:.1em;text-transform:uppercase;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;padding:calc(6 * var(--u)) 0}
 #app.dv2 .dv-art .dv-disc{width:calc(100 * var(--u));height:calc(100 * var(--u));border-radius:50%;background-image:conic-gradient(from 30deg,#d9dde6,#8e96a8,#e8ebf1,#9aa2b3,#d9dde6);box-shadow:0 calc(6 * var(--u)) calc(16 * var(--u)) rgba(0,0,0,.5),inset 0 0 0 calc(2 * var(--u)) rgba(255,255,255,.25)}
 #app.dv2 .dv-art .dv-disc::after{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,#0b0c14 0 9%,#c9ced8 9.5% 14%,transparent 14.5%)}
+#app.dv2 .dv-art .dv-disc.has-pic{background-image:none;background-color:transparent;background-size:contain;box-shadow:none;filter:drop-shadow(0 calc(6 * var(--u)) calc(14 * var(--u)) rgba(0,0,0,.55))}
+#app.dv2 .dv-art .dv-disc.has-pic::after{display:none}
+#app.dv2 .dv-art .dv-disc.is-cart{width:calc(84 * var(--u));height:calc(122 * var(--u));border-radius:calc(8 * var(--u));background-image:linear-gradient(180deg,#323540,#1c1e26);box-shadow:0 calc(6 * var(--u)) calc(16 * var(--u)) rgba(0,0,0,.5),inset 0 0 0 calc(1.5 * var(--u)) rgba(255,255,255,.16)}
+#app.dv2 .dv-art .dv-disc.is-cart::after{content:"";position:absolute;inset:calc(10 * var(--u)) calc(8 * var(--u)) calc(22 * var(--u));border-radius:calc(4 * var(--u));background:rgba(255,255,255,.07)}
+#app.dv2 .dv-art .dv-disc.is-cart.has-pic{background-image:none;background-color:transparent;background-size:contain;box-shadow:none}
+#app.dv2 .dv-art .dv-disc.is-cart.has-pic::after{display:none}
 #app.dv2 .dv-art .dv-manual{width:calc(92 * var(--u));height:calc(124 * var(--u));border-radius:calc(2 * var(--u)) calc(5 * var(--u)) calc(5 * var(--u)) calc(2 * var(--u));background-color:#e9ebf1;
   box-shadow:calc(3 * var(--u)) calc(3 * var(--u)) 0 #d8dbe4,0 calc(6 * var(--u)) calc(16 * var(--u)) rgba(0,0,0,.5)}
 #app.dv2 .dv-tray>.dv-btn{margin-bottom:calc(40 * var(--u))}
