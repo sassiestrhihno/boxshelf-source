@@ -55,7 +55,7 @@ function defaults() {
     ui: { sound: true, startFullscreen: true, buttons: 'auto', performance: 'auto', quitCombo: true, quitComboKeys: 'l3+r3', soundTheme: 'aero', volume: .7, ambient: false, ambientLevel: .02, music: 'off', musicLevel: .4, rumble: true, soundRev: 4, autoCovers: false, autoManuals: false, artLibrary: '', attract: true, attractMinutes: 3, attractPace: 'normal', attractWander: true,shuffleAll: true, favorites: [], collections: [], background: 'blur', theme: 'spectrum', sort: 'az', filter: 'all', museumLight: 'gallery', homeMenu: true, homeLayout: 'side', hideTaskbar: true, seamless: true, screenMode: '', windowBounds: null, uiScale: 1, previews: 'off', previewSound: false, previewYoutube: true, previewClips: true, previewDirs: [], previewDelay: 5, previewDelay5: false, previewHint: false, clipHint: false, deckHint: false, leaveHint: false, lastSeenVersion: '', // (beta.7) video previews; lastSeenVersion: the version whose What's new was shown: off / details / shelf (Details and behind the shelf); the first run asks
       // 1.55 Settings
       updateCheck: true, // (1.82) Settings → System → Check for new betas
-      openInto: 'last', display: '', safeArea: 100, clock: 'full', clock24: false, reduceMotion: false, dimMinutes: 0, confirmButton: 'auto', scrollSpeed: 'normal', artRegion: 'auto', audioOut: '', hidden: [], museumStyle: { walkIn: true } }
+      openInto: 'last', display: '', safeArea: 100, clock: 'full', clock24: false, reduceMotion: false, dimMinutes: 0, confirmButton: 'auto', scrollSpeed: 'normal', artRegion: 'auto', lang: 'auto', mtDesc: true, audioOut: '', hidden: [], museumStyle: { walkIn: true } }
   };
 }
 
@@ -200,7 +200,7 @@ function flush() {
 
 // Values the settings screen chooses from: anything else (a hand-edited file, an older or newer version) falls back to
 // the default, so the screen never has to cope with a value it can't show
-const ONE_OF = { openInto: ['last', 'home', 'museum'], clock: ['full', 'time', 'off'], confirmButton: ['auto', 'a', 'b'], scrollSpeed: ['relaxed', 'normal', 'fast'], artRegion: ['auto', 'usa', 'eur', 'jpn'],
+const ONE_OF = { openInto: ['last', 'home', 'museum'], clock: ['full', 'time', 'off'], confirmButton: ['auto', 'a', 'b'], scrollSpeed: ['relaxed', 'normal', 'fast'], artRegion: ['auto', 'usa', 'eur', 'jpn'], lang: ['auto', 'en', 'pt-BR'],
   // also the ones the shelf, the quit combo (padwatch COMBOS / Dolphin's Hotkeys.ini) and the Home menu read: a value none of
   // them knows lit no choice in Settings and, for the combo, armed L3+R3 for the pad while Dolphin got no hotkey at all
   buttons: ['auto', 'xbox', 'ps', 'nintendo'], quitComboKeys: ['l3+r3', 'lb+rb+start', 'back+b', 'start+back'], performance: ['auto', 'high', 'balanced', 'low'], background: ['blur', 'art'], homeLayout: ['side', 'center'] };
@@ -241,6 +241,7 @@ function sanitize(cfg) {
   cfg.emuSeen = Array.isArray(cfg.emuSeen) ? [...new Set(cfg.emuSeen.filter(x => typeof x === 'string' && x && x.length <= 1024))].slice(0, 20) : [];
   for (const [k, list] of Object.entries(ONE_OF)) if (!list.includes(ui[k])) ui[k] = d[k];
   if (typeof ui.clock24 !== 'boolean') ui.clock24 = d.clock24;
+  if (typeof ui.mtDesc !== 'boolean') ui.mtDesc = d.mtDesc; // Settings → Look → Translate game descriptions
   // (beta.12) Reduce motion: false Off (every effect, whatever the system says), true On, 'system' Follow Windows
   if (typeof ui.reduceMotion !== 'boolean' && ui.reduceMotion !== 'system') ui.reduceMotion = d.reduceMotion;
   // (beta.12) Seamless play (main/seamless.js): on unless turned off; the screen mode ('' = never chosen: Start in

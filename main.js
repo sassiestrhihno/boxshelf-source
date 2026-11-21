@@ -32,6 +32,7 @@ function ownNames(def, gs) { const G = cfg && cfg.games; if (!G) return gs;
 const ownTitle = id => { const o = cfg && cfg.games && cfg.games[String(id)]; return o && o.title ? o.title : ''; }; // (PC games, by id)
 const { scanSteamSafe, steamRoot, isMainSteam, steamAnswers } = require('./main/steam');
 const steamart = require('./main/steamart');
+const translate = require('./main/translate'); // Details' descriptions in the interface language (Settings → Look)
 const pcgames = require('./main/pcgames'); // (beta.4) Epic, Quiver Launcher and games added by hand
 const pccovers = require('./main/pccovers'); // (beta.5) choosing a PC game's cover (SteamGridDB, Steam's own, your own)
 const wiiumanual = require('./main/wiiumanual');
@@ -2316,6 +2317,8 @@ handle('songs:downloads', ({ take }) => { const L = soundpacks.midiInDownloads(s
 handle('songs:findOnline', () => shell.openExternal('https://www.google.com/search?q=' + encodeURIComponent('free public domain MIDI files piano')).then(() => true));
 // links from the page (e.g. a cover's source page) open in the default browser: https only
 // (beta.14) a QR code for an https address Settings shows (IGDB's page: Twitch's developer console), drawn as the phone companion's
+// a game description in the interface language: null when it's off, not needed or not possible right now (main/translate.js)
+handle('i18n:translate', ({ text, lang } = {}) => (cfg && cfg.ui && cfg.ui.mtDesc === false) ? null : translate.translate(String(text || '').slice(0, 4000), String(lang || '')));
 handle('app:qr', ({ text } = {}) => { let x; try { x = new URL(String(text || '')); } catch { throw new Error('Bad link.'); } if (x.protocol !== 'https:' || x.toString().length > 200) throw new Error('Only short https links.'); return companion.qrSvg(x.toString()); });
 handle('app:openExternal', ({ url: u }) => { let x; try { x = new URL(String(u)); } catch { throw new Error('Bad link.'); } if (x.protocol !== 'https:') throw new Error('Only https links open.'); return shell.openExternal(x.toString()); });
 // put back the emulator settings files Boxshelf changed (each was backed up once as <file>.boxshelf-bak)
@@ -3164,7 +3167,7 @@ function startUp() {
   stremio.init({ log, fanartKey: () => (cfg && cfg.keys && cfg.keys.fanart) || '', artDir: path.join(app.getPath('userData'), 'stremio-art'), fetchBuf: async url => { const r = await net.fetch(url, { signal: AbortSignal.timeout(30000) }); /* (beta.10: a stalled answer gives up) */ if (r.status === 404) return null; if (!r.ok) throw new Error('HTTP ' + r.status); return Buffer.from(await r.arrayBuffer()); } }); // null = really not there; other failures throw, so nothing "missing" is cached for them
   icons.init(app.getPath('userData'), log);
   x360.init(app.getPath('userData'), log); scanSetLog(log); // (beta.10: games folders that can't be read go in the log)
-  steamart.init(app.getPath('userData'), log); pcgames.init(app.getPath('userData'), log); pccovers.init({ dataDir: app.getPath('userData'), log, fileUrl, fetchImage, steamgrid: require('./main/steamgrid'), steamCover: id => steamart.local(id).front, match: covers.sgMatch, steamSearch: (t, exact) => pcgames.steamSearch(t, exact) });
+  steamart.init(app.getPath('userData'), log); translate.init(app.getPath('userData'), log); pcgames.init(app.getPath('userData'), log); pccovers.init({ dataDir: app.getPath('userData'), log, fileUrl, fetchImage, steamgrid: require('./main/steamgrid'), steamCover: id => steamart.local(id).front, match: covers.sgMatch, steamSearch: (t, exact) => pcgames.steamSearch(t, exact) });
   wiiumanual.init(app.getPath('userData'), log);
   ra.init(app.getPath('userData'), log); ra.setCredentials(cfg.ra && cfg.ra.enabled !== false ? cfg.ra.user : '', cfg.ra && cfg.ra.key);
   manuals.init(log); archive.init(log); manuals.setStore(path.join(app.getPath('userData'), 'manual-auto.json')); manuals.setRejectStore(path.join(app.getPath('userData'), 'manual-rejects.json'));
