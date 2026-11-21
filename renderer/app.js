@@ -437,6 +437,7 @@ function mount(s){
   slot.classList.add("pk-"+packOf(os)); /* (beta.14) its material on the shelf (style.css): a matte card box, a jewel case's hinge, a keep case's sleeve lip */
   if(isFav(g))slot.classList.add("fav");
   if(g.romm&&g.romm.cloud)slot.classList.add("cloud"); /* (beta.12) a RomM game not on this device yet: Play downloads it */
+  if(g.source==="owned")slot.classList.add("toinstall"); /* a PC game you own but haven't installed: faded, with a download mark; Play installs it */
   slot.querySelectorAll(".spine-band").forEach(band=>{band.style.background=os.spineBand.bg;band.style.color=os.spineBand.fg;band.textContent=g.kind==="emulator"?"EMU":g.kind==="setup"?"ADD":os.spineBand.label});
   slot.querySelectorAll(".spine-title").forEach(t=>t.textContent=g.title);
   // (beta.10) Android: the spine's small copy sized like the front's (thumb), not the 1024 px display copy, on every case made
@@ -643,7 +644,7 @@ function metaFor(g){
   if(g.kind==="setup")return [`No ${s?s.name+" ":""}games yet`,`${okWord()} opens ${s?s.name:"its"} settings to add a games folder`];
   if(g.kind==="random")return g.pick?["Surprise pick",(g.pick.sh||shelves[g.pick.shelf]).name,rerollWord()]:["Shuffle","Lands on a random game"];
   if(g.kind==="app")return ["Streaming app"];
-  if(g.kind==="steam")return [PC_SRC[g.source]||"Steam",g.minutes?`${(g.minutes/60).toFixed(1)} h played`:"Not played yet"];
+  if(g.kind==="steam")return [pcSrcLabel(g),g.minutes?`${(g.minutes/60).toFixed(1)} h played`:g.source==="owned"?"":"Not played yet"].filter(Boolean);
   const r=raFor(g);
   return [g.region,g.ext&&g.ext.toUpperCase(),fmtSize(g.sizeBytes),g.discs&&g.discs.length>1?`${g.discs.length} discs`:"",hasManual(g)?"Manual":"",r?(r.mastered==="mastered"?"★ Mastered":`★ ${r.earned}/${r.total}`):""].filter(Boolean);
 }
@@ -1037,7 +1038,7 @@ function descFor(g){
   if(g.kind==="setup")return `No games found for ${s.name} yet. Opens its page in Settings, where you can pick the folder your games are in.`;
   if(g.kind==="emulator")return `Opens ${s.emulatorName} on its own so you can change controllers, graphics and other settings. Close it to come back here.`;
   if(g.kind==="app")return `Opens ${g.title}. Close it to come back to the shelf.`;
-  if(g.kind==="steam")return PC_HOW[g.source]||"Starts through Steam, so updates, cloud saves and the Steam overlay work as usual.";
+  if(g.kind==="steam"){if(g.source==="owned")return `Owned on ${PC_STORE_NAME[g.store]||"Playnite"} (not installed). Press Install to download it.`;return PC_HOW[g.source]||"Starts through Steam, so updates, cloud saves and the Steam overlay work as usual.";}
   return g.kind==="rom"?"":`Opens ${g.title}.`;
 }
 function fillDetails(){
@@ -1055,7 +1056,7 @@ function fillDetails(){
   const i=g.info||{},chips=$("dChips");chips.innerHTML="";
   const chip=(t,cls)=>{if(!t)return;const c=document.createElement("span");c.className="chipx"+(cls?" "+cls:"");c.textContent=t;chips.append(c)};
   if(g.kind==="rom"){chip(i.release?String(i.release).slice(0,4):i.year);chip(i.genres&&i.genres.split(";")[0].trim());chip(i.players?(i.players==="1"?"1 player":`${i.players} players`):null);chip(i.esrb?i.esrb.replace(/ - .*$/,""):null,"esrb");chip(i.rating?`★ ${(+i.rating).toFixed(1)}`:null,"score");chip(i.metacritic?`Metacritic ${i.metacritic}`:null,"score");if(g.compat)chip(`Xenia: ${g.compat}`,/playable|gameplay/i.test(g.compat)?"score":"esrb")}
-  else if(g.kind==="steam"){chip(PC_SRC[g.source]||"Steam");chip(yearOf(g));chip(genreOf(g));chip(i.metacritic?`Metacritic ${i.metacritic}`:null,"score");chip(g.minutes?`${(g.minutes/60).toFixed(1)} h played`:"Not played yet")}
+  else if(g.kind==="steam"){chip(pcSrcLabel(g));chip(yearOf(g));chip(genreOf(g));chip(i.metacritic?`Metacritic ${i.metacritic}`:null,"score");chip(g.minutes?`${(g.minutes/60).toFixed(1)} h played`:"Not played yet")}
   else if(g.kind==="app")chip("Streaming app");else if(g.kind==="emulator")chip("Emulator");else if(g.kind==="random")chip("Shuffle");
   // your history with this game (launches / time / last played), kept by Boxshelf
   // (beta.7) as tiles under the header: time played, last played, launches (Steam's own hours for a Steam game)
@@ -1074,7 +1075,7 @@ function fillDetails(){
   const grid=$("dGrid");grid.innerHTML="";
   /* (beta.12, Windows) the museum placard: every fact, the platform first (the file is in Your copy) */
   const skip=new Set(g.kind==="rom"?(DV2?["File"]:["Released","Genre","Players","Rating","Community score","Format","File"]):[]);
-  (DV2&&(g.kind==="rom"||g.kind==="steam")&&s?[["Platform",g.kind==="steam"?(PC_SRC[g.source]||"PC"):s.name],...infoRows(g)]:infoRows(g)).filter(([k,v])=>!skip.has(k)&&v!=null&&String(v).trim()!=="").forEach(([k,v])=>{ /* (beta.7: a fact with no value isn't shown as an empty box) */const box=document.createElement("div");if(/program|file/i.test(k))box.className="wide";const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=k;dd.textContent=v;box.append(dt,dd);grid.append(box)});
+  (DV2&&(g.kind==="rom"||g.kind==="steam")&&s?[["Platform",g.kind==="steam"?pcSrcLabel(g):s.name],...infoRows(g)]:infoRows(g)).filter(([k,v])=>!skip.has(k)&&v!=null&&String(v).trim()!=="").forEach(([k,v])=>{ /* (beta.7: a fact with no value isn't shown as an empty box) */const box=document.createElement("div");if(/program|file/i.test(k))box.className="wide";const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=k;dd.textContent=v;box.append(dt,dd);grid.append(box)});
   // what's on file for this game: the box (front, back, spine), the disc / cartridge label, the manual
   {const box=$("dArt"),row=$("dArtRow");row.innerHTML="";const a=g.art||{},show=g.kind==="rom";box.hidden=!show;$("dTabCopy").hidden=!show;
     if(show){const media=s?mediaWord(s.id):"Disc",man=Array.isArray(a.manual)?a.manual.length:0;
@@ -1092,7 +1093,7 @@ function fillDetails(){
   $("dCmd").textContent=cmd;$("dCmd").hidden=!cmd;
   const how=$("dHow");if(how){how.textContent=g.kind==="rom"?`Plays in ${s.emulatorName}${s.bootOnLaunch&&!s.useIpl&&((themes[s.id]||{}).boot||s.insertAnim===false)?" after the boot "+((themes[s.id]||{}).boot?"video":"intro"):""}. Close the emulator to come back here.`:"";how.hidden=g.kind!=="rom"}
   raDetails(g);
-  $("dPlay").textContent=g.kind==="rom"||g.kind==="steam"?"Play":"Open";
+  $("dPlay").textContent=g.source==="owned"?"Install":g.kind==="rom"||g.kind==="steam"?"Play":"Open";
   $("dInspect").hidden=g.kind!=="rom";$("dManual").hidden=g.kind!=="rom";$("dManual").querySelector("span").textContent=hasManual(g)?"Read manual":"Read booklet"; /* (beta.7: an icon button: only its label changes) */
   $("dEmu").hidden=!(g.kind==="rom"&&s.hasEmulator);$("dEmu").textContent=`Open ${s.emulatorName||"emulator"}`;
   {const pc=g.kind==="steam"&&!!api.pcCoverOptions,b=$("dBoxArt"),p=$("dBoxArtPc");if(b)b.hidden=!(g.kind==="rom"&&api.artStudio&&g.file);if(p)p.hidden=!pc;} /* (beta.9) a PC game's Box art sits beside Play (it has no manual or Inspect), not in More */{const b=$("dRename");if(b)b.hidden=!(api.renameGame&&((g.kind==="rom"&&g.file)||g.kind==="steam"));} /* (beta.5: PC games too, through the cover picker) */
@@ -2227,6 +2228,9 @@ async function launchNow(g,underInsert){padAtSteam=false; /* (beta.12) only the 
     // (beta.4) PC games that aren't Steam's: Epic's are handed to its launcher (like Steam's: Back returns to the shelf);
     // Quiver's and the ones added by hand are started by Boxshelf (like an app: the Home menu, and Back waits for them)
     // (beta.7) Ubisoft Connect, the EA app and the Xbox app too (PC_EXT): handed over the same way
+    /* a game you own but haven't installed (the To install shelf): Play installs it, through Steam or Playnite */
+    if(g.kind==="steam"&&g.source==="owned"){const L=g.store==="steam"?"Steam":"Playnite";showLaunch("Installing through "+L,g.title,L);await wait(650);if(mode!=="launch"||!launchCtx||launchCtx.g!==g)return;await api.launchPc(g.id);
+      clearTimeout(launchTimer);launchTimer=setTimeout(()=>note(["Installing through "+L+". Press ",{b:btnWord("back")}," or ",{b:"Esc"}," to return to the shelf."]),1800);return}
     if(g.kind==="steam"&&PC_EXT[g.source]){const L=PC_EXT[g.source];showLaunch("Starting through "+L,g.title,L);await wait(650);if(mode!=="launch"||!launchCtx||launchCtx.g!==g)return;const r=await api.launchPc(g.id);if(api.historyTouch)api.historyTouch(g.id).catch(()=>{});if(r&&r.watching){watchStarted(g,r,"the "+L);return} /* (beta.12: Seamless play watches it) */
       clearTimeout(launchTimer);launchTimer=setTimeout(()=>note(["Running through the "+L+". Press ",{b:btnWord("back")}," or ",{b:"Esc"}," to return to the shelf."]),1800);return}
     if(g.kind==="steam"&&g.source&&g.source!=="steam"){runningKind="app";showLaunch(g.source==="quiver"?"Starting from Quiver":g.source==="gog"?"Starting from GOG":"Starting",g.title,g.title);await wait(650);if(mode!=="launch"||!launchCtx||launchCtx.g!==g)return;const r=await api.launchPc(g.id);sendHomeMeta(g);if(api.historyTouch)api.historyTouch(g.id).catch(()=>{});
@@ -3030,8 +3034,9 @@ let shuffling=false;
 const shuffleAll=()=>!(cfgInfo&&cfgInfo.config.ui.shuffleAll===false);
 const isGame=g=>g.kind==="rom"||g.kind==="steam";
 // (beta.4) PC games carry their source: Steam, Epic, Quiver or added by hand (main/pcgames.js)
-const PC_SRC={epic:"Epic Games",quiver:"Quiver",custom:"Custom",gog:"GOG",ubisoft:"Ubisoft",ea:"EA",xbox:"Xbox"},PC_HOW={epic:"Starts through the Epic Games Launcher, so its sign-in, cloud saves and overlay work as usual.",quiver:"Installed with Quiver Launcher. Boxshelf starts it from its own folder; updates stay in Quiver.",custom:"Added by you in Settings → Custom games. Boxshelf starts it from its own folder.",
+const PC_SRC={epic:"Epic Games",quiver:"Quiver",custom:"Custom",gog:"GOG",ubisoft:"Ubisoft",ea:"EA",xbox:"Xbox"},PC_STORE_NAME={steam:"Steam",epic:"Epic Games",gog:"GOG",ea:"EA",ubisoft:"Ubisoft",xbox:"Xbox",battlenet:"Battle.net",other:"Playnite"},PC_HOW={epic:"Starts through the Epic Games Launcher, so its sign-in, cloud saves and overlay work as usual.",quiver:"Installed with Quiver Launcher. Boxshelf starts it from its own folder; updates stay in Quiver.",custom:"Added by you in Settings → Custom games. Boxshelf starts it from its own folder.",
   gog:"Installed with GOG Galaxy. GOG games have no copy protection: Boxshelf starts it itself; updates stay in GOG Galaxy.",ubisoft:"Starts through Ubisoft Connect, so its sign-in and cloud saves work as usual.",ea:"Starts through the EA app, so its sign-in and cloud saves work as usual.",xbox:"An Xbox app game (Game Pass included). It starts like any Xbox app game, signed in with your Microsoft account."};
+function pcSrcLabel(g){if(!g)return "PC";if(g.source==="owned")return `${PC_STORE_NAME[g.store]||"Playnite"} · Not installed`;return PC_SRC[g.source]||"Steam";}
 // (beta.7) the stores whose games are handed to their own launcher (Back returns to the shelf while they run)
 const PC_EXT={epic:"Epic Games Launcher",ubisoft:"Ubisoft Connect",ea:"EA app",xbox:"Xbox app"};
 // a quick rainbow lick over the tile as each cover flips past
@@ -3923,7 +3928,7 @@ function renderHints(){pvGuard();bsCtxSoon();
   const h=$("hints");h.innerHTML="";
   (usePad?PAD_HINTS:HINTS).forEach(hn=>{if(hn.when&&!hn.when(rawItem()))return;const b=document.createElement("button");b.type="button";b.className="hint"+(/Letter|Shuffle/.test(hn.label)||hn.lo?" hint-lo":"");
     const keys=(usePad?hn.pad.map(glyph):hn.kbd.map(k=>`<span class="g">${k}</span>`)).join("");
-    const label=hn.label==="Play"&&(es||(g&&g.kind==="setup"))?"Set up":hn.label==="Play"&&g&&(g.kind==="app"||g.kind==="emulator")?"Open":hn.label==="Play"&&g&&g.kind==="random"?(g.pick?"Play":"Pick a game"):hn.label;
+    const label=hn.label==="Play"&&(es||(g&&g.kind==="setup"))?"Set up":hn.label==="Play"&&g&&(g.kind==="app"||g.kind==="emulator")?"Open":hn.label==="Play"&&g&&g.kind==="random"?(g.pick?"Play":"Pick a game"):hn.label==="Play"&&g&&g.source==="owned"?"Install":hn.label;
     const dy=hn.dy?detailsYLab():null,hold=dy?dy[1]:hn.hold,lab=dy?dy[0]:usePad?label:label==="♥ hold"?"♥ Favorite":label.replace(/ hold$/,"");
     b.innerHTML=`<span class="keys">${keys}</span>`+(lab?`<span class="lab"></span>`:"")+(usePad&&hold?`<span class="hold"><i>hold</i> </span>`:"");
     if(lab)b.querySelector(".lab").textContent=lab;if(usePad&&hold)b.querySelector(".hold").append(hold);
@@ -5107,8 +5112,8 @@ function dvFill(g){const d=$("details");if(!d.classList.contains("dv2")||!g)retu
   {const F=game?[yearOf(g),i.dev,genreOf(g),rom?pl:"",ms?fmtPlay(ms)+" played":""].filter(Boolean):[],fe=$("dvFacts");fe.textContent="";
     F.forEach((t,k)=>{if(k){const x=dvMk("i");x.textContent="·";x.setAttribute("aria-hidden","true");fe.append(x)}const e=dvMk("span");e.textContent=String(t);fe.append(e)});fe.hidden=!F.length}
   if(game){const ch=$("dChips");ch.textContent="";const chip=(t,cls)=>{if(!t)return;const c=dvMk("span","chipx"+(cls?" "+cls:""));c.textContent=t;ch.append(c)};
-    ch.append(dv.st);if(g.kind==="steam")chip(PC_SRC[g.source]||"Steam");
-    chip([rom&&i.rating?`★ ${(+i.rating).toFixed(1)}`:"",i.metacritic?`Critics ${i.metacritic}`:""].filter(Boolean).join(" · "),"score");
+    ch.append(dv.st);if(g.kind==="steam")chip(pcSrcLabel(g));
+    chip([(rom||g.kind==="steam")&&i.rating?`★ ${(+i.rating).toFixed(1)}`:"",i.metacritic?`Critics ${i.metacritic}`:""].filter(Boolean).join(" · "),"score");
     if(rom)ch.append(dv.achChip);
     const age=rom&&i.esrb?String(i.esrb).replace(/ - .*$/,"").trim():"";chip(age?(age.length<=4?"Rated "+age:age):"","esrb");
     if(rom&&g.compat)chip(`Xenia: ${g.compat}`,/playable|gameplay/i.test(g.compat)?"score":"")} /* (other tiles keep fillDetails' own chips) */

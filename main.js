@@ -731,15 +731,70 @@ async function buildLibrary() {
   if (pc.quiver !== false) try { mine.push(...pcgames.quiverGames(pc.quiverPath)); } catch (e) { log('Quiver library', e.message); }
   try { mine.push(...pcgames.customGames(pc.custom)); } catch (e) { log('Custom games', e.message); }
   for (const g of [...epic, ...mine]) { const t = ownTitle(g.id); if (t) { g.fileTitle = g.title; g.title = t; } } // (beta.5: renamed in Details)
-  pcgames.remember([...epic, ...mine]);
+  const normT = t => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const mergeInfo = (a, b) => {
+    if (!a && !b) return undefined;
+    if (!a) return b;
+    if (!b) return a;
+    const out = { ...a };
+    for (const [k, v] of Object.entries(b)) if (v !== undefined && v !== null && (!Array.isArray(v) || v.length)) out[k] = v;
+    return out;
+  };
+  if (pc.owned === true || (Array.isArray(pc.custom) && pc.custom.length > 0)) ownedRefresh(false);
+  {
+    const pn = ownedNow(), byExe = pn.customByExe || {}, byTitle = pn.customByTitle || {};
+    for (const g of mine) {
+      if (!g || g.source !== 'custom') continue;
+      const m = (g.exe && byExe[String(g.exe).toLowerCase()]) || byTitle[normT(g.fileTitle || g.title)];
+      if (!m) continue;
+      if (m.info) g.info = mergeInfo(m.info, g.info);
+      if (m.categories && !g.categories) g.categories = m.categories;
+      if (m.minutes && !g.minutes) g.minutes = m.minutes;
+      if (m.lastPlayed && !g.lastPlayed) g.lastPlayed = m.lastPlayed;
+    }
+  }
+  // Games owned but not installed (Settings → Library → PC games), on the PC shelf: from Playnite's store libraries, through a cache that
+  // refreshes in the background whenever Playnite's library changes; one already on a shelf (same Steam app, same title) is
+  // left out. Play on one of them installs it (launch:pc)
+  const owned = [];
+  if (pc.owned === true) try {
+    const have = new Set([...pcShelf, ...epic, ...mine].map(x => normT(x.title))), haveApp = new Set(pcShelf.map(x => String(x.appid || '')));
+    const storeOn = st => st === 'steam' ? (!cfg.steam || cfg.steam.enabled !== false) : (!st || st === 'other' || pc[st] !== false);
+    for (const g of ownedNow().games) if (storeOn(g.store) && !have.has(normT(g.title)) && !(g.appid && haveApp.has(g.appid))) {
+      owned.push({
+        id: 'own-' + g.key, source: 'owned', title: g.title, uri: g.uri, store: g.store, appid: g.appid,
+        ...(g.info ? { info: g.info } : {}),
+        ...(g.categories ? { categories: g.categories } : {}),
+        ...(g.minutes ? { minutes: g.minutes } : {}),
+        ...(g.lastPlayed ? { lastPlayed: g.lastPlayed } : {}),
+      });
+    }
+    // Steam's own cover, hero and store info for the Steam ones (Playnite may not have their covers yet): in the background,
+    // once a session; steamart keeps what it fetched and skips it next time
+    if (!ownedArtAsked && owned.some(g => g.appid)) { ownedArtAsked = true;
+      steamart.fill(owned.filter(g => g.appid).map(g => ({ appid: g.appid, title: g.title, art: {} })))
+        .then(r => { if (r && (r.covers || r.other) && alive()) { scanCfg = null; win.webContents.send('library:changed', { owned: 1 }); } }).catch(e => log('Not installed art', e.message)); }
+  } catch (e) { log('Not installed', e.message); }
+  pcgames.remember([...epic, ...mine, ...owned]);
   // (Steam art by title only for Epic's store games: a recomp or a program added by hand often shares its name with an
   // unrelated Steam game, "Quarantine" got a puzzle game's cover; they keep the made-up case)
-  const pcGame = g => { const sid = STORE_SRC.has(g.source) ? pcgames.steamIdOf(g.title) : null, l = sid ? steamart.local(sid) : {};
-    return { kind: 'steam', source: g.source, id: g.id, title: g.title, ...(sid ? { info: steamart.gameInfo(sid) } : {}), art: { front: fileUrl(pccovers.cover(g.id) || l.front), hero: fileUrl(l.hero), icon: g.icon || undefined } }; };
+  const pcGame = g => { const sid = g.source === 'owned' ? (g.appid || pcgames.steamIdOf(g.title)) : STORE_SRC.has(g.source) ? pcgames.steamIdOf(g.title) : null, l = sid ? steamart.local(sid) : {};
+    const info = mergeInfo(g.info, sid ? steamart.gameInfo(sid) : null);
+    return {
+      kind: 'steam', source: g.source,
+      ...(g.source === 'owned' ? { store: g.store, ...(g.appid ? { appid: g.appid } : {}) } : {}),
+      id: g.id, title: g.title,
+      ...(info ? { info } : {}),
+      ...(g.categories ? { categories: g.categories } : {}),
+      ...(g.minutes ? { minutes: g.minutes } : {}),
+      ...(g.lastPlayed ? { lastPlayed: g.lastPlayed } : {}),
+      art: { front: fileUrl(pccovers.cover(g.id) || l.front), hero: fileUrl(pcHero(g.id) || l.hero), icon: g.icon || undefined },
+    }; };
   // (beta.10) a game added by hand can be moved to the PC shelf (Settings → Custom games → the game → Shelf); (beta.14) or
   // to any console's shelf (one is made for it if that console has none); an id that isn't a console stays on Custom
   const { toPc, onCustom } = pcgames.placeCustom(shelves, mine, CONSOLES, pcGame);
-  if (epic.length || toPc.length) pcShelf = pcShelf.concat([...epic, ...toPc].map(pcGame)).sort((a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: 'base' }));
+  // (the games you own but haven't installed join the PC shelf too, drawn faded with a download mark: Play installs them)
+  if (epic.length || toPc.length || owned.length) pcShelf = pcShelf.concat([...epic, ...toPc, ...owned].map(pcGame)).sort((a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: 'base' }));
   if (pcShelf.length) shelves.push({ id: 'pc', kind: 'steam', name: 'PC', games: pcShelf });
   if (onCustom.length) shelves.push({ id: 'custom', kind: 'steam', name: 'Custom', games: onCustom.map(pcGame).sort((a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: 'base' })) });
   const apps = [];
@@ -1221,10 +1276,10 @@ async function steamFill(lib) {
   if (steamFilling || cfg.ui.autoCovers === false) return; const pcs = lib.filter(s => s.kind === 'steam'); if (!pcs.length) return;
   steamFilling = true;
   try {
-    const all = pcs.flatMap(s => s.games); let games = all.filter(g => !g.source || g.source === 'steam'), matched = 0;
+    const all = pcs.flatMap(s => s.games); let games = all.filter(g => !g.source || g.source === 'steam' || (g.source === 'owned' && g.appid)), matched = 0;
     // (beta.4) Epic / Quiver / hand-added games: their titles are matched to Steam apps (only with box art downloads turned
     // on in setup or Settings: it sends the titles to Steam's store search), then filled like Steam's own
-    const others = all.filter(g => STORE_SRC.has(g.source)); // (only the stores' games: see buildLibrary's pcGame)
+    const others = all.filter(g => STORE_SRC.has(g.source) || (g.source === 'owned' && !g.appid)); // (only the stores' games: see buildLibrary's pcGame)
     if (others.length && cfg.ui.autoCovers === true) {
       matched = await pcgames.matchSteam(others.map(g => g.title));
       games = games.concat(others.map(g => { const id = pcgames.steamIdOf(g.title); return id ? { appid: String(id), title: g.title, art: { front: g.art.front, hero: g.art.hero } } : null; }).filter(Boolean));
@@ -1507,6 +1562,77 @@ const pickedFiles = new Set(); // (beta.14) files you chose in this picker: only
 handle('games:scanFolder', ({ root }) => { const r = addgames.scanFolder(String(root || '')); return { ...r, games: r.games.map(g => ({ ...g, title: g.title })) }; });
 handle('games:titleFor', ({ exes }) => (Array.isArray(exes) ? exes : []).slice(0, 500).map(e => ({ exe: String(e), title: addgames.titleFor(String(e)) })));
 let pnPlan = null;
+// (Not installed shelf) Playnite's owned-but-not-installed games, kept in data\playnite-owned.json: read again in the
+// background when Playnite's games.db has changed since (reading it takes PowerShell a few seconds), then the shelf refreshes
+let ownedList = null, ownedBusy = false, ownedRetry = null, ownedArtAsked = false;
+const ownedFile = () => path.join(app.getPath('userData'), 'playnite-owned.json');
+function ownedNow() {
+  if (!ownedList) {
+    try { ownedList = JSON.parse(fs.readFileSync(ownedFile(), 'utf8')); } catch {}
+    if (!ownedList || !Array.isArray(ownedList.games)) ownedList = { v: 3, dbAt: 0, games: [], customByExe: {}, customByTitle: {} };
+    if (!ownedList.customByExe || typeof ownedList.customByExe !== 'object') ownedList.customByExe = {};
+    if (!ownedList.customByTitle || typeof ownedList.customByTitle !== 'object') ownedList.customByTitle = {};
+  }
+  return ownedList;
+}
+function pcHero(id) {
+  const dir = path.join(app.getPath('userData'), 'pc-covers');
+  for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
+    const p = path.join(dir, String(id) + '-hero' + ext);
+    try { if (fs.statSync(p).isFile()) return p; } catch {}
+  }
+  return null;
+}
+function savePcHero(id, src) {
+  const ext = path.extname(String(src || '')).toLowerCase();
+  if (!['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) return;
+  const dir = path.join(app.getPath('userData'), 'pc-covers');
+  try { fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(src, path.join(dir, String(id) + '-hero' + ext)); } catch {}
+}
+async function ownedRefresh(force) {
+  if (ownedBusy || process.platform !== 'win32') return; const found = addgames.find(''); if (!found) return;
+  let mt = 0; try { mt = fs.statSync(path.join(found.library, 'games.db')).mtimeMs; } catch { return; }
+  const cur = ownedNow(); if (!force && cur.v === 3 && cur.dbAt === mt) return;
+  ownedBusy = true;
+  try {
+    const lib = await addgames.read(found);
+    const games = addgames.owned(lib, found);
+    for (const g of games) {
+      if (g.cover && !pccovers.cover('own-' + g.key)) { try { await pccovers.own('own-' + g.key, g.cover); } catch {} } // Playnite's own cover, once
+      if (g.bg && !pcHero('own-' + g.key)) savePcHero('own-' + g.key, g.bg);
+    }
+    const customList = addgames.customMeta(lib, found);
+    const customByExe = {}, customByTitle = {}, normT = t => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    for (const m of customList) {
+      const val = { ...(m.info ? { info: m.info } : {}), ...(m.categories ? { categories: m.categories } : {}), ...(m.minutes ? { minutes: m.minutes } : {}), ...(m.lastPlayed ? { lastPlayed: m.lastPlayed } : {}) };
+      if (m.exe) { const k = String(m.exe).toLowerCase(); if (!customByExe[k]) customByExe[k] = val; }
+      const tk = normT(m.title); if (tk && !customByTitle[tk]) customByTitle[tk] = val;
+    }
+    const customMediaByExe = new Map(), customMediaByTitle = new Map();
+    for (const m of customList) {
+      if (m.exe && (m.cover || m.bg) && !customMediaByExe.has(String(m.exe).toLowerCase())) customMediaByExe.set(String(m.exe).toLowerCase(), m);
+      const tk = normT(m.title);
+      if (tk && (m.cover || m.bg) && !customMediaByTitle.has(tk)) customMediaByTitle.set(tk, m);
+    }
+    const slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'game';
+    for (const c of (cfg.pc && Array.isArray(cfg.pc.custom) ? cfg.pc.custom : [])) {
+      if (!c) continue;
+      const cid = 'custom-' + slug(c.id || c.title || path.basename(c.exe || ''));
+      const m = (c.exe && customMediaByExe.get(String(c.exe).toLowerCase())) || customMediaByTitle.get(normT(c.title));
+      if (!m) continue;
+      if (m.cover && !pccovers.cover(cid)) { try { await pccovers.own(cid, m.cover); } catch {} }
+      if (m.bg && !pcHero(cid)) savePcHero(cid, m.bg);
+    }
+    const before = JSON.stringify({ g: cur.games, e: cur.customByExe, t: cur.customByTitle });
+    ownedList = { v: 3, dbAt: mt, games: games.map(({ cover, bg, ...g }) => g), customByExe, customByTitle };
+    try { fs.writeFileSync(ownedFile(), JSON.stringify(ownedList)); } catch (e) { log('Not installed: save', e.message); }
+    log('Not installed:', games.length, 'games from Playnite,', customList.length, 'custom metadata entries');
+    if (before !== JSON.stringify({ g: ownedList.games, e: ownedList.customByExe, t: ownedList.customByTitle })) { scanCfg = null; if (alive()) win.webContents.send('library:changed', { owned: 1 }); }
+  } catch (e) {
+    // Playnite open: it holds its library files shut (EBUSY). The last list stays on the shelf; another try in 2 minutes
+    log('Not installed (Playnite):', e.message); clearTimeout(ownedRetry); ownedRetry = setTimeout(() => ownedRefresh(false), 120e3);
+  } finally { ownedBusy = false; }
+}
 handle('playnite:find', ({ dir } = {}) => process.platform === 'win32' ? addgames.find(dir ? String(dir) : '') : null);
 handle('playnite:plan', async ({ dir } = {}) => {
   const found = addgames.find(dir ? String(dir) : ''); if (!found) throw new Error('Playnite wasn\'t found. Choose its folder (the one with Playnite.DesktopApp.exe).');
@@ -1523,8 +1649,18 @@ handle('games:emuIn', ({ dir, systemId }) => {
 handle('games:covers', async ({ items }) => {
   const ok = new Set(pnPlan ? pnPlan.pc.flatMap(g => [g.cover, g.bg]).filter(Boolean).map(f => path.resolve(f).toLowerCase()) : []); let n = 0;
   const slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'game';
-  for (const it of (Array.isArray(items) ? items : []).slice(0, 2000)) { const f = it && String(it.file || ''); if (!f || !ok.has(path.resolve(f).toLowerCase())) continue;
-    try { await pccovers.own('custom-' + slug(it.id), f); pcCoverBump('custom-' + slug(it.id)); n++; } catch (e) { log('Imported cover', e.message); } }
+  for (const it of (Array.isArray(items) ? items : []).slice(0, 2000)) {
+    if (!it) continue;
+    const cid = 'custom-' + slug(it.id);
+    const f = String(it.file || '');
+    if (f && ok.has(path.resolve(f).toLowerCase())) {
+      try { await pccovers.own(cid, f); pcCoverBump(cid); n++; } catch (e) { log('Imported cover', e.message); }
+    }
+    const bg = String(it.bg || '');
+    if (bg && ok.has(path.resolve(bg).toLowerCase())) {
+      savePcHero(cid, bg); n++;
+    }
+  }
   if (n) { scanCfg = null; if (alive()) win.webContents.send('library:changed', { pcCover: 1 }); } return n;
 });
 // Xenia Manager picked instead of Xenia itself: the setting switches to the real emulator. Done on the config as it is
@@ -1892,6 +2028,8 @@ const STORE_NAME = { epic: 'Epic Games', ubisoft: 'Ubisoft', ea: 'EA', xbox: 'Xb
 // the quit buttons like any app
 handle('launch:pc', async ({ id }) => { coversForGame(); /* (beta.14) */
   const g = pcgames.byId(id); if (!g) throw new Error("That game isn't on the shelf any more. The shelf is refreshing; try again in a moment.");
+  // a game you own but haven't installed: its install link (Steam's own install dialog, or Playnite for any other store)
+  if (g.source === 'owned') { if (!/^(steam:\/\/install\/\d{1,10}|playnite:\/\/playnite\/start\/[0-9a-f-]{36})$/i.test(String(g.uri || ''))) throw new Error("Couldn't install that game."); log('Install:', g.store, g.title); return shell.openExternal(g.uri).then(() => ({ external: true })); }
   // (beta.12) Seamless play on: a store game (Epic, Ubisoft, EA, Xbox) is still started through its store, and watched
   if (seamless.on() && ((g.uri && /^(com\.epicgames\.launcher|uplay|origin2):\/\//i.test(g.uri)) || (g.shellApp && /^[\w.-]+_[a-z0-9]+![\w.-]+$/i.test(g.shellApp))))
     return seamless.launchWatched({ kind: g.source, id: g.id, dir: g.dir || '', exe: g.exe || '', title: g.title, systemName: STORE_NAME[g.source] || 'PC',
@@ -1911,7 +2049,7 @@ handle('launch:pc', async ({ id }) => { coversForGame(); /* (beta.14) */
   return { ...r, cover: coverWhileStarting(10) };
 });
 // (beta.5) a PC game's cover picker (main/pccovers.js): the page names the game by id and an option by key only
-const pcLookup = id => { id = String(id || ''); const m = /^steam-(\d{1,10})$/.exec(id); if (m) return { id, appid: m[1], title: '' }; const g = pcgames.byId(id); return g ? { id, title: g.title } : null; };
+const pcLookup = id => { id = String(id || ''); const m = /^steam-(\d{1,10})$/.exec(id); if (m) return { id, appid: m[1], title: '' }; const g = pcgames.byId(id); return g ? { id, title: g.title, appid: g.appid || pcgames.steamIdOf(g.title) || undefined, store: g.store || g.source } : null; };
 const pcGameOf = id => { const g = pcLookup(id); if (!g) throw new Error("That game isn't on the shelf any more."); return g; };
 let pcCoverT = 0; // (beta.9: one shelf refresh for a run of covers, not one per cover)
 // (beta.12) a chosen cover gets a new address each time (the same file name used to give the same bsfile:// address, so

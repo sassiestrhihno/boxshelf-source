@@ -194,6 +194,8 @@ function build(){
     T("Show installed Ubisoft games","pc.ubisoft",true,"Adds the games Ubisoft Connect has installed to the PC shelf. They start through Ubisoft Connect, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"ubisoft connect uplay store",sub:()=>pcCount("ubisoft")}),
     T("Show installed EA games","pc.ea",true,"Adds the games the EA app has installed to the PC shelf. They start through the EA app, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"ea app origin electronic arts store",sub:()=>pcCount("ea")}),
     T("Show installed Xbox games","pc.xbox",true,"Adds the games the Xbox app has installed (Game Pass included) to the PC shelf. They start like any Xbox app game, signed in with your Microsoft account.",{rescan:true,keys:"xbox game pass microsoft store",sub:()=>pcCount("xbox")}),
+    // games owned but not installed, from Playnite's store libraries (main.js ownedRefresh; Play installs them)
+    T("Show games you haven't installed","pc.owned",false,"Puts every game you own but haven't installed on the PC shelf, faded with a download mark, from the store libraries you connected in Playnite (Steam, Epic, GOG, EA, Ubisoft, Xbox and more). Play installs it: Steam's own install for Steam games, Playnite for the rest. Needs Playnite installed with its libraries connected.",{rescan:true,keys:"not installed owned library playnite install uninstalled all games biblioteca nao instalados"}),
     // (beta.12) where people look first for Playnite and decomps: the way to the page that has them
     A("Other PC games","Open","Games from Playnite or Quiver Launcher, decomps and recomps (Ship of Harkinian, Zelda 64 Recompiled…), PC ports and any other program go on the Custom shelf. This opens Custom games, where every way to bring them in is.",
       ()=>{if(typeof MORE!=="undefined"&&MORE&&MORE["lib-custom"]){route("custom");return}goSecId("custom");focus="page";rowI=0;play("open");render()},{ns:true,when:()=>SECTIONS.some(s=>s.id==="custom")||(typeof MORE!=="undefined"&&!!MORE&&!!MORE["lib-custom"]), /* (beta.14: Settings in tabs, Custom games is Library's page lib-custom: route opens it) */keys:"playnite decomp decomps recomp recomps port ports other launcher custom quiver",sub:()=>({text:"Playnite, decomps, ports → Custom games"})}),
@@ -1419,7 +1421,7 @@ async function addPlaynite(dir){ADD.busy=true;ADD.list=null;ADD.pn=null;addReset
 async function pnImport(){const P=ADD.pn;if(!P||ADD.busy)return;ADD.busy=true;const pc=pcCfg(),have=new Set(pc.custom.map(c=>String(c.exe).toLowerCase())),covers=[];let n=0,dirs=0;
   try{
     if(ADD.pnOn.pc)for(const g of P.pc){if(!ADD.pnPick.has(g.key)||have.has(String(g.exe).toLowerCase()))continue;const id="pn-"+addSlug(g.key).slice(0,40);
-      pc.custom.push({id,title:g.title,exe:g.exe,args:g.args||"",src:"playnite"});have.add(String(g.exe).toLowerCase());n++;if(g.cover)covers.push({id,file:g.cover});
+      pc.custom.push({id,title:g.title,exe:g.exe,args:g.args||"",src:"playnite"});have.add(String(g.exe).toLowerCase());n++;if(g.cover||g.bg)covers.push({id,...(g.cover?{file:g.cover}:{}),...(g.bg?{bg:g.bg}:{})});
       if(g.favorite){const fav=cfg.ui.favorites=Array.isArray(cfg.ui.favorites)?cfg.ui.favorites:[];const fid="custom-"+addSlug(id);if(!fav.includes(fid))fav.push(fid)}}
     pc.pnDirs=pc.pnDirs||{};
     for(const [sys,c] of Object.entries(P.consoles||{})){if(!ADD.pnOn[sys]||!cfg.systems[sys])continue;const sc=sysCfg(sys);
