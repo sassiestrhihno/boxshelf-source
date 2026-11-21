@@ -75,6 +75,11 @@ contextBridge.exposeInMainWorld('boxshelf', {
   pcCoverOwn: id => call('pccover:own', { id }),
   pcCoverReset: id => call('pccover:reset', { id }),
   pcCoverMissing: () => call('pccover:missing'), // (beta.9) custom games with no cover chosen yet
+  pcCoverBulkStatus: () => call('pccover:bulkStatus'),
+  pcCoverDownloadAll: mode => call('pccover:downloadAll', { mode }),
+  pcCoverCancelAll: () => call('pccover:cancelAll'),
+  pcCoverUndoAll: () => call('pccover:undoAll'),
+  onPcCoverProgress: fn => ipcRenderer.on('pccover:progress', (e, p) => fn(p)),
   renameGame: o => call('game:rename', o), // (beta.5) { systemId, file } or { id }, and title ('' = back to the file's name)
   themes: () => call('themes:list'),
   setTheme: (systemId, kind, file) => call('themes:set', { systemId, kind, file }),

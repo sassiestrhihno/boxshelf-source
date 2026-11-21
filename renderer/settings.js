@@ -197,6 +197,16 @@ function build(){
     // (beta.12) where people look first for Playnite and decomps: the way to the page that has them
     A("Other PC games","Open","Games from Playnite or Quiver Launcher, decomps and recomps (Ship of Harkinian, Zelda 64 Recompiled…), PC ports and any other program go on the Custom shelf. This opens Custom games, where every way to bring them in is.",
       ()=>{if(typeof MORE!=="undefined"&&MORE&&MORE["lib-custom"]){route("custom");return}goSecId("custom");focus="page";rowI=0;play("open");render()},{ns:true,when:()=>SECTIONS.some(s=>s.id==="custom")||(typeof MORE!=="undefined"&&!!MORE&&!!MORE["lib-custom"]), /* (beta.14: Settings in tabs, Custom games is Library's page lib-custom: route opens it) */keys:"playnite decomp decomps recomp recomps port ports other launcher custom quiver",sub:()=>({text:"Playnite, decomps, ports → Custom games"})}),
+    {t:"head",text:"Covers",when:()=>!!api.pcCoverDownloadAll},
+    A("Download missing PC covers",()=>pcb.running?"Cancel":"Download","Downloads front covers for PC and not-installed games that don't have one yet, automatically picking the best match across Steam, SteamGridDB, IGDB and LaunchBox.",
+      ()=>{pcBulkHook();if(pcb.running){if(api.pcCoverCancelAll)api.pcCoverCancelAll();toast("Stopping cover download…");return}pcBulkRun("missing")},
+      {when:()=>!!api.pcCoverDownloadAll,ns:true,keys:"download missing pc covers automatic best match steamgriddb igdb launchbox steam",sub:()=>pcBulkSub("missing")}),
+    A("Refresh all PC covers","Refresh all","Re-checks every PC game cover using your connected sources (Steam, SteamGridDB, IGDB, LaunchBox) and keeps the best front cover. Undo puts everything back.",
+      ()=>{pcBulkHook();if(pcb.running){toast("A PC cover download is already running");return}pcBulkRun("all")},
+      {when:()=>!!api.pcCoverDownloadAll,ns:true,keys:"refresh all pc covers download automatic steamgriddb igdb launchbox",sub:()=>pcBulkSub("all")}),
+    A("Undo last PC cover download","Undo","Restores the covers replaced in the last bulk PC cover download.",
+      ()=>{pcBulkHook();pcBulkUndo()},
+      {when:()=>!!api.pcCoverUndoAll&&pcb.canUndo,ns:true,keys:"undo pc covers restore",sub:()=>({text:`${pcb.undoCount||0} cover${(pcb.undoCount||0)===1?"":"s"} can be restored`})}),
   ]},
   // (beta.4) the Custom shelf: Quiver Launcher's apps (recomps, ports) and any program added by hand
   {g:"Games",id:"custom",name:"Custom games",ic:"pc",lead:"Everything that isn't a console or store game: decomps and recomps, PC ports, games from Playnite or Quiver Launcher, and any other program. Each gets a case on the Custom shelf.",rows:[{t:"dyn",fn:customRows}]},
@@ -1079,6 +1089,24 @@ function pcCount(k){if(!pcSt)setTimeout(pcStatus,0);return pcSt&&pcSt[k]!=null?{
 function pcStatus(){if(pcAsking||!api.pcStatus)return;pcAsking=true;Promise.resolve(api.pcStatus()).then(r=>{pcSt=r||{};pcAsking=false;bump()}).catch(()=>{pcSt={};pcAsking=false;bump()})}
 // (beta.9) how many custom games have no cover yet (the Covers rows)
 const COV={n:null,loading:false,busy:false};
+const pcb={loaded:false,running:false,mode:"missing",done:0,total:0,updated:0,skipped:0,failed:0,title:"",canUndo:false,undoCount:0,hooked:false};
+function pcBulkHook(){if(pcb.hooked||!api.onPcCoverProgress)return;pcb.hooked=true;
+  api.onPcCoverProgress(p=>{if(!p)return;Object.assign(pcb,p,{loaded:true});if(isOpen)bump()})}
+function pcBulkLoad(force){if(!api.pcCoverBulkStatus||(pcb.loaded&&!force))return;pcBulkHook();
+  Promise.resolve(api.pcCoverBulkStatus()).then(s=>{if(s)Object.assign(pcb,s,{loaded:true});if(isOpen)bump()}).catch(()=>{pcb.loaded=true})}
+function pcBulkSub(mode){pcBulkLoad();
+  if(pcb.running&&pcb.mode===mode)return {text:`${pcb.done}/${pcb.total} · ${pcb.updated} updated${pcb.title?" · "+pcb.title:""}`};
+  if(pcb.running)return {text:"Busy with another cover download…"};
+  if(!pcb.running&&pcb.total>0&&pcb.mode===mode)return {text:`Done · ${pcb.updated} updated, ${pcb.skipped} skipped`};
+  return mode==="missing"?{text:"Picks the best match automatically"}:{text:"Re-checks all PC games"}}
+async function pcBulkRun(mode){if(!api.pcCoverDownloadAll)return;pcb.running=true;pcb.mode=mode;pcb.done=0;pcb.total=0;pcb.updated=0;pcb.skipped=0;pcb.failed=0;bump();
+  try{const r=await api.pcCoverDownloadAll(mode);if(r)Object.assign(pcb,r,{loaded:true});bump();
+    toast(r&&r.updated?`Downloaded ${r.updated} PC cover${r.updated===1?"":"s"}`:"No PC covers needed updating")}
+  catch(e){pcb.running=false;bump();toast(errMsg(e))}}
+async function pcBulkUndo(){if(!api.pcCoverUndoAll)return;
+  try{const r=await api.pcCoverUndoAll();pcBulkLoad(true);bump();
+    toast(r&&r.restored?`Restored ${r.restored} cover${r.restored===1?"":"s"}`:"Nothing to restore")}
+  catch(e){toast(errMsg(e))}}
 function covLoad(force){if(!api.pcCoverMissing||COV.loading||(COV.n!=null&&!force))return;COV.loading=true;
   Promise.resolve(api.pcCoverMissing()).then(L=>{COV.n=Array.isArray(L)?L.length:0}).catch(()=>{COV.n=0}).finally(()=>{COV.loading=false;bump()})}
 /* (beta.14) the shelves a game added by hand can go on: Custom, PC, then every console (the ones with games first) */

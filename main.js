@@ -34,6 +34,7 @@ const { scanSteamSafe, steamRoot, isMainSteam, steamAnswers } = require('./main/
 const steamart = require('./main/steamart');
 const pcgames = require('./main/pcgames'); // (beta.4) Epic, Quiver Launcher and games added by hand
 const pccovers = require('./main/pccovers'); // (beta.5) choosing a PC game's cover (SteamGridDB, Steam's own, your own)
+const pcbulk = require('./main/pcbulk');
 const wiiumanual = require('./main/wiiumanual');
 const manualcoll = require('./main/manualcoll');
 const manualstudio = require('./main/manualstudio'); // Manual Studio: every manual for a game side by side, per-game locks, per-console language / region
@@ -1932,6 +1933,17 @@ handle('pccover:own', async ({ id }) => {
   await pccovers.own(id, r.filePaths[0]); pcCoverChanged(id); return { ok: true };
 });
 handle('pccover:reset', ({ id }) => { pcGameOf(id); pccovers.reset(id); pcCoverChanged(); return { ok: true }; });
+handle('pccover:bulkStatus', () => pcbulk.bulkState());
+handle('pccover:downloadAll', async ({ mode } = {}) => {
+  const libs = lastLib || await buildLibrary();
+  const pcs = (libs || []).filter(s => s && s.kind === 'steam').flatMap(s => s.games || []).filter(g => g && g.kind === 'steam');
+  return pcbulk.downloadAll(pcs, {
+    mode: mode === 'all' ? 'all' : 'missing',
+    lookup: g => ({ ...(pcLookup(g.id) || {}), id: g.id, title: g.title || '', ...(g.appid ? { appid: g.appid } : {}) }),
+  });
+});
+handle('pccover:cancelAll', () => ({ ok: pcbulk.cancelAll() }));
+handle('pccover:undoAll', () => pcbulk.undoAll());
 // (beta.5) Details → Rename: a console game by its console and file (it must be one the scanner could find), a PC game by
 // id. An empty name (or the file's own) goes back to the scanned one. The shelf rescans; art and manuals look it up by
 // the new name from then on
@@ -3165,6 +3177,11 @@ function startUp() {
   icons.init(app.getPath('userData'), log);
   x360.init(app.getPath('userData'), log); scanSetLog(log); // (beta.10: games folders that can't be read go in the log)
   steamart.init(app.getPath('userData'), log); pcgames.init(app.getPath('userData'), log); pccovers.init({ dataDir: app.getPath('userData'), log, fileUrl, fetchImage, steamgrid: require('./main/steamgrid'), steamCover: id => steamart.local(id).front, match: covers.sgMatch, steamSearch: (t, exact) => pcgames.steamSearch(t, exact) });
+  pcbulk.init({
+    dataDir: app.getPath('userData'), pccovers, log,
+    sendProgress: p => { if (alive()) win.webContents.send('pccover:progress', p); },
+    onChanged: ids => { for (const id of ids || []) pcCoverBump(id); scanCfg = null; if (alive()) win.webContents.send('library:changed', { pcCover: 1 }); },
+  });
   wiiumanual.init(app.getPath('userData'), log);
   ra.init(app.getPath('userData'), log); ra.setCredentials(cfg.ra && cfg.ra.enabled !== false ? cfg.ra.user : '', cfg.ra && cfg.ra.key);
   manuals.init(log); archive.init(log); manuals.setStore(path.join(app.getPath('userData'), 'manual-auto.json')); manuals.setRejectStore(path.join(app.getPath('userData'), 'manual-rejects.json'));
