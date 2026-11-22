@@ -2374,9 +2374,11 @@ const achPts=p=>p&&p.unit==="G"?`${p.pointsEarned} / ${p.points} G`:p&&p.unit===
 async function raInit(){
   try{const e=await api.raEnabled();RA.on=!!(e&&e.enabled);RA.systems=e&&e.systems||[];RA.x360=!!(e&&e.x360);RA.ps3=!!(e&&e.ps3)}catch{RA.on=false}
   const pts=$("raPts");if(!RA.on){pts.hidden=true;return}
-  try{RA.profile=await api.raProfile();if(RA.profile){pts.innerHTML="";if(RA.profile.pic){const im=new Image();im.src=RA.profile.pic;im.alt="";pts.append(im)}const b=document.createElement("b");b.textContent=RA.profile.points.toLocaleString()+" pts";pts.append(b,document.createTextNode(" · "+RA.profile.user));pts.hidden=false}}catch{}
+  try{RA.profile=await api.raProfile();if(RA.profile){pts.innerHTML="";if(RA.profile.pic){const im=new Image();im.src=RA.profile.pic;im.alt="";pts.append(im)}const b=document.createElement("b");b.textContent=raPts(RA.profile).toLocaleString()+" pts";pts.append(b,document.createTextNode(" · "+RA.profile.user));pts.hidden=false}}catch{}
   raShelfLoad();
 }
+// Settings → Accounts & services → RetroAchievements → Points shown: ui.raPoints "hard" (default) or "soft"
+function raPts(p){p=p||{};const h=+p.points||0,s=+p.softcore||0,m=cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.raPoints;return m==="soft"?s:h}
 function raHas(s){return !!s&&((RA.on&&RA.systems.includes(s.id))||achLocal(s))}
 async function raShelfLoad(){
   const busy=raShelfLoad.busy||(raShelfLoad.busy=new Set()),s=cur();if(!raHas(s)||RA.shelf[s.id]||busy.has(s.id))return; // busy: the quick menu, a shelf switch and refresh() can all ask at once; one request is enough
@@ -2722,7 +2724,7 @@ function qsRows(){const ui=qsUi(),r=qsAch(),g=qsGame(),out=[];
   // the shelf's own look (its logo, 3D console, boot video): straight into Customize on this shelf (it replaced the link that sat at the foot of Customize's chips)
   out.push({id:"cz3d",icon:QS_I.cube,lbl:"3D & logos",val:qsCzVal,go:1});
   out.push({id:"sort",icon:QS_I.sort,lbl:"Sort & filter",val:()=>qsName(SORTS,sortBy)+(filterBy!=="all"?" · "+filterName(filterBy):""),lines:()=>[{k:"sort",l:"Sort by",opts:SORTS,cur:sortBy},{k:"filter",l:"Show",opts:filterList(),cur:filterBy}]});
-  out.push({id:"ach",icon:QS_I.trophy,lbl:"Trophies",val:()=>!RA.on?"Not connected":r&&r.total?`${r.earned} / ${r.total}`+(RA.profile?` · ${RA.profile.points.toLocaleString()} pts`:""):RA.profile?`${RA.profile.points.toLocaleString()} points`:"",
+  out.push({id:"ach",icon:QS_I.trophy,lbl:"Trophies",val:()=>!RA.on?"Not connected":r&&r.total?`${r.earned} / ${r.total}`+(RA.profile?` · ${raPts(RA.profile).toLocaleString()} pts`:""):RA.profile?`${raPts(RA.profile).toLocaleString()} points`:"",
     lines:()=>!RA.on?[{k:"note",note:"Sign in once and Boxshelf tracks every unlock."},{k:"go",opts:[["rasetup","Connect RetroAchievements ›"]],big:1}]:[{k:"achinfo",info:1},...(r&&r.total?[{k:"go",opts:[["achg","See this game's achievements ›"]],big:1}]:[])]});
   out.push({id:"mus",icon:QS_I.museum,lbl:"Museum",val:()=>"Walk your collection",go:1});
   if(ANDROID)qsAndroidOrder(out,ui); // (0.3.2) the Thor's order: Museum, Art Studio, Trophies first; then the looks, sounds and sorting
@@ -2782,7 +2784,7 @@ function qsFill(x,instant){const inn=document.createElement("div");inn.className
   x.r.lines().forEach(ln=>{const d=document.createElement("div");d.className="qm-line";
     if(ln.note){d.innerHTML=`<div class="qm-note">${qsEsc(ln.note)}</div>`;inn.appendChild(d);return}
     if(ln.info){const r=qsAch(),g=qsGame(),p=r&&r.total?Math.round(r.earned/r.total*100):0,pr=RA.profile;
-      d.innerHTML=`<div class="qm-trow"><div class="qm-ring" style="--p:${p}"><b>${pr&&pr.pic?`<img alt="" src="${qsEsc(pr.pic)}">`:"🏆"}</b></div><div style="min-width:0"><div class="qm-tt">${r&&r.total?(r.mastered==="mastered"?"★ Mastered · ":"")+`${r.earned} of ${r.total} unlocked`:g?qsAchNone(g):"Your trophies"}</div><div class="qm-ts">${qsEsc(pr?`${pr.user} · ${pr.points.toLocaleString()} points`:"Signed in")}</div></div></div>`;inn.appendChild(d);return}
+      d.innerHTML=`<div class="qm-trow"><div class="qm-ring" style="--p:${p}"><b>${pr&&pr.pic?`<img alt="" src="${qsEsc(pr.pic)}">`:"🏆"}</b></div><div style="min-width:0"><div class="qm-tt">${r&&r.total?(r.mastered==="mastered"?"★ Mastered · ":"")+`${r.earned} of ${r.total} unlocked`:g?qsAchNone(g):"Your trophies"}</div><div class="qm-ts">${qsEsc(pr?`${pr.user} · ${raPts(pr).toLocaleString()} points`:"Signed in")}</div></div></div>`;inn.appendChild(d);return}
     if(ln.l)d.innerHTML=`<div class="qm-ll">${qsEsc(ln.l)}</div>`;const o=document.createElement("div");o.className="qm-opts"+(ln.cls?" "+ln.cls:"");const arr=[];
     ln.opts.forEach(([v,l,hold])=>{const b=document.createElement("button");b.type="button";b.className="qm-opt"+(ln.sw?" sw":"")+(ln.big?" big":"")+(hold?" danger":"")+((Array.isArray(ln.cur)?ln.cur.includes(v):ln.cur===v)?" cur":""); /* (beta.14: a line of toggles, Add to…, has several on) */b.dataset.k=ln.k;b.dataset.v=v;b.title=l;if(hold)b.dataset.hold="1";
       b.innerHTML=ln.sw?`<i style="background:${qsEsc(qsSwatch(v))}"></i><span class="qm-swl">${qsEsc(l)}</span>`:(hold?'<i class="qm-hb"></i>':"")+`<span>${qsEsc(l)}</span>`; // (1.81: theme tiles carry their names, as in Settings)

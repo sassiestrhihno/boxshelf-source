@@ -625,6 +625,7 @@ function svcPage0(id){const n=SVC_N[id]||id,P=(lead,rows)=>({g:"Library",id:"acc
     A("Check again",()=>raEmuBusy?"Checking…":"Check","Looks at each emulator's achievements sign-in again.",()=>loadRaEmu(true),{when:()=>!!api.raEmulators,keys:"retroachievements emulator sign in"}),
     H("Your progress in Boxshelf (optional)"),
     T("Show achievements","ra.enabled",true,"Progress on each game's details, and a summary after you play. Needs your username and web API key below; the pop-ups in your games don't.",{keys:"retroachievements trophies",ra:true}),
+    C("Points shown","ui.raPoints",[["hard","Hardcore"],["soft","Softcore"]],"hard","Which of your RetroAchievements points the top corner and the Quick menu show: hardcore or softcore.",{keys:"retroachievements points hardcore softcore score",ra:true}),
     X("Username","ra.user","Your RetroAchievements username.",{ph:"Not set",ra:true,keys:"retroachievements account"}),
     X("Web API key","ra.key","On retroachievements.org → Settings → Keys. It only reads your public profile and progress. Stored encrypted.",{secret:true,ph:"Not set",ra:true,keys:"retroachievements"}),
     test("Test connection","Checks the account and shows your points."),

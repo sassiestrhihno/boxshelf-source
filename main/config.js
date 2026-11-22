@@ -215,6 +215,7 @@ function sanitize(cfg) {
   // (beta.7) your collections (shelves of your own): [{ id, name, ids: [game ids] }], a sane number and size
   ui.lastSeenVersion = typeof ui.lastSeenVersion === 'string' ? ui.lastSeenVersion.slice(0, 40) : '';
   if (!['off', 'details', 'shelf'].includes(ui.previews)) ui.previews = 'off'; for (const k of ['previewSound', 'previewYoutube', 'previewClips']) if (typeof ui[k] !== 'boolean') ui[k] = d[k];
+  if (!['hard', 'soft'].includes(ui.raPoints)) ui.raPoints = 'hard'; // RetroAchievements points shown: hardcore or softcore
   { const n = +ui.previewDelay; ui.previewDelay = [0.5, 1, 1.5, 2, 3, 5, 8, 10, 15].includes(n) ? n : 5; } // (beta.8: more choices, half a second to 15 seconds)
   // (beta.14) previews wait 5 s by default (1.5 s started them while you were still looking around): a config still on the
   // old default moves to 5 once; a delay chosen since (1.5 included) is kept
