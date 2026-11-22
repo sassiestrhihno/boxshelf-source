@@ -511,7 +511,14 @@ function glareAndroid(s,ad,sg,x,ry){
 }
 // Real covers load asynchronously; generated covers are drawn a few per frame so moving never stutters.
 let coverQ=[],coverQRunning=false;
-function setFront(s,g,url,made){if(url&&url.then){const img=s.img;s.coverP=url;url.then(u=>{if(s.img===img&&s.coverP===url&&u)setFront(s,g,u,made)});return}s.coverP=null;url=made?url:thumb(url,bh*OS);s.img.decoding="async";s.img.onerror=made?null:()=>{s.img.onerror=null;setFront(s,g,ANDROID&&Covers.frontAsync?Covers.frontAsync(stOf(g),g):Covers.front(stOf(g),g),true)};s.img.src=url} /* (a picture that won't load: the made-up cover is encoded in the worker, not on this thread mid-slide; made: never retried) */
+/* A console whose games came in more than one kind of case (systems-extra.js "shapes": TurboGrafx-16's tall US
+   TurboChip clamshell vs the square Japanese HuCard case) gets the case its cover was scanned from: the nearest shape
+   to the cover's own width / height, when it's that close to one; anything else keeps the shelf's usual case */
+// (a shape is a ratio, or [ratio, height] for a case that's also smaller or bigger than the usual one: 1 = the shelf's height)
+function caseShape(os,ar){const base=[os&&os.ratio,1];if(!os||!os.shapes||!(ar>0))return base;let b=base,d=Infinity;for(const x of os.shapes){const sh=Array.isArray(x)?x:[x,1],e=Math.abs(sh[0]-ar);if(e<d){d=e;b=sh}}return d<=.06?b:base}
+function caseFit(s,g){const im=s.img,el=s.el;if(!im||!el||!im.naturalHeight)return;const os=stOf(g);if(!os)return;const [r,k]=caseShape(os,im.naturalWidth/im.naturalHeight),key=r+"x"+k;if(key===(el.dataset.shape||os.ratio+"x1"))return;el.dataset.shape=key;
+  const set=(n,v)=>el.style.setProperty(n,`calc(var(--ch) * ${v})`);set("--bh",k);set("--bw",k*r);set("--bd",k*r*os.depth);set("--edge",k*r*os.edge);set("--edge-in",os.wrap?0:k*r*os.edge);set("--rc",k*r*(os.rc||.03));set("--re",k*r*os.depth*(os.re||.3));el.firstElementChild.style.translate=k===1?"":`0 calc(var(--ch) * ${(1-k)/2})`} /* (a shorter case stands on the shelf, not centred on it) */
+function setFront(s,g,url,made){if(url&&url.then){const img=s.img;s.coverP=url;url.then(u=>{if(s.img===img&&s.coverP===url&&u)setFront(s,g,u,made)});return}s.coverP=null;url=made?url:thumb(url,bh*OS);s.img.decoding="async";s.img.onload=made?null:()=>caseFit(s,g);s.img.onerror=made?null:()=>{s.img.onerror=null;setFront(s,g,ANDROID&&Covers.frontAsync?Covers.frontAsync(stOf(g),g):Covers.front(stOf(g),g),true)};s.img.src=url} /* (a picture that won't load: the made-up cover is encoded in the worker, not on this thread mid-slide; made: never retried) */
 function queueCover(s,g,dist){
   if(g.art&&g.art.front){setFront(s,g,g.art.front);return}
   if(dist===0){setFront(s,g,Covers.frontAsync(stOf(g),g));return}

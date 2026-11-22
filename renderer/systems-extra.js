@@ -1,6 +1,10 @@
 // Extra shelves (retro and handheld systems people run on Android handhelds and through RetroArch).
 // app.js merges these into its STYLE / WORDMARKS / MEDIA tables, so a new system only needs an entry here.
 // Case looks: ratio = width / height of the real box, depth = thickness / width, h = its height next to a DVD case (the museum).
+// shapes (optional) = the cases one console's games came in, picked per game by its cover's width / height (app.js caseFit):
+//   SNES / N64 wide US and European boxes vs the tall Japanese ones (Super Famicom about 0.55, Japanese N64 about 0.72),
+//   GBA's square US box vs the small wide Japanese one ([ratio, height] = also two thirds as tall), TurboGrafx-16's
+//   tall US TurboChip clamshell vs the square Japanese HuCard case. Ratios measured from cover scans.
 // pack = what it's made of: 'box' (printed card), 'jewel' (CD jewel case), 'long' (Sega's tall CD case), 'keep' (moulded plastic).
 // (beta.14) sizes from measured cases and box protectors: see the case research notes (Genesis clamshell about 129 x 181 x 25 mm,
 // Saturn / Sega CD long case about 144 x 207 x 21, SNES / N64 box 178 x 127 x 33, DS / 3DS case 135 x 122 x 15 / 12).
@@ -13,11 +17,11 @@
   window.BS_SYSTEMS_EXTRA = {
     style: {
       nes: S('nes', { ...cardboard, hue: 0, ratio: 0.71, depth: 0.21, caseColor: '#16161a', caseSide: '#0c0c0f', band: { bg: '#111114', fg: '#e8e8ec', label: 'NES' }, spineBand: { bg: '#111114', fg: '#e8e8ec', label: 'NES' }, tint: ['#6b1d1d', '#140606'], glow: '#ff8a8a' }),
-      snes: S('snes', { ...cardboard, hue: 270, ratio: 1.4, h: 0.7, depth: 0.185, caseColor: '#d9d9de', caseSide: '#b9b9c1', spineInk: '#3c3c46', band: { bg: '#4b3f8f', fg: '#ffffff', label: 'SUPER NINTENDO' }, spineBand: { bg: '#4b3f8f', fg: '#ffffff', label: 'SNES' }, tint: ['#4b3f8f', '#120f26'], glow: '#b8a8ff' }),
-      n64: S('n64', { ...cardboard, hue: 210, ratio: 1.4, h: 0.7, depth: 0.185, caseColor: '#141418', caseSide: '#0a0a0d', band: { bg: '#0d0d10', fg: '#ffffff', label: 'NINTENDO 64' }, spineBand: { bg: '#0d0d10', fg: '#ffffff', label: 'N64' }, tint: ['#1d4fa3', '#07142c'], glow: '#7fb0ff' }),
+      snes: S('snes', { ...cardboard, hue: 270, ratio: 1.37, shapes: [1.37, 1.43, 0.555], h: 0.7, depth: 0.185, caseColor: '#d9d9de', caseSide: '#b9b9c1', spineInk: '#3c3c46', band: { bg: '#4b3f8f', fg: '#ffffff', label: 'SUPER NINTENDO' }, spineBand: { bg: '#4b3f8f', fg: '#ffffff', label: 'SNES' }, tint: ['#4b3f8f', '#120f26'], glow: '#b8a8ff' }),
+      n64: S('n64', { ...cardboard, hue: 210, ratio: 1.4, shapes: [1.37, 1.43, 0.72], h: 0.7, depth: 0.185, caseColor: '#141418', caseSide: '#0a0a0d', band: { bg: '#0d0d10', fg: '#ffffff', label: 'NINTENDO 64' }, spineBand: { bg: '#0d0d10', fg: '#ffffff', label: 'N64' }, tint: ['#1d4fa3', '#07142c'], glow: '#7fb0ff' }),
       gb: S('gb', { ...cardboard, ...handheldBox, hue: 75, caseColor: '#cfd0c4', caseSide: '#aeb0a2', spineInk: '#2f3326', band: { bg: '#8b8c7e', fg: '#ffffff', label: 'GAME BOY' }, spineBand: { bg: '#8b8c7e', fg: '#ffffff', label: 'GB' }, tint: ['#4f6b2a', '#121a08'], glow: '#c8e889' }),
       gbc: S('gbc', { ...cardboard, ...handheldBox, hue: 290, caseColor: '#e9e4f2', caseSide: '#c9c2d8', spineInk: '#3b2f52', band: { bg: '#6d3fa8', fg: '#ffffff', label: 'GAME BOY COLOR' }, spineBand: { bg: '#6d3fa8', fg: '#ffffff', label: 'GBC' }, tint: ['#6d3fa8', '#180c2a'], glow: '#d6b3ff' }),
-      gba: S('gba', { ...cardboard, ...handheldBox, hue: 245, caseColor: '#ecedf3', caseSide: '#cdcfd9', spineInk: '#2b2f6b', band: { bg: '#2b2f8f', fg: '#ffffff', label: 'GAME BOY ADVANCE' }, spineBand: { bg: '#2b2f8f', fg: '#ffffff', label: 'GBA' }, tint: ['#2b2f8f', '#0a0b26'], glow: '#a8adff' }),
+      gba: S('gba', { ...cardboard, ...handheldBox, shapes: [1.0, 1.12, [1.6, 0.66]], hue: 245, caseColor: '#ecedf3', caseSide: '#cdcfd9', spineInk: '#2b2f6b', band: { bg: '#2b2f8f', fg: '#ffffff', label: 'GAME BOY ADVANCE' }, spineBand: { bg: '#2b2f8f', fg: '#ffffff', label: 'GBA' }, tint: ['#2b2f8f', '#0a0b26'], glow: '#a8adff' }),
       // (beta.14, #31) the DS case is a little wider than tall, like the 3DS one: at 0.9 the cover scans (about 1.1) lost their sides
       // and were blown up to fill the face, which also made them look soft and washed out
       // (beta.14) 135 x 122 x 15 mm (NA / JP), the same footprint as the 3DS case and a little thicker
@@ -28,7 +32,7 @@
       megadrive: S('megadrive', { ...clam, hue: 0, ratio: 0.72, caseColor: '#16161a', caseSide: '#0c0c0f', band: { bg: '#c8102e', fg: '#ffffff', label: 'SEGA GENESIS' }, spineBand: { bg: '#111114', fg: '#ffffff', label: 'GENESIS' }, tint: ['#7a0b1c', '#1a0306'], glow: '#ff7d8f' }),
       mastersystem: S('mastersystem', { ...clam, hue: 0, ratio: 0.72, caseColor: '#f2f2f2', caseSide: '#d4d4d4', spineInk: '#222', band: { bg: '#111114', fg: '#ffffff', label: 'MASTER SYSTEM' }, spineBand: { bg: '#e2001a', fg: '#ffffff', label: 'SMS' }, tint: ['#6a1018', '#160406'], glow: '#ff9aa3' }),
       gamegear: S('gamegear', { ...cardboard, hue: 210, ratio: 0.83, depth: 0.22, caseColor: '#1a1b20', caseSide: '#0f1013', band: { bg: '#0b62b8', fg: '#ffffff', label: 'GAME GEAR' }, spineBand: { bg: '#0b62b8', fg: '#ffffff', label: 'GG' }, tint: ['#0b4c8a', '#04121f'], glow: '#7fc0ff' }),
-      pcengine: S('pcengine', { ...jewel, hue: 30, ratio: 1.0, h: 0.72, caseColor: '#18181c', caseSide: '#0d0d10', band: { bg: '#ff8a00', fg: '#141414', label: 'TURBOGRAFX-16' }, spineBand: { bg: '#141414', fg: '#ff8a00', label: 'TG-16' }, tint: ['#7a4100', '#1c0f00'], glow: '#ffc27a' }),
+      pcengine: S('pcengine', { ...jewel, hue: 30, ratio: 0.85, shapes: [0.85, 1.0], h: 0.72, caseColor: '#18181c', caseSide: '#0d0d10', band: { bg: '#ff8a00', fg: '#141414', label: 'TURBOGRAFX-16' }, spineBand: { bg: '#141414', fg: '#ff8a00', label: 'TG-16' }, tint: ['#7a4100', '#1c0f00'], glow: '#ffc27a' }),
       neogeo: S('neogeo', { ...cardboard, hue: 45, ratio: 0.71, depth: 0.18, caseColor: '#121214', caseSide: '#09090b', band: { bg: '#0b0b0d', fg: '#e8c14a', label: 'NEO GEO' }, spineBand: { bg: '#0b0b0d', fg: '#e8c14a', label: 'NEO GEO' }, tint: ['#5a4810', '#161104'], glow: '#ffe08a' }),
       arcade: S('arcade', { ...cardboard, hue: 300, ratio: 0.71, depth: 0.16, caseColor: '#16131d', caseSide: '#0c0a10', band: { bg: '#1a1424', fg: '#ff5ad1', label: 'ARCADE' }, spineBand: { bg: '#1a1424', fg: '#ff5ad1', label: 'ARCADE' }, tint: ['#5c1a5a', '#150616'], glow: '#ff9ae6' }),
       // (beta.7) wave 2: Sega CD (its tall black clamshell), 32X, Atari 2600 and Lynx, WonderSwan (card boxes), DOS (the big box)
