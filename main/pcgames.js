@@ -11,6 +11,7 @@
 //     shares its name with an unrelated Steam game) and keep Boxshelf's made-up case, as does a title with no match.
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const https = require('https');
 
 let log = () => {}, dataDir = '';
@@ -155,6 +156,49 @@ function xboxScan(roots) {
   return found;
 }
 // all four at once; each one that fails is only logged (one store's oddity must not empty the shelf)
+// ---------- (Linux) Flatpak games ----------
+// Every installed Flatpak whose launcher says it's a game (Categories has Game), minus emulators (they run console
+// games: their own shelves) and game launchers / stores (Lutris, Heroic: PackageManager). Recomps and ports from
+// Flathub (Zelda 64: Recompiled, Unleashed Recompiled, ...) are this. Started with the launcher Flatpak exports for it
+// (exports/bin/<app id>, what the desktop menu runs); its icon is the app's own
+const FLATPAK_ROOTS = () => [path.join(os.homedir(), '.local', 'share', 'flatpak', 'exports'), '/var/lib/flatpak/exports'];
+function desktopEntry(text) {
+  const o = {}; let inMain = false;
+  for (const line of String(text).split(/\r?\n/)) {
+    const t = line.trim(); if (!t || t[0] === '#') continue;
+    if (t[0] === '[') { inMain = t === '[Desktop Entry]'; continue; }
+    if (!inMain) continue; const i = t.indexOf('='); if (i < 1) continue;
+    const k = t.slice(0, i).trim(); if (!(k in o)) o[k] = t.slice(i + 1).trim(); // (Name[de]= and the like are other keys: the plain Name wins)
+  }
+  return o;
+}
+function flatpakIcon(root, name) {
+  if (!name) return '';
+  for (const size of ['512x512', '256x256', '256x256@2', '128x128', 'scalable'])
+    for (const ext of size === 'scalable' ? ['.svg'] : ['.png']) { const p = path.join(root, 'share', 'icons', 'hicolor', size, 'apps', name + ext); if (isFile(p)) return p; }
+  return '';
+}
+function flatpakGames(roots = FLATPAK_ROOTS()) {
+  if (process.platform !== 'linux') return [];
+  const out = [], seen = new Set();
+  for (const root of roots) {
+    let files = []; try { files = fs.readdirSync(path.join(root, 'share', 'applications')).filter(f => f.endsWith('.desktop')); } catch { continue; }
+    for (const f of files) {
+      const appId = f.slice(0, -'.desktop'.length); if (seen.has(appId) || !/^[\w.-]+$/.test(appId)) continue;
+      let e; try { e = desktopEntry(fs.readFileSync(path.join(root, 'share', 'applications', f), 'utf8')); } catch { continue; }
+      const cats = String(e.Categories || '').split(';').map(c => c.trim().toLowerCase());
+      if (e.Type && e.Type !== 'Application') continue;
+      if (/^true$/i.test(e.NoDisplay || '') || /^true$/i.test(e.Hidden || '')) continue;
+      if (!cats.includes('game') || cats.includes('emulator') || cats.includes('packagemanager')) continue;
+      const exe = path.join(root, 'bin', appId); if (!isFile(exe)) continue;
+      seen.add(appId);
+      const icon = flatpakIcon(root, e.Icon || appId);
+      out.push({ id: 'flatpak-' + slug(appId), source: 'flatpak', appId, title: String(e.Name || appId).trim().slice(0, 120), exe, args: '', ...(icon ? { icon: require('url').pathToFileURL(icon).href } : {}) });
+    }
+  }
+  return out.sort((a, b) => a.title.localeCompare(b.title));
+}
+
 async function storeGames(pc = {}) {
   const want = { gog: pc.gog !== false, ubisoft: pc.ubisoft !== false, ea: pc.ea !== false, xbox: pc.xbox !== false };
   const jobs = { gog: gogGames, ubisoft: ubisoftGames, ea: eaGames, xbox: xboxGames }, out = [];
@@ -341,5 +385,5 @@ async function steamSearch(term, exact) {
   const want = norm(t); return items.filter(x => norm(x.name) === want).slice(0, 3);
 }
 
-module.exports = { init, epicGames, quiverGames, quiverFind, quiverRoots, customGames, placeCustom, titleFromExe, mainExe, remember, byId, all, steamIdOf, matchSteam, steamSearch, EPIC_DIR,
+module.exports = { init, epicGames, flatpakGames, desktopEntry, quiverGames, quiverFind, quiverRoots, customGames, placeCustom, titleFromExe, mainExe, remember, byId, all, steamIdOf, matchSteam, steamSearch, EPIC_DIR,
   storeGames, gogGames, ubisoftGames, eaGames, xboxGames, parseReg, xboxRoots, eaFromDirs, xboxScan };
